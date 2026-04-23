@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 STACK_PACK_ROOT = Path(__file__).resolve().parents[1] / "scaffold/stack-packs"
+TARGET_MANIFEST_PATH = Path(".codex/enhancer/manifest.toml")
 
 
 @dataclass(frozen=True)
@@ -381,6 +382,59 @@ def resolve_stack_pack_selection(
     return tuple(selections)
 
 
+def load_selected_packs_from_manifest(target: Path) -> tuple[str, ...]:
+    manifest_path = target.resolve() / TARGET_MANIFEST_PATH
+    if not manifest_path.exists():
+        raise ValueError(
+            f"Target {target.resolve()} does not contain {TARGET_MANIFEST_PATH.as_posix()}; "
+            "run a full enhancer install first."
+        )
+
+    try:
+        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: {error}"
+        ) from error
+
+    selected_packs = manifest.get("selected_packs", [])
+    if not isinstance(selected_packs, list) or any(
+        not isinstance(item, str) or not item.strip() for item in selected_packs
+    ):
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+            "selected_packs must be a list of strings."
+        )
+    return tuple(selected_packs)
+
+
+def resolve_manifest_pack_selection(
+    detections: tuple[PackDetection, ...],
+    *,
+    selected_packs: tuple[str, ...],
+) -> tuple[PackSelection, ...]:
+    selected_set = set(selected_packs)
+    unknown = sorted(selected_set - available_pack_names(detections))
+    if unknown:
+        names = ", ".join(unknown)
+        raise ValueError(f"Unknown stack pack name(s) in target manifest: {names}")
+
+    selections: list[PackSelection] = []
+    for detection in detections:
+        is_selected = detection.pack.name in selected_set
+        selections.append(
+            PackSelection(
+                pack=detection.pack,
+                detected=detection.detected,
+                recommended=detection.recommended,
+                reasons=detection.reasons,
+                selected=is_selected,
+                selection_source="manifest" if is_selected else "not-selected",
+            )
+        )
+    return tuple(selections)
+
+
 def selected_pack_names(selections: tuple[PackSelection, ...]) -> tuple[str, ...]:
     return tuple(selection.pack.name for selection in selections if selection.selected)
 
@@ -445,8 +499,29 @@ def render_install_follow_up_lines(selections: tuple[PackSelection, ...]) -> lis
         summary = _render_compact_agents_summary(selection.pack)
         lines.append(f"- `{selection.pack.name}`: {summary}")
     lines.append(
-        "- If you change selected packs later, regenerate `AGENTS.md`, "
-        "`docs/ai/stack-guidance.md`, and `.codex/enhancer/manifest.toml` together."
+        "- If you change selected packs later, rerun the full installer preview for `AGENTS.md` "
+        "changes and use `--refresh-generated` to re-render `docs/ai/stack-guidance.md` plus "
+        "`.codex/enhancer/manifest.toml`."
+    )
+    return lines
+
+
+def render_refresh_follow_up_lines(selections: tuple[PackSelection, ...]) -> list[str]:
+    selected = [selection for selection in selections if selection.selected]
+    lines = [
+        "- Review the refreshed `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml` outputs.",
+    ]
+    if selected:
+        selected_names = ", ".join(f"`{selection.pack.name}`" for selection in selected)
+        lines.append(f"- Refreshed stack-pack guidance for: {selected_names}.")
+        for selection in selected:
+            summary = _render_compact_agents_summary(selection.pack)
+            lines.append(f"- `{selection.pack.name}`: {summary}")
+    else:
+        lines.append("- No stack packs are currently selected in the target manifest.")
+    lines.append(
+        "- `AGENTS.md` and the rest of the scaffold stay untouched during refresh; "
+        "rerun a full install preview if you need to update manual scaffold files."
     )
     return lines
 
@@ -507,6 +582,9 @@ def _toml_string(value: str) -> str:
 def render_stack_pack_manifest(
     detections: tuple[PackDetection, ...],
     selected_packs: tuple[str, ...] = (),
+    *,
+    safe_to_regenerate: tuple[Path, ...] = (),
+    adapt_manually: tuple[Path, ...] = (),
 ) -> str:
     selected = tuple(selected_packs)
     selected_set = set(selected)
@@ -534,6 +612,14 @@ def render_stack_pack_manifest(
         [
             "[generated_files]",
             'stack_guidance = "docs/ai/stack-guidance.md"',
+            "",
+            "[managed_outputs]",
+            "safe_to_regenerate = ["
+            + ", ".join(_toml_string(path.as_posix()) for path in safe_to_regenerate)
+            + "]",
+            "adapt_manually = ["
+            + ", ".join(_toml_string(path.as_posix()) for path in adapt_manually)
+            + "]",
         ]
     )
     return "\n".join(lines) + "\n"

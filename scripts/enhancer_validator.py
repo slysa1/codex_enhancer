@@ -370,6 +370,45 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
             "Keep the generated_files.stack_guidance entry aligned with the installed stack guidance file.",
         )
 
+    managed_outputs = manifest.get("managed_outputs", {})
+    if not isinstance(managed_outputs, dict):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define a [managed_outputs] table",
+            "Record which enhancer outputs are safe to regenerate versus usually adapted by hand.",
+        )
+        managed_outputs = {}
+
+    safe_to_regenerate = managed_outputs.get("safe_to_regenerate", [])
+    if not isinstance(safe_to_regenerate, list) or any(not isinstance(item, str) for item in safe_to_regenerate):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define managed_outputs.safe_to_regenerate as a list of strings",
+            "Keep managed_outputs.safe_to_regenerate as a TOML string array.",
+        )
+    else:
+        expected_safe_outputs = {"docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"}
+        if not expected_safe_outputs.issubset(set(safe_to_regenerate)):
+            add_error(
+                errors,
+                ".codex/enhancer/manifest.toml must record docs/ai/stack-guidance.md and .codex/enhancer/manifest.toml under managed_outputs.safe_to_regenerate",
+                "Keep the safe-to-regenerate ownership list aligned with the generated enhancer outputs.",
+            )
+
+    adapt_manually = managed_outputs.get("adapt_manually", [])
+    if not isinstance(adapt_manually, list) or any(not isinstance(item, str) for item in adapt_manually):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define managed_outputs.adapt_manually as a list of strings",
+            "Keep managed_outputs.adapt_manually as a TOML string array.",
+        )
+    elif "AGENTS.md" not in adapt_manually:
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml should list AGENTS.md under managed_outputs.adapt_manually",
+            "Treat the installed AGENTS.md scaffold as a repo-owned file to adapt manually after bootstrap.",
+        )
+
     stack_guidance = load_text(stack_guidance_path)
     agents_text = load_text(agents_path) if agents_path.exists() else ""
     if selected_packs:

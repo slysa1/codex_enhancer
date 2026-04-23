@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the Codex Enhancer scaffold into a new or existing repository."""
+"""Install or refresh the Codex Enhancer scaffold in a target repository."""
 
 from __future__ import annotations
 
@@ -27,11 +27,14 @@ from scripts.stack_packs import (
     PackSelection,
     detect_stack_packs,
     format_detection_reason,
+    load_selected_packs_from_manifest,
     load_stack_packs,
     render_agents_summary,
     render_install_follow_up_lines,
+    render_refresh_follow_up_lines,
     render_stack_guidance,
     render_stack_pack_manifest,
+    resolve_manifest_pack_selection,
     resolve_stack_pack_selection,
     selected_pack_names,
 )
@@ -67,10 +70,11 @@ class GitignorePlan:
 @dataclass(frozen=True)
 class InstallPlan:
     target: Path
+    operation: str
     mode: str
     force: bool
     writes: tuple[PlannedWrite, ...]
-    gitignore: GitignorePlan
+    gitignore: GitignorePlan | None
     pack_detections: tuple[PackDetection, ...]
     pack_selections: tuple[PackSelection, ...]
     manifest_preview: str
@@ -82,6 +86,12 @@ class ConflictSummary:
     standard_proposals: tuple[Path, ...]
     critical_overwrites: tuple[Path, ...]
     standard_overwrites: tuple[Path, ...]
+
+
+@dataclass(frozen=True)
+class OutputOwnershipSummary:
+    safe_to_regenerate: tuple[Path, ...]
+    adapt_manually: tuple[Path, ...]
 
 
 ProgressCallback = Callable[[int, int, str], None]
@@ -97,6 +107,17 @@ CRITICAL_CONFLICT_PATHS = frozenset(
         Path("scripts/enhancer_validator.py"),
         Path(".github/workflows/validate.yml"),
     }
+)
+
+GENERATED_OUTPUT_DESTINATIONS = (
+    Path("docs/ai/stack-guidance.md"),
+    Path(".codex/enhancer/manifest.toml"),
+)
+
+INSTALL_MANAGED_DESTINATIONS = (
+    tuple(asset.destination for asset in INSTALL_TEMPLATE_ASSETS)
+    + tuple(asset.destination for asset in INSTALL_COPY_ASSETS)
+    + GENERATED_OUTPUT_DESTINATIONS
 )
 
 
@@ -327,12 +348,12 @@ def plan_generated_writes(
 ) -> list[PlannedWrite]:
     generated_assets = (
         (
-            Path("docs/ai/stack-guidance.md"),
+            GENERATED_OUTPUT_DESTINATIONS[0],
             render_stack_guidance(pack_selections),
             "generated stack guidance",
         ),
         (
-            Path(".codex/enhancer/manifest.toml"),
+            GENERATED_OUTPUT_DESTINATIONS[1],
             manifest_preview,
             "generated stack-pack manifest",
         ),
@@ -393,6 +414,7 @@ def build_install_plan(
     mode: str = "auto",
     force: bool = False,
     *,
+    refresh_generated: bool = False,
     use_recommended_packs: bool = False,
     include_packs: tuple[str, ...] = (),
     exclude_packs: tuple[str, ...] = (),
@@ -400,8 +422,47 @@ def build_install_plan(
     resolved_target = target.resolve()
     validate_mode(resolved_target, mode)
     effective_mode = infer_mode(resolved_target) if mode == "auto" else mode
-    gitignore = compute_gitignore_update(resolved_target)
     pack_detections = detect_stack_packs(resolved_target)
+    ownership = summarize_output_ownership(INSTALL_MANAGED_DESTINATIONS)
+
+    if refresh_generated:
+        if effective_mode != "existing":
+            raise ValueError(
+                "--refresh-generated only works on an existing repo with an installed enhancer manifest."
+            )
+
+        selected_names = load_selected_packs_from_manifest(resolved_target)
+        pack_selections = resolve_manifest_pack_selection(
+            pack_detections,
+            selected_packs=selected_names,
+        )
+        manifest_preview = render_stack_pack_manifest(
+            pack_detections,
+            selected_packs=selected_pack_names(pack_selections),
+            safe_to_regenerate=ownership.safe_to_regenerate,
+            adapt_manually=ownership.adapt_manually,
+        )
+        writes = tuple(
+            plan_generated_writes(
+                resolved_target,
+                force=True,
+                pack_selections=pack_selections,
+                manifest_preview=manifest_preview,
+            )
+        )
+        return InstallPlan(
+            target=resolved_target,
+            operation="refresh-generated",
+            mode=effective_mode,
+            force=False,
+            writes=writes,
+            gitignore=None,
+            pack_detections=pack_detections,
+            pack_selections=pack_selections,
+            manifest_preview=manifest_preview,
+        )
+
+    gitignore = compute_gitignore_update(resolved_target)
     pack_selections = resolve_stack_pack_selection(
         pack_detections,
         use_recommended_packs=use_recommended_packs,
@@ -411,6 +472,8 @@ def build_install_plan(
     manifest_preview = render_stack_pack_manifest(
         pack_detections,
         selected_packs=selected_pack_names(pack_selections),
+        safe_to_regenerate=ownership.safe_to_regenerate,
+        adapt_manually=ownership.adapt_manually,
     )
     writes = tuple(
         plan_template_writes(resolved_target, force=force, pack_selections=pack_selections)
@@ -424,6 +487,7 @@ def build_install_plan(
     )
     return InstallPlan(
         target=resolved_target,
+        operation="install",
         mode=effective_mode,
         force=force,
         writes=writes,
@@ -435,8 +499,13 @@ def build_install_plan(
 
 
 def format_plan_header(plan: InstallPlan, write: bool) -> str:
+    noun = (
+        "Codex Enhancer generated-output refresh"
+        if plan.operation == "refresh-generated"
+        else "Codex Enhancer install"
+    )
     return (
-        f"{'Applying' if write else 'Planned'} Codex Enhancer install into {plan.target} "
+        f"{'Applying' if write else 'Planned'} {noun} into {plan.target} "
         f"(mode={plan.mode}, force={plan.force})"
     )
 
@@ -444,6 +513,10 @@ def format_plan_header(plan: InstallPlan, write: bool) -> str:
 def format_plan_lines(plan: InstallPlan) -> list[str]:
     lines: list[str] = []
     lines.extend(format_pack_lines(plan))
+    ownership_lines = format_output_ownership_lines(plan)
+    if ownership_lines:
+        lines.extend(ownership_lines)
+        lines.append("")
     conflict_lines = format_conflict_severity_lines(plan)
     if conflict_lines:
         lines.extend(conflict_lines)
@@ -459,14 +532,15 @@ def format_plan_lines(plan: InstallPlan) -> list[str]:
             f"- {planned_write.action}: {planned_write.write_path.as_posix()} "
             f"(from {planned_write.source_label})"
         )
-    if plan.gitignore.missing_lines:
-        lines.append(
-            f"- merge: {plan.gitignore.destination.as_posix()} add {', '.join(plan.gitignore.missing_lines)}"
-        )
-    else:
-        lines.append(
-            f"- merge: {plan.gitignore.destination.as_posix()} already contains required entries"
-        )
+    if plan.gitignore is not None:
+        if plan.gitignore.missing_lines:
+            lines.append(
+                f"- merge: {plan.gitignore.destination.as_posix()} add {', '.join(plan.gitignore.missing_lines)}"
+            )
+        else:
+            lines.append(
+                f"- merge: {plan.gitignore.destination.as_posix()} already contains required entries"
+            )
     return lines
 
 
@@ -485,12 +559,23 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
         lines.append(f"- Manifest preview selected_packs = [{rendered_names}]")
     else:
         lines.append("- Manifest preview selected_packs = []")
-    lines.append("- Stack guidance and the pack manifest will be generated during install.")
+    if plan.operation == "refresh-generated":
+        lines.append("- Stack guidance and the pack manifest will be regenerated from the existing target manifest.")
+    else:
+        lines.append("- Stack guidance and the pack manifest will be generated during install.")
     lines.append("")
     return lines
 
 
 def summarize_conflicts(plan: InstallPlan) -> ConflictSummary:
+    if plan.operation == "refresh-generated":
+        return ConflictSummary(
+            critical_proposals=(),
+            standard_proposals=(),
+            critical_overwrites=(),
+            standard_overwrites=(),
+        )
+
     critical_proposals: list[Path] = []
     standard_proposals: list[Path] = []
     critical_overwrites: list[Path] = []
@@ -517,6 +602,48 @@ def summarize_conflicts(plan: InstallPlan) -> ConflictSummary:
         critical_overwrites=tuple(critical_overwrites),
         standard_overwrites=tuple(standard_overwrites),
     )
+
+
+def _dedupe_paths(paths: tuple[Path, ...]) -> tuple[Path, ...]:
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for path in paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        ordered.append(path)
+    return tuple(ordered)
+
+
+def summarize_output_ownership(destinations: tuple[Path, ...]) -> OutputOwnershipSummary:
+    ordered_destinations = _dedupe_paths(destinations)
+    safe_to_regenerate = tuple(
+        path for path in ordered_destinations if path in GENERATED_OUTPUT_DESTINATIONS
+    )
+    adapt_manually = tuple(
+        path for path in ordered_destinations if path not in GENERATED_OUTPUT_DESTINATIONS
+    )
+    return OutputOwnershipSummary(
+        safe_to_regenerate=safe_to_regenerate,
+        adapt_manually=adapt_manually,
+    )
+
+
+def format_output_ownership_lines(plan: InstallPlan) -> list[str]:
+    summary = summarize_output_ownership(tuple(item.destination for item in plan.writes))
+    if not summary.safe_to_regenerate and not summary.adapt_manually:
+        return []
+
+    lines = ["Output ownership:"]
+    if summary.safe_to_regenerate:
+        lines.append("- Safe to regenerate later: " + _format_conflict_paths(summary.safe_to_regenerate))
+    if summary.adapt_manually:
+        lines.append("- Adapt manually after install: " + _format_conflict_paths(summary.adapt_manually))
+    if plan.operation == "refresh-generated":
+        lines.append("- Manual scaffold files stay untouched during refresh.")
+    else:
+        lines.append("- Review merged `.gitignore` changes manually if the target repo uses different ignore conventions.")
+    return lines
 
 
 def _format_conflict_paths(paths: tuple[Path, ...]) -> str:
@@ -583,6 +710,8 @@ def describe_pack_selection(selection: PackSelection) -> str:
         return f"selected explicitly via --pack ({reason})"
     if selection.selection_source == "explicit-exclude":
         return f"skipped explicitly via --no-pack ({reason})"
+    if selection.selection_source == "manifest":
+        return f"selected from existing target manifest ({reason})"
     if selection.selection_source == "default":
         return f"selected by pack default ({reason})"
     if selection.detected and selection.recommended:
@@ -633,12 +762,19 @@ def format_plan_report(plan: InstallPlan, write: bool) -> str:
 def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
     proposals = [item for item in plan.writes if item.action == "proposal"]
     if not write:
+        action = "refresh preview" if plan.operation == "refresh-generated" else "preview"
         return [
             "Next step:",
-            "- Re-run this command with --write when the preview looks correct.",
+            f"- Re-run this command with --write when the {action} looks correct.",
         ]
 
     lines = ["Next steps:"]
+    if plan.operation == "refresh-generated":
+        lines.extend(render_refresh_follow_up_lines(plan.pack_selections))
+        lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
+        lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
+        return lines
+
     if proposals:
         lines.append(
             "- Review the proposal files under `.codex/enhancer-proposals/` and merge them into the live repo files."
@@ -657,7 +793,8 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
 
 
 def format_after_install_preview(plan: InstallPlan) -> list[str]:
-    return ["After install:", *format_next_steps(plan, write=True)]
+    heading = "After refresh:" if plan.operation == "refresh-generated" else "After install:"
+    return [heading, *format_next_steps(plan, write=True)]
 
 
 def overwrite_paths(plan: InstallPlan) -> tuple[Path, ...]:
@@ -669,11 +806,15 @@ def proposal_paths(plan: InstallPlan) -> tuple[Path, ...]:
 
 
 def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | None = None) -> None:
-    total_steps = len(plan.writes) + 1
+    total_steps = len(plan.writes) + (1 if plan.gitignore is not None else 0)
     current_step = 0
 
     if progress_callback:
-        progress_callback(current_step, total_steps, "Preparing install...")
+        progress_callback(
+            current_step,
+            total_steps,
+            "Preparing refresh..." if plan.operation == "refresh-generated" else "Preparing install...",
+        )
 
     plan.target.mkdir(parents=True, exist_ok=True)
     for planned_write in plan.writes:
@@ -686,15 +827,16 @@ def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | 
                 f"{planned_write.action.title()} {planned_write.write_path.as_posix()}",
             )
 
-    apply_gitignore_update(plan.target / plan.gitignore.destination, plan.gitignore.missing_lines)
-    current_step += 1
-    if progress_callback:
-        message = (
-            f"Merged {plan.gitignore.destination.as_posix()}"
-            if plan.gitignore.missing_lines
-            else f"Checked {plan.gitignore.destination.as_posix()}"
-        )
-        progress_callback(current_step, total_steps, message)
+    if plan.gitignore is not None:
+        apply_gitignore_update(plan.target / plan.gitignore.destination, plan.gitignore.missing_lines)
+        current_step += 1
+        if progress_callback:
+            message = (
+                f"Merged {plan.gitignore.destination.as_posix()}"
+                if plan.gitignore.missing_lines
+                else f"Checked {plan.gitignore.destination.as_posix()}"
+            )
+            progress_callback(current_step, total_steps, message)
 
 
 def main(argv: list[str]) -> int:
@@ -717,7 +859,12 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--write",
         action="store_true",
-        help="apply the install instead of only printing a dry-run plan",
+        help="apply the install or refresh instead of only printing a dry-run plan",
+    )
+    parser.add_argument(
+        "--refresh-generated",
+        action="store_true",
+        help="re-render only enhancer-managed generated outputs in an existing target repo",
     )
     parser.add_argument(
         "--force",
@@ -762,11 +909,31 @@ def main(argv: list[str]) -> int:
         print(format_pack_catalog(target))
         return 0
 
+    if args.refresh_generated and args.force:
+        print("--refresh-generated only updates safe managed outputs and does not accept --force.")
+        return 1
+
+    if args.refresh_generated and args.mode == "new":
+        print("--refresh-generated only works with --mode existing or --mode auto.")
+        return 1
+
+    if args.refresh_generated and (
+        args.use_recommended_packs
+        or args.pack
+        or args.no_pack
+    ):
+        print(
+            "--refresh-generated uses the target repo's existing manifest selection; "
+            "do not combine it with pack-selection flags."
+        )
+        return 1
+
     try:
         plan = build_install_plan(
             target,
             mode=args.mode,
             force=args.force,
+            refresh_generated=args.refresh_generated,
             use_recommended_packs=args.use_recommended_packs,
             include_packs=tuple(args.pack),
             exclude_packs=tuple(args.no_pack),

@@ -8,8 +8,8 @@ This repository contains the enhancer itself, not an application stack. The work
 2. [AGENTS.md](../../AGENTS.md): short entrypoint for repo purpose, workflow, commands, and definition of done.
 3. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, and [v2 design](./v2-design.md).
 4. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
-5. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, and guided install flow.
-6. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos.
+5. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, and guided install or managed-output refresh flow.
+6. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus safe generated-output refreshes.
 7. [scripts/stack_packs.py](../../scripts/stack_packs.py) and [scaffold/stack-packs/](../../scaffold/stack-packs/): file-based registry and loader for optional v2 stack packs.
 8. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
 9. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.

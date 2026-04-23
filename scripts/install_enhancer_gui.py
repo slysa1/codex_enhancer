@@ -32,6 +32,7 @@ from scripts.install_enhancer import (
     build_install_plan,
     format_after_install_preview,
     format_conflict_severity_lines,
+    format_output_ownership_lines,
     overwrite_paths,
 )
 from scripts.stack_packs import PackSelection, selected_pack_names
@@ -39,10 +40,23 @@ from scripts.stack_packs import PackSelection, selected_pack_names
 
 WINDOW_TITLE = "Codex Enhancer Installer"
 PRODUCT_README = SOURCE_ROOT / "README.md"
+OPERATION_CHOICES = (
+    ("Install or update scaffold", "install"),
+    ("Refresh managed outputs", "refresh-generated"),
+)
 MODE_CHOICES = (
     ("Auto (recommended)", "auto"),
     ("New repo", "new"),
     ("Existing repo", "existing"),
+)
+
+INSTALL_PACK_INTRO = (
+    "Review the detected stack packs after scanning the target repo. Recommended packs "
+    "start selected, and you can toggle them before installation."
+)
+REFRESH_PACK_INTRO = (
+    "Refresh reads selected packs from the target repo's existing enhancer manifest. "
+    "Use install mode if you need to change pack selection or update scaffold files."
 )
 
 
@@ -53,6 +67,26 @@ def open_product_readme() -> None:
         os.startfile(str(PRODUCT_README))  # type: ignore[attr-defined]
         return
     webbrowser.open(PRODUCT_README.resolve().as_uri())
+
+
+def operation_label(plan: InstallPlan) -> str:
+    if plan.operation == "refresh-generated":
+        return "Refresh managed outputs"
+    return "Install or update scaffold"
+
+
+def action_verb(plan: InstallPlan) -> str:
+    if plan.operation == "refresh-generated":
+        return "refresh"
+    return "install"
+
+
+def requires_confirmation(plan: InstallPlan) -> bool:
+    return plan.operation != "refresh-generated" and bool(overwrite_paths(plan))
+
+
+def progress_total(plan: InstallPlan) -> int:
+    return len(plan.writes) + (1 if plan.gitignore is not None else 0)
 
 
 def build_plan_preview(plan: InstallPlan) -> str:
@@ -68,16 +102,23 @@ def build_plan_preview(plan: InstallPlan) -> str:
 
     lines = [
         f"Target folder: {plan.target}",
-        f"Install mode: {plan.mode}",
-        (
+        f"Operation: {operation_label(plan)}",
+        f"Repo mode: {plan.mode}",
+    ]
+    if plan.operation == "refresh-generated":
+        lines.append("Refresh behavior: overwrite only enhancer-managed generated outputs.")
+    else:
+        lines.append(
             "Conflict handling: overwrite colliding enhancer files"
             if plan.force
             else "Conflict handling: write proposals for colliding enhancer files"
-        ),
-    ]
+        )
     conflict_lines = format_conflict_severity_lines(plan)
     if conflict_lines:
         lines.extend(("", *conflict_lines))
+    ownership_lines = format_output_ownership_lines(plan)
+    if ownership_lines:
+        lines.extend(("", *ownership_lines))
 
     lines.extend(
         [
@@ -93,15 +134,15 @@ def build_plan_preview(plan: InstallPlan) -> str:
             "",
             "Proposal files:",
             *format_section_entries(proposal_items),
-            "",
-            ".gitignore update:",
         ]
     )
 
-    if plan.gitignore.missing_lines:
-        lines.extend(f"- add {line}" for line in plan.gitignore.missing_lines)
-    else:
-        lines.append("- already contains the required enhancer entries")
+    if plan.gitignore is not None:
+        lines.extend(["", ".gitignore update:"])
+        if plan.gitignore.missing_lines:
+            lines.extend(f"- add {line}" for line in plan.gitignore.missing_lines)
+        else:
+            lines.append("- already contains the required enhancer entries")
 
     lines.extend(("", *format_after_install_preview(plan)))
     return "\n".join(lines)
@@ -136,11 +177,19 @@ def format_pack_entries(selections: tuple[PackSelection, ...]) -> list[str]:
 def build_completion_message(plan: InstallPlan) -> str:
     selected_names = selected_pack_names(plan.pack_selections)
     lines = [
-        "Codex Enhancer was installed successfully.",
+        (
+            "Codex Enhancer managed outputs were refreshed successfully."
+            if plan.operation == "refresh-generated"
+            else "Codex Enhancer was installed successfully."
+        ),
         "",
         f"Target folder: {plan.target}",
         "",
-        "Installed stack packs:",
+        (
+            "Stack packs from the target manifest:"
+            if plan.operation == "refresh-generated"
+            else "Installed stack packs:"
+        ),
     ]
     if selected_names:
         lines.extend(f"- {name}" for name in selected_names)
@@ -164,11 +213,11 @@ class InstallerApp:
         self.root.minsize(760, 620)
 
         self.target_var = tk.StringVar()
-        self.mode_var = tk.StringVar(value="auto")
+        self.operation_var = tk.StringVar(value="install")
         self.force_var = tk.BooleanVar(value=False)
         self.confirm_overwrite_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(
-            value="Choose a repository folder, review the plan, then run the installer."
+            value="Choose a repository folder, pick install or refresh, review the plan, then run it."
         )
 
         self.current_plan: InstallPlan | None = None
@@ -177,6 +226,7 @@ class InstallerApp:
 
         self._build_layout()
         self._wire_events()
+        self._sync_operation_controls()
         self._refresh_install_button()
 
     def _build_layout(self) -> None:
@@ -194,8 +244,8 @@ class InstallerApp:
         ttk.Label(
             frame,
             text=(
-                "Preview the enhancer install, confirm any overwrites, and install into a "
-                "new or existing repository."
+                "Preview a full scaffold install or refresh only the managed enhancer outputs "
+                "for a repo that is already using Codex Enhancer."
             ),
             wraplength=700,
         ).grid(row=1, column=0, sticky="w", pady=(6, 14))
@@ -210,21 +260,31 @@ class InstallerApp:
         self.browse_button = ttk.Button(target_frame, text="Browse...", command=self._browse_for_target)
         self.browse_button.grid(row=0, column=2, sticky="ew", padx=(8, 0))
 
-        ttk.Label(target_frame, text="Mode").grid(row=1, column=0, sticky="w", pady=(10, 0), padx=(0, 8))
+        ttk.Label(target_frame, text="Operation").grid(row=1, column=0, sticky="w", pady=(10, 0), padx=(0, 8))
+        self.operation_combo = ttk.Combobox(
+            target_frame,
+            state="readonly",
+            textvariable=self.operation_var,
+            values=[label for label, _value in OPERATION_CHOICES],
+        )
+        self.operation_combo.current(0)
+        self.operation_combo.grid(row=1, column=1, sticky="w", pady=(10, 0))
+
+        ttk.Label(target_frame, text="Mode").grid(row=2, column=0, sticky="w", pady=(10, 0), padx=(0, 8))
         self.mode_combo = ttk.Combobox(
             target_frame,
             state="readonly",
             values=[label for label, _value in MODE_CHOICES],
         )
         self.mode_combo.current(0)
-        self.mode_combo.grid(row=1, column=1, sticky="w", pady=(10, 0))
+        self.mode_combo.grid(row=2, column=1, sticky="w", pady=(10, 0))
 
         self.force_check = ttk.Checkbutton(
             target_frame,
             text="Overwrite colliding enhancer files instead of writing proposals",
             variable=self.force_var,
         )
-        self.force_check.grid(row=2, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        self.force_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
         pack_frame = ttk.LabelFrame(frame, text="Stack packs", padding=12)
         pack_frame.grid(row=3, column=0, sticky="ew", pady=(14, 0))
@@ -232,10 +292,7 @@ class InstallerApp:
         self.pack_frame = pack_frame
         self.pack_intro = ttk.Label(
             pack_frame,
-            text=(
-                "Review the detected stack packs after scanning the target repo. Recommended packs "
-                "start selected, and you can toggle them before installation."
-            ),
+            text=INSTALL_PACK_INTRO,
             wraplength=700,
         )
         self.pack_intro.grid(row=0, column=0, sticky="w")
@@ -262,7 +319,7 @@ class InstallerApp:
         )
         self.confirm_check.grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
-        preview_frame = ttk.LabelFrame(frame, text="Install preview", padding=12)
+        preview_frame = ttk.LabelFrame(frame, text="Plan preview", padding=12)
         preview_frame.grid(row=5, column=0, sticky="nsew")
         preview_frame.columnconfigure(0, weight=1)
         preview_frame.rowconfigure(0, weight=1)
@@ -271,7 +328,7 @@ class InstallerApp:
         self.preview.grid(row=0, column=0, sticky="nsew")
         self.preview.insert(
             "1.0",
-            "No install plan yet.\n\nPick a folder and click 'Review install plan' to see exactly what will happen.",
+            "No plan yet.\n\nPick a folder, choose install or refresh, and click the review button to see exactly what will happen.",
         )
         self.preview.configure(state="disabled")
 
@@ -292,9 +349,18 @@ class InstallerApp:
 
     def _wire_events(self) -> None:
         self.target_var.trace_add("write", self._on_inputs_changed)
+        self.operation_var.trace_add("write", self._on_inputs_changed)
         self.force_var.trace_add("write", self._on_inputs_changed)
         self.confirm_overwrite_var.trace_add("write", self._on_confirm_changed)
+        self.operation_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
         self.mode_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
+
+    def _operation_value(self) -> str:
+        label = self.operation_combo.get()
+        for candidate_label, candidate_value in OPERATION_CHOICES:
+            if candidate_label == label:
+                return candidate_value
+        return "install"
 
     def _mode_value(self) -> str:
         label = self.mode_combo.get()
@@ -303,6 +369,27 @@ class InstallerApp:
                 return candidate_value
         return "auto"
 
+    def _is_refresh_operation(self) -> bool:
+        return self._operation_value() == "refresh-generated"
+
+    def _sync_operation_controls(self) -> None:
+        is_refresh = self._is_refresh_operation()
+        if is_refresh:
+            self.force_var.set(False)
+            self.force_check.configure(state="disabled")
+            self.mode_combo.set("Existing repo")
+            self.mode_combo.configure(state="disabled")
+            self.pack_intro.configure(text=REFRESH_PACK_INTRO)
+            self.review_button.configure(text="Review refresh plan")
+            self.install_button.configure(text="Refresh generated outputs")
+            return
+
+        self.mode_combo.configure(state="readonly")
+        self.force_check.configure(state="normal")
+        self.pack_intro.configure(text=INSTALL_PACK_INTRO)
+        self.review_button.configure(text="Review install plan")
+        self.install_button.configure(text="Install enhancer")
+
     def _set_preview_text(self, text: str) -> None:
         self.preview.configure(state="normal")
         self.preview.delete("1.0", tk.END)
@@ -310,11 +397,18 @@ class InstallerApp:
         self.preview.configure(state="disabled")
 
     def _on_inputs_changed(self, *_args: object) -> None:
+        self._sync_operation_controls()
         self.current_plan = None
         self.confirm_overwrite_var.set(False)
         self.confirm_check.configure(state="disabled")
-        self._show_pack_placeholder("Inputs changed. Review the install plan again to detect stack packs.")
-        self.status_var.set("Inputs changed. Review the install plan again before installing.")
+        if self._is_refresh_operation():
+            self._show_pack_placeholder(
+                "Inputs changed. Review the refresh plan again to read pack selection from the target manifest."
+            )
+            self.status_var.set("Inputs changed. Review the refresh plan again before running it.")
+        else:
+            self._show_pack_placeholder("Inputs changed. Review the install plan again to detect stack packs.")
+            self.status_var.set("Inputs changed. Review the install plan again before installing.")
         self.progress.configure(value=0, maximum=1)
         self._refresh_install_button()
 
@@ -327,8 +421,7 @@ class InstallerApp:
             self.install_button.configure(state="disabled")
             return
 
-        requires_confirmation = bool(overwrite_paths(plan))
-        allow_install = (not requires_confirmation) or self.confirm_overwrite_var.get()
+        allow_install = (not requires_confirmation(plan)) or self.confirm_overwrite_var.get()
         self.install_button.configure(state="normal" if allow_install else "disabled")
 
     def _browse_for_target(self) -> None:
@@ -347,24 +440,26 @@ class InstallerApp:
             return
 
         try:
-            plan = self._build_plan(use_recommended_packs=True)
+            plan = self._build_plan(use_recommended_packs=not self._is_refresh_operation())
         except ValueError as error:
             self.current_plan = None
-            self._set_preview_text("No valid install plan is available yet.")
+            self._set_preview_text("No valid plan is available yet.")
             self.status_var.set(str(error))
             self.progress.configure(value=0, maximum=1)
             self._refresh_install_button()
-            self._show_pack_placeholder("No valid pack scan is available yet.")
+            if self._is_refresh_operation():
+                self._show_pack_placeholder("No valid refresh pack view is available yet.")
+            else:
+                self._show_pack_placeholder("No valid pack scan is available yet.")
             messagebox.showerror(WINDOW_TITLE, str(error))
             return
 
         self.current_plan = plan
-        self._populate_pack_controls(plan)
+        self._populate_pack_controls(plan, interactive=not self._is_refresh_operation())
         self._set_preview_text(build_plan_preview(plan))
-        self.progress.configure(value=0, maximum=len(plan.writes) + 1)
+        self.progress.configure(value=0, maximum=progress_total(plan))
 
-        overwrite_list = overwrite_paths(plan)
-        if overwrite_list:
+        if requires_confirmation(plan):
             self.confirm_check.configure(state="normal")
             self.confirm_overwrite_var.set(False)
             self.status_var.set(
@@ -373,7 +468,9 @@ class InstallerApp:
         else:
             self.confirm_check.configure(state="disabled")
             self.confirm_overwrite_var.set(True)
-            self.status_var.set("Install plan looks ready.")
+            self.status_var.set(
+                "Refresh plan looks ready." if self._is_refresh_operation() else "Install plan looks ready."
+            )
 
         self._refresh_install_button()
 
@@ -384,12 +481,14 @@ class InstallerApp:
         include_packs: tuple[str, ...] = (),
     ) -> InstallPlan:
         raw_target = self.target_var.get().strip()
+        is_refresh = self._is_refresh_operation()
         return build_install_plan(
             Path(raw_target),
             mode=self._mode_value(),
-            force=self.force_var.get(),
-            use_recommended_packs=use_recommended_packs,
-            include_packs=include_packs,
+            force=self.force_var.get() if not is_refresh else False,
+            refresh_generated=is_refresh,
+            use_recommended_packs=use_recommended_packs if not is_refresh else False,
+            include_packs=include_packs if not is_refresh else (),
         )
 
     def _clear_pack_controls(self) -> None:
@@ -404,24 +503,43 @@ class InstallerApp:
         label.grid(row=0, column=0, sticky="w")
         self.pack_summary_labels = [label]
 
-    def _populate_pack_controls(self, plan: InstallPlan) -> None:
+    def _populate_pack_controls(self, plan: InstallPlan, *, interactive: bool) -> None:
         self._clear_pack_controls()
         for row_index, selection in enumerate(plan.pack_selections):
             variable = tk.BooleanVar(value=selection.selected)
-            variable.trace_add("write", self._on_pack_toggle)
+            if interactive:
+                variable.trace_add("write", self._on_pack_toggle)
             self.pack_vars[selection.pack.name] = variable
 
-            checkbox = ttk.Checkbutton(
-                self.pack_container,
-                text=f"{selection.pack.label} ({selection.pack.name})",
-                variable=variable,
-            )
-            checkbox.grid(row=row_index * 2, column=0, sticky="w")
+            if interactive:
+                checkbox = ttk.Checkbutton(
+                    self.pack_container,
+                    text=f"{selection.pack.label} ({selection.pack.name})",
+                    variable=variable,
+                    state="normal",
+                )
+                checkbox.grid(row=row_index * 2, column=0, sticky="w")
+            else:
+                label = ttk.Label(
+                    self.pack_container,
+                    text=(
+                        f"{selection.pack.label} ({selection.pack.name})"
+                        f" {'[selected]' if selection.selected else '[not selected]'}"
+                    ),
+                    wraplength=680,
+                )
+                label.grid(row=row_index * 2, column=0, sticky="w")
 
             reason = "; ".join(selection.reasons)
+            if interactive:
+                summary_text = f"{'Recommended' if selection.recommended else 'Optional'}: {reason}"
+            elif selection.selected:
+                summary_text = f"Selected from target manifest: {reason}"
+            else:
+                summary_text = f"Not selected in target manifest: {reason}"
             summary = ttk.Label(
                 self.pack_container,
-                text=f"{'Recommended' if selection.recommended else 'Optional'}: {reason}",
+                text=summary_text,
                 wraplength=680,
             )
             summary.grid(row=row_index * 2 + 1, column=0, sticky="w", padx=(24, 0), pady=(0, 8))
@@ -438,8 +556,7 @@ class InstallerApp:
 
         self.current_plan = plan
         self._set_preview_text(build_plan_preview(plan))
-        overwrite_list = overwrite_paths(plan)
-        if overwrite_list and not self.confirm_overwrite_var.get():
+        if requires_confirmation(plan) and not self.confirm_overwrite_var.get():
             self.status_var.set(
                 "Pack selection updated. Review the overwrite list carefully, then install."
             )
@@ -459,8 +576,14 @@ class InstallerApp:
         self.review_button.configure(state=state)
         self.browse_button.configure(state=state)
         self.target_entry.configure(state=state)
-        self.mode_combo.configure(state="disabled" if busy else "readonly")
-        self.force_check.configure(state=state)
+        if busy:
+            self.mode_combo.configure(state="disabled")
+        else:
+            self.mode_combo.configure(state="disabled" if self._is_refresh_operation() else "readonly")
+        if busy:
+            self.force_check.configure(state="disabled")
+        else:
+            self.force_check.configure(state="disabled" if self._is_refresh_operation() else "normal")
         for child in self.pack_container.winfo_children():
             try:
                 child.configure(state=state)
@@ -470,17 +593,17 @@ class InstallerApp:
             self.install_button.configure(state="disabled")
             self.confirm_check.configure(state="disabled")
         else:
-            if self.current_plan and overwrite_paths(self.current_plan):
+            if self.current_plan and requires_confirmation(self.current_plan):
                 self.confirm_check.configure(state="normal")
             self._refresh_install_button()
 
     def _install(self) -> None:
         plan = self.current_plan
         if plan is None:
-            self.status_var.set("Review the install plan before running the installer.")
+            self.status_var.set("Review the current plan before running it.")
             return
 
-        if overwrite_paths(plan) and not self.confirm_overwrite_var.get():
+        if requires_confirmation(plan) and not self.confirm_overwrite_var.get():
             messagebox.showwarning(
                 WINDOW_TITLE,
                 build_overwrite_confirmation_message(plan),
@@ -488,8 +611,11 @@ class InstallerApp:
             return
 
         self._set_busy(True)
-        self.progress.configure(value=0, maximum=len(plan.writes) + 1)
-        self.status_var.set("Starting install...")
+        total_steps = progress_total(plan)
+        self.progress.configure(value=0, maximum=total_steps)
+        self.status_var.set(
+            "Starting refresh..." if plan.operation == "refresh-generated" else "Starting install..."
+        )
         self.root.update_idletasks()
 
         def on_progress(current: int, total: int, message: str) -> None:
@@ -500,14 +626,17 @@ class InstallerApp:
         try:
             apply_install_plan(plan, progress_callback=on_progress)
         except Exception as error:  # pragma: no cover - GUI recovery path
-            self.status_var.set(f"Install failed: {error}")
-            messagebox.showerror(WINDOW_TITLE, f"Install failed:\n\n{error}")
+            action = action_verb(plan).capitalize()
+            self.status_var.set(f"{action} failed: {error}")
+            messagebox.showerror(WINDOW_TITLE, f"{action} failed:\n\n{error}")
             self._set_busy(False)
             return
 
         self._set_preview_text(build_plan_preview(plan))
-        self.progress.configure(value=len(plan.writes) + 1, maximum=len(plan.writes) + 1)
-        self.status_var.set("Installation complete.")
+        self.progress.configure(value=total_steps, maximum=total_steps)
+        self.status_var.set(
+            "Refresh complete." if plan.operation == "refresh-generated" else "Installation complete."
+        )
         self._set_busy(False)
 
         messagebox.showinfo(

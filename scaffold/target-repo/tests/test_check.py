@@ -68,6 +68,10 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         [generated_files]
         stack_guidance = "docs/ai/stack-guidance.md"
+
+        [managed_outputs]
+        safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+        adapt_manually = ["AGENTS.md", "docs/ai/architecture.md", "docs/ai/code-review.md"]
         """,
         ".codex/skills/plan-change/SKILL.md": """
         ---
@@ -230,6 +234,10 @@ class ValidateTests(unittest.TestCase):
 
                 [generated_files]
                 stack_guidance = "docs/ai/stack-guidance.md"
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+                adapt_manually = ["AGENTS.md", "docs/ai/architecture.md", "docs/ai/code-review.md"]
                 """,
             )
 
@@ -256,6 +264,10 @@ class ValidateTests(unittest.TestCase):
 
                 [generated_files]
                 stack_guidance = "docs/ai/stack-guidance.md"
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+                adapt_manually = ["AGENTS.md", "docs/ai/architecture.md", "docs/ai/code-review.md"]
                 """,
             )
             write_file(
@@ -278,6 +290,35 @@ class ValidateTests(unittest.TestCase):
                 any(
                     "AGENTS.md is missing a root summary for selected pack 'python-service'"
                     in error
+                    for error in errors
+                )
+            )
+
+    def test_manifest_must_record_safe_to_regenerate_outputs(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root)
+            write_file(
+                root,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "2"
+                selected_packs = []
+
+                [generated_files]
+                stack_guidance = "docs/ai/stack-guidance.md"
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md"]
+                adapt_manually = ["AGENTS.md"]
+                """,
+            )
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "managed_outputs.safe_to_regenerate" in error
                     for error in errors
                 )
             )

@@ -9,11 +9,13 @@ from pathlib import Path
 
 from scripts.stack_packs import (
     detect_stack_packs,
+    load_selected_packs_from_manifest,
     load_stack_packs,
     render_agents_summary,
     render_install_follow_up_lines,
     render_pack_fragment,
     render_stack_pack_manifest,
+    resolve_manifest_pack_selection,
     resolve_stack_pack_selection,
 )
 
@@ -103,12 +105,22 @@ class StackPackTests(unittest.TestCase):
             manifest = render_stack_pack_manifest(
                 detections,
                 selected_packs=("javascript-typescript-app",),
+                safe_to_regenerate=(
+                    Path("docs/ai/stack-guidance.md"),
+                    Path(".codex/enhancer/manifest.toml"),
+                ),
+                adapt_manually=(Path("AGENTS.md"),),
             )
 
             self.assertIn('selected_packs = ["javascript-typescript-app"]', manifest)
             self.assertIn('name = "javascript-typescript-app"', manifest)
             self.assertIn("selected = true", manifest)
             self.assertIn('stack_guidance = "docs/ai/stack-guidance.md"', manifest)
+            self.assertIn(
+                'safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]',
+                manifest,
+            )
+            self.assertIn('adapt_manually = ["AGENTS.md"]', manifest)
 
     def test_render_agents_summary_compacts_selected_pack_guidance(self) -> None:
         with repo_fixture("pack_agents_summary") as root:
@@ -122,6 +134,44 @@ class StackPackTests(unittest.TestCase):
             self.assertIn("Selected packs: `javascript-typescript-app`", summary)
             self.assertIn("`javascript-typescript-app` (JavaScript / TypeScript app):", summary)
             self.assertIn("Respect the repo's actual package manager and lockfile", summary)
+
+    def test_load_selected_packs_from_manifest_reads_existing_selection(self) -> None:
+        with repo_fixture("pack_manifest_read") as root:
+            write_file(
+                root,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "2"
+                selected_packs = ["python-service"]
+                """,
+            )
+
+            selected = load_selected_packs_from_manifest(root)
+
+            self.assertEqual(selected, ("python-service",))
+
+    def test_resolve_manifest_pack_selection_marks_selected_packs(self) -> None:
+        with repo_fixture("pack_manifest_selection") as root:
+            write_file(
+                root,
+                "pyproject.toml",
+                """
+                [project]
+                name = "demo"
+                version = "0.1.0"
+                """,
+            )
+
+            detections = detect_stack_packs(root)
+            selections = resolve_manifest_pack_selection(
+                detections,
+                selected_packs=("python-service",),
+            )
+
+            selected = next(item for item in selections if item.pack.name == "python-service")
+            self.assertTrue(selected.selected)
+            self.assertEqual(selected.selection_source, "manifest")
 
     def test_render_install_follow_up_lines_uses_selected_pack_summaries(self) -> None:
         with repo_fixture("pack_follow_up") as root:

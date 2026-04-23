@@ -11,6 +11,7 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 6. If a script changed, verify it is deterministic and dependency-light.
 7. If repo commands changed, confirm [.github/workflows/validate.yml](../../.github/workflows/validate.yml) changed with them.
 8. If stack packs are selected, confirm [AGENTS.md](../../AGENTS.md), [docs/ai/stack-guidance.md](./stack-guidance.md), and [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml) still match.
+9. Confirm installer-managed outputs are still treated as such: `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml` can be regenerated together, while the rest of the scaffold should usually be reviewed as manual repo-owned edits.
 
 ## Review Priorities
 1. Wrong or stale instructions
@@ -32,3 +33,4 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 - Keep summaries high signal; avoid changelog-style file inventories unless reviewers need them.
 - If this repo still contains inherited enhancer guidance, call out what still needs adaptation.
 - If stack-pack selection changed, call out both the root `AGENTS.md` summary and the deeper `docs/ai/stack-guidance.md` update.
+- If installer-managed ownership changed, call out which outputs remain safe to regenerate and which files still expect manual adaptation.

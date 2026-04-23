@@ -78,6 +78,11 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertFalse(target.exists())
             self.assertIn("Planned Codex Enhancer install", output)
+            self.assertIn("Output ownership:", output)
+            self.assertIn(
+                "Safe to regenerate later: `docs/ai/stack-guidance.md`, `.codex/enhancer/manifest.toml`",
+                output,
+            )
 
     def test_dry_run_reports_detected_stack_packs(self) -> None:
         with repo_fixture("install_pack_preview") as install_target:
@@ -120,6 +125,41 @@ class InstallEnhancerTests(unittest.TestCase):
             )
             self.assertIn("Next step:", output)
             self.assertIn("Re-run this command with --write", output)
+
+    def test_refresh_generated_requires_existing_installed_target(self) -> None:
+        with repo_fixture("refresh_missing_manifest") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--refresh-generated"]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("does not contain .codex/enhancer/manifest.toml", output)
+
+    def test_refresh_generated_rejects_force_and_pack_flags(self) -> None:
+        with repo_fixture("refresh_invalid_flags") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--refresh-generated", "--force"]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("does not accept --force", output)
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--refresh-generated",
+                    "--pack",
+                    "python-service",
+                ]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("do not combine it with pack-selection flags", output)
 
     def test_explicit_pack_selects_undetected_pack(self) -> None:
         with repo_fixture("install_explicit_pack") as install_target:
@@ -367,8 +407,77 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Selected packs: `javascript-typescript-app`", agents)
             self.assertIn("`javascript-typescript-app` (JavaScript / TypeScript app):", agents)
             self.assertIn('selected_packs = ["javascript-typescript-app"]', manifest)
+            self.assertIn(
+                'safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]',
+                manifest,
+            )
+            self.assertIn('adapt_manually = ["AGENTS.md"', manifest)
             self.assertIn("Pack id: `javascript-typescript-app`", stack_guidance)
             self.assertIn("### Review Notes", stack_guidance)
+
+    def test_refresh_generated_dry_run_only_updates_safe_outputs(self) -> None:
+        with repo_fixture("refresh_dry_run") as install_target:
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--refresh-generated"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Planned Codex Enhancer generated-output refresh", output)
+            self.assertIn("After refresh:", output)
+            self.assertIn(
+                "Stack guidance and the pack manifest will be regenerated from the existing target manifest.",
+                output,
+            )
+            self.assertIn("- overwrite: docs/ai/stack-guidance.md", output)
+            self.assertIn("- overwrite: .codex/enhancer/manifest.toml", output)
+            self.assertIn("Manual scaffold files stay untouched during refresh.", output)
+            self.assertNotIn("- overwrite: AGENTS.md", output)
+            self.assertNotIn("- merge: .gitignore", output)
+
+    def test_refresh_generated_write_updates_generated_outputs_without_touching_agents(self) -> None:
+        with repo_fixture("refresh_write") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            agents_path = install_target / "AGENTS.md"
+            guidance_path = install_target / "docs/ai/stack-guidance.md"
+
+            agents_path.write_text(
+                agents_path.read_text(encoding="utf-8") + "\nCustom manual note.\n",
+                encoding="utf-8",
+            )
+            guidance_path.write_text("# stale guidance\n", encoding="utf-8")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--refresh-generated", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Applying Codex Enhancer generated-output refresh", output)
+            self.assertIn("selected from existing target manifest", output)
+            self.assertIn("Refreshed stack-pack guidance for: `javascript-typescript-app`.", output)
+            self.assertIn("Custom manual note.", agents_path.read_text(encoding="utf-8"))
+            refreshed_guidance = guidance_path.read_text(encoding="utf-8")
+            self.assertNotIn("# stale guidance", refreshed_guidance)
+            self.assertIn("Pack id: `javascript-typescript-app`", refreshed_guidance)
 
     def test_force_overwrite_updates_existing_agents(self) -> None:
         with repo_fixture("install_force") as install_target:
@@ -446,6 +555,7 @@ class InstallEnhancerTests(unittest.TestCase):
             plan = build_install_plan(install_target, mode="existing", force=True)
             preview = build_plan_preview(plan)
 
+            self.assertIn("Output ownership:", preview)
             self.assertIn("Files to overwrite:", preview)
             self.assertIn("- AGENTS.md", preview)
             self.assertIn("After install:", preview)
@@ -504,6 +614,38 @@ class InstallEnhancerTests(unittest.TestCase):
                 preview,
             )
 
+    def test_gui_refresh_preview_uses_refresh_wording(self) -> None:
+        with repo_fixture("install_preview_refresh") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            plan = build_install_plan(install_target, refresh_generated=True)
+            preview = build_plan_preview(plan)
+
+            self.assertIn("Operation: Refresh managed outputs", preview)
+            self.assertIn("Repo mode: existing", preview)
+            self.assertIn(
+                "Refresh behavior: overwrite only enhancer-managed generated outputs.",
+                preview,
+            )
+            self.assertIn("After refresh:", preview)
+            self.assertNotIn(".gitignore update:", preview)
+            self.assertNotIn("Conflict severity:", preview)
+            self.assertIn("Manifest selected packs: `javascript-typescript-app`", preview)
+
     def test_next_steps_include_pack_aware_follow_up_when_packs_are_selected(self) -> None:
         with repo_fixture("install_next_steps_pack") as install_target:
             write_file(install_target, "package.json", '{"name": "demo"}\n')
@@ -551,6 +693,31 @@ class InstallEnhancerTests(unittest.TestCase):
 
             self.assertIn("Installed stack packs:", message)
             self.assertIn("- none selected", message)
+
+    def test_gui_completion_message_reports_refresh(self) -> None:
+        with repo_fixture("install_completion_refresh") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            plan = build_install_plan(install_target, refresh_generated=True)
+            message = build_completion_message(plan)
+
+            self.assertIn("Codex Enhancer managed outputs were refreshed successfully.", message)
+            self.assertIn("Stack packs from the target manifest:", message)
+            self.assertIn("- javascript-typescript-app", message)
 
     def test_build_overwrite_confirmation_message_lists_critical_files(self) -> None:
         with repo_fixture("install_confirm_message") as install_target:

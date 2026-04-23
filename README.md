@@ -65,7 +65,9 @@ install_enhancer.bat
 The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py), which lets you:
 - type a target repo path manually
 - browse for a target folder
+- choose between a full scaffold install and a managed-output refresh
 - review detected stack packs and adjust the selected set before install
+- review stack packs from the existing target manifest during refresh
 - review which files will be created, proposed, or overwritten, with critical conflicts called out separately
 - confirm overwrite actions before install
 - watch installation progress
@@ -117,6 +119,18 @@ Preview an install with explicit pack overrides:
 python scripts/install_enhancer.py --target ../my-existing-repo --mode existing --use-recommended-packs --no-pack javascript-typescript-app --pack python-service
 ```
 
+Preview a generated-output refresh for an already installed repo:
+
+```bash
+python scripts/install_enhancer.py --target ../my-existing-repo --refresh-generated
+```
+
+Apply that refresh:
+
+```bash
+python scripts/install_enhancer.py --target ../my-existing-repo --refresh-generated --write
+```
+
 For an existing repo with conflicting files:
 - by default, conflicting files are written as proposals under `.codex/enhancer-proposals/`
 - previews distinguish critical enhancer-owned conflicts from standard ones
@@ -128,8 +142,10 @@ For stack-pack selection:
 - `--pack <name>` explicitly selects a pack even if it was not auto-detected
 - `--no-pack <name>` explicitly skips a pack, including a recommended one
 - conflicting `--pack` and `--no-pack` selections for the same name are rejected
+- `--refresh-generated` re-renders only enhancer-managed outputs using the target repo's existing `.codex/enhancer/manifest.toml`
+- `--refresh-generated` rejects `--force` and pack-selection flags so the refresh stays aligned with the installed manifest
 
-The CLI and GUI now share the same pack-selection core. The GUI starts with recommended detected packs selected and lets you adjust that set before install.
+The CLI and GUI now share the same pack-selection core. The GUI starts with recommended detected packs selected and lets you adjust that set before install. In refresh mode, the GUI reads the target repo's existing `.codex/enhancer/manifest.toml`, shows the current selected packs as read-only context, and refreshes only the managed outputs.
 
 What gets installed:
 
@@ -150,6 +166,20 @@ tests/test_check.py
 Selected stack packs are rendered twice on install:
 - a compact summary in the target root `AGENTS.md`
 - deeper detail in `docs/ai/stack-guidance.md`
+
+Installed output ownership is also explicit:
+- safe to regenerate later: `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
+- usually adapted manually after install: the rest of the scaffolded workflow files, including `AGENTS.md`, docs, scripts, skills, tests, and CI
+
+Use `--refresh-generated` when you want to rebuild only the safe outputs above. It will:
+- read the current selected packs from the target repo's existing `.codex/enhancer/manifest.toml`
+- overwrite `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
+- leave `AGENTS.md`, skills, docs, scripts, tests, CI, and `.gitignore` alone
+
+Use a full install preview instead when you need to:
+- add or remove selected packs
+- update `AGENTS.md` or other scaffold files
+- review conflicts against existing repo-owned guidance
 
 After installation, adapt the repo in this order:
 1. Review `AGENTS.md` and `docs/ai/stack-guidance.md` for any selected stack packs and confirm that guidance matches the target repo.
