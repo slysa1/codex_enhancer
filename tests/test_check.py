@@ -31,12 +31,14 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_gui.py`.
+        See [docs/ai/v2-design.md](docs/ai/v2-design.md) for the next planned evolution.
         """,
         "AGENTS.md": f"""
         # Codex Enhancer
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         Use `install_enhancer.bat` for the Windows GUI installer.
+        See [docs/ai/v2-design.md](docs/ai/v2-design.md) for the v2 roadmap.
 
         See [docs/ai/architecture.md](docs/ai/architecture.md),
         [docs/ai/code-review.md](docs/ai/code-review.md),
@@ -54,6 +56,11 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         # Review
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
+        """,
+        "docs/ai/v2-design.md": """
+        # V2 Design
+
+        Optional stack packs live here.
         """,
         ".codex/skills/AGENTS.md": """
         # Skills
@@ -109,11 +116,17 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "scripts/install_enhancer_gui.py": """
         # placeholder gui installer for fixture
         """,
+        "scripts/stack_packs.py": """
+        # placeholder stack pack loader for fixture
+        """,
         "tests/test_check.py": """
         # placeholder test file for fixture
         """,
         "tests/test_install_enhancer.py": """
         # placeholder installer test file for fixture
+        """,
+        "tests/test_stack_packs.py": """
+        # placeholder stack pack test file for fixture
         """,
         ".github/workflows/validate.yml": f"""
         name: validate
@@ -155,6 +168,94 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scaffold/target-repo/.github/workflows/validate.yml": """
         name: validate
+        """,
+        "scaffold/stack-packs/monorepo-workspace/pack.toml": """
+        schema_version = 1
+        name = "monorepo-workspace"
+        label = "Monorepo workspace"
+        description = "Monorepo rules."
+        version = "0.1.0"
+
+        [discovery]
+        any_files = ["pnpm-workspace.yaml"]
+
+        [ui]
+        recommended_if_detected = true
+        default_selected = false
+        order = 10
+
+        [render]
+        agents_summary = "fragments/agents-summary.md"
+        stack_guidance = "fragments/stack-guidance.md"
+        review_notes = "fragments/review-notes.md"
+        """,
+        "scaffold/stack-packs/monorepo-workspace/fragments/agents-summary.md": """
+        Monorepo summary.
+        """,
+        "scaffold/stack-packs/monorepo-workspace/fragments/stack-guidance.md": """
+        Monorepo guidance.
+        """,
+        "scaffold/stack-packs/monorepo-workspace/fragments/review-notes.md": """
+        Monorepo review notes.
+        """,
+        "scaffold/stack-packs/javascript-typescript-app/pack.toml": """
+        schema_version = 1
+        name = "javascript-typescript-app"
+        label = "JavaScript / TypeScript app"
+        description = "JavaScript or TypeScript app rules."
+        version = "0.1.0"
+
+        [discovery]
+        all_files = ["package.json"]
+        any_globs = ["tsconfig*.json"]
+
+        [ui]
+        recommended_if_detected = true
+        default_selected = false
+        order = 20
+
+        [render]
+        agents_summary = "fragments/agents-summary.md"
+        stack_guidance = "fragments/stack-guidance.md"
+        review_notes = "fragments/review-notes.md"
+        """,
+        "scaffold/stack-packs/javascript-typescript-app/fragments/agents-summary.md": """
+        JS summary.
+        """,
+        "scaffold/stack-packs/javascript-typescript-app/fragments/stack-guidance.md": """
+        JS guidance.
+        """,
+        "scaffold/stack-packs/javascript-typescript-app/fragments/review-notes.md": """
+        JS review notes.
+        """,
+        "scaffold/stack-packs/python-service/pack.toml": """
+        schema_version = 1
+        name = "python-service"
+        label = "Python service"
+        description = "Python service rules."
+        version = "0.1.0"
+
+        [discovery]
+        any_files = ["pyproject.toml"]
+
+        [ui]
+        recommended_if_detected = true
+        default_selected = false
+        order = 30
+
+        [render]
+        agents_summary = "fragments/agents-summary.md"
+        stack_guidance = "fragments/stack-guidance.md"
+        review_notes = "fragments/review-notes.md"
+        """,
+        "scaffold/stack-packs/python-service/fragments/agents-summary.md": """
+        Python summary.
+        """,
+        "scaffold/stack-packs/python-service/fragments/stack-guidance.md": """
+        Python guidance.
+        """,
+        "scaffold/stack-packs/python-service/fragments/review-notes.md": """
+        Python review notes.
         """,
     }
 

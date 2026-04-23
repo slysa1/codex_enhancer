@@ -1,0 +1,19 @@
+schema_version = 1
+name = "javascript-typescript-app"
+label = "JavaScript / TypeScript app"
+description = "Rules for repositories with package.json plus JavaScript or TypeScript application tooling."
+version = "0.1.0"
+
+[discovery]
+all_files = ["package.json"]
+any_globs = ["tsconfig*.json", "eslint.config.*", "vite.config.*", "next.config.*", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lockb"]
+
+[ui]
+recommended_if_detected = true
+default_selected = false
+order = 20
+
+[render]
+agents_summary = "fragments/agents-summary.md"
+stack_guidance = "fragments/stack-guidance.md"
+review_notes = "fragments/review-notes.md"

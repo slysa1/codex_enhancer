@@ -13,6 +13,8 @@ This repository currently ships the enhancer itself. There is no application pac
 - A Windows launcher in [install_enhancer.bat](install_enhancer.bat)
 - A bootstrap installer in [scripts/install_enhancer.py](scripts/install_enhancer.py)
 - A GUI installer in [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py)
+- A stack-pack registry in [scaffold/stack-packs/](scaffold/stack-packs/)
+- A stack-pack loader in [scripts/stack_packs.py](scripts/stack_packs.py)
 - A shared install/validation spec in [scripts/enhancer_spec.py](scripts/enhancer_spec.py)
 - A reusable validation engine in [scripts/enhancer_validator.py](scripts/enhancer_validator.py)
 - A zero-dependency source-repo validator in [scripts/check.py](scripts/check.py)
@@ -63,12 +65,21 @@ install_enhancer.bat
 The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py), which lets you:
 - type a target repo path manually
 - browse for a target folder
-- review which files will be created, proposed, or overwritten
+- review detected stack packs and adjust the selected set before install
+- review which files will be created, proposed, or overwritten, with critical conflicts called out separately
 - confirm overwrite actions before install
 - watch installation progress
+- see a completion summary that lists the installed stack packs
 - open the product README automatically after completion
 
 If you prefer the CLI or want to script installs, use the commands below.
+CLI dry-runs now preview the same pack-aware "after install" guidance that the GUI shows before you rerun with `--write`.
+
+List the currently available stack packs:
+
+```bash
+python scripts/install_enhancer.py --list-packs
+```
 
 Preview a new-repo install:
 
@@ -94,16 +105,40 @@ Apply an existing-repo install:
 python scripts/install_enhancer.py --target ../my-existing-repo --mode existing --write
 ```
 
+Preview an install while auto-selecting recommended detected packs:
+
+```bash
+python scripts/install_enhancer.py --target ../my-existing-repo --mode existing --use-recommended-packs
+```
+
+Preview an install with explicit pack overrides:
+
+```bash
+python scripts/install_enhancer.py --target ../my-existing-repo --mode existing --use-recommended-packs --no-pack javascript-typescript-app --pack python-service
+```
+
 For an existing repo with conflicting files:
 - by default, conflicting files are written as proposals under `.codex/enhancer-proposals/`
+- previews distinguish critical enhancer-owned conflicts from standard ones
 - use `--force` only when you explicitly want installer-managed files to overwrite existing ones
+
+For stack-pack selection:
+- `--list-packs` prints the currently shipped packs and exits
+- `--use-recommended-packs` selects packs that were detected and marked as recommended
+- `--pack <name>` explicitly selects a pack even if it was not auto-detected
+- `--no-pack <name>` explicitly skips a pack, including a recommended one
+- conflicting `--pack` and `--no-pack` selections for the same name are rejected
+
+The CLI and GUI now share the same pack-selection core. The GUI starts with recommended detected packs selected and lets you adjust that set before install.
 
 What gets installed:
 
 ```text
 AGENTS.md
 .codex/skills/
+.codex/enhancer/manifest.toml
 docs/ai/
+docs/ai/stack-guidance.md
 scripts/check.py
 scripts/enhancer_spec.py
 scripts/enhancer_validator.py
@@ -112,14 +147,19 @@ tests/test_check.py
 .gitignore (merged, not overwritten)
 ```
 
+Selected stack packs are rendered twice on install:
+- a compact summary in the target root `AGENTS.md`
+- deeper detail in `docs/ai/stack-guidance.md`
+
 After installation, adapt the repo in this order:
-1. Update `AGENTS.md` with the target repo's purpose, layout, and real commands.
-2. Use the `adapt-enhancer` skill to replace inherited generic guidance.
-3. Remove or replace any docs that do not apply to the target repo.
-4. Keep only the skills that solve repeated procedures in that repo.
-5. Update `scripts/check.py` and `scripts/enhancer_spec.py` so the validation rules match the target repo.
-6. Update `tests/test_check.py` so the fixture matches the target repo's expected enhancer shape.
-7. Update `.github/workflows/validate.yml` so CI runs the same local commands.
+1. Review `AGENTS.md` and `docs/ai/stack-guidance.md` for any selected stack packs and confirm that guidance matches the target repo.
+2. Update `AGENTS.md` with the target repo's purpose, layout, and real commands.
+3. Use the `adapt-enhancer` skill to replace inherited generic guidance.
+4. Remove or replace any docs that do not apply to the target repo.
+5. Keep only the skills that solve repeated procedures in that repo.
+6. Update `scripts/check.py` and `scripts/enhancer_spec.py` so the validation rules match the target repo.
+7. Update `tests/test_check.py` so the fixture matches the target repo's expected enhancer shape.
+8. Update `.github/workflows/validate.yml` so CI runs the same local commands.
 
 Important: do not install this enhancer into another repo unchanged and call it done. The value comes from making it repo specific.
 
@@ -184,6 +224,7 @@ These are the maintained commands for this repository today:
 python scripts/check.py
 python scripts/check.py --verbose
 python -m unittest discover -s tests -p "test_*.py" -v
+python scripts/install_enhancer.py --list-packs
 python scripts/install_enhancer.py --target ../my-new-repo --mode new
 install_enhancer.bat
 ```
@@ -192,6 +233,7 @@ What they do:
 - `python scripts/check.py`: validates required files, markdown links, skill frontmatter, and command alignment
 - `python scripts/check.py --verbose`: prints each successful check
 - `python -m unittest discover -s tests -p "test_*.py" -v`: tests the validator itself
+- `python scripts/install_enhancer.py --list-packs`: prints the available v2 stack packs
 - `python scripts/install_enhancer.py --target ...`: previews or applies a scaffold install into another repo
 - `install_enhancer.bat`: opens the Windows GUI installer
 
@@ -211,6 +253,8 @@ It is a map, not a dump of every durable rule.
 
 Use docs when guidance needs more explanation. Use `AGENTS.md` when guidance must be visible immediately.
 
+For the next planned evolution of the enhancer, see [docs/ai/v2-design.md](docs/ai/v2-design.md). It defines the proposed stack-pack model, pack metadata, installer UX, and the first packs worth building.
+
 ### `.codex/skills/`
 [.codex/skills/](.codex/skills/) holds narrow, repeatable procedures. The subtree rules live in [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md).
 
@@ -220,16 +264,22 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 [scripts/install_enhancer.py](scripts/install_enhancer.py) is the bootstrap entrypoint. It:
 - scaffolds enhancer files into a target repo
 - discovers a small set of likely commands from common manifests
+- lists, detects, and resolves shipped stack packs during install planning
+- supports recommended-pack selection plus explicit include/exclude overrides in the CLI
+- renders a compact selected-pack summary into the target `AGENTS.md`
 - merges `.gitignore` entries instead of overwriting the file
+- generates target `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
 - writes proposal files for conflicts in existing repos unless `--force` is used
 - exposes structured install planning so the GUI and CLI share the same overwrite and progress behavior
 
 ### `scripts/install_enhancer_gui.py`
 [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py) is the Windows-first GUI layer over the installer core. It adds:
 - manual path entry plus folder browsing
+- detected stack-pack selection with recommended defaults
 - a readable install preview grouped by creates, overwrites, and proposals
 - an overwrite acknowledgement gate before destructive install actions
 - a progress bar tied to real install steps
+- a completion dialog that lists the installed stack packs
 - automatic opening of the enhancer README when the install finishes
 
 ### `install_enhancer.bat`
@@ -256,9 +306,16 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 ### `scaffold/target-repo/`
 [scaffold/target-repo/](scaffold/target-repo/) contains the target-repo versions of files that should not simply be copied from this product repo verbatim.
 
+### `scaffold/stack-packs/`
+[scaffold/stack-packs/](scaffold/stack-packs/) stores the file-based v2 stack-pack registry. Each pack lives in its own directory with `pack.toml` plus small markdown fragments that the installer can detect and render into target guidance.
+
+### `scripts/stack_packs.py`
+[scripts/stack_packs.py](scripts/stack_packs.py) loads stack-pack metadata, detects matching packs in a target repo, resolves selection state, and renders the target `AGENTS.md` summary, manifest, and stack-guidance outputs.
+
 ### `tests/`
 [tests/test_check.py](tests/test_check.py) gives you regression coverage for the source-repo validator.
 [tests/test_install_enhancer.py](tests/test_install_enhancer.py) verifies dry-run behavior, actual installs, proposal mode, force overwrite on safe paths, and the installed target profile.
+[tests/test_stack_packs.py](tests/test_stack_packs.py) covers the pack registry, detection heuristics, selection rules, and generated pack-aware guidance.
 
 ### GitHub Actions
 [.github/workflows/validate.yml](.github/workflows/validate.yml) mirrors the same local commands. If local commands change, CI should change in the same patch.
@@ -378,9 +435,11 @@ Check:
 |-- scripts/check.py
 |-- scripts/install_enhancer.py
 |-- scripts/install_enhancer_gui.py
+|-- scripts/stack_packs.py
 |-- scripts/enhancer_spec.py
 |-- scripts/enhancer_validator.py
 |-- scaffold/target-repo/
+|-- scaffold/stack-packs/
 |-- tests/
 `-- .github/workflows/validate.yml
 ```

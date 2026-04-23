@@ -4,12 +4,14 @@
 This file explains how the Codex workflow layer should stay minimal inside {{REPO_NAME}}.
 
 ## Current Layers
-1. [AGENTS.md](../../AGENTS.md): the short repo-wide operating map.
+1. [AGENTS.md](../../AGENTS.md): the short repo-wide operating map plus a concise summary of any selected stack packs.
 2. [docs/ai/](../ai/): durable detail that would bloat `AGENTS.md` if kept inline.
-3. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
-4. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for this workflow layer.
-5. [tests/](../../tests/): regression protection for the validator.
-6. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
+3. [docs/ai/stack-guidance.md](./stack-guidance.md): selected stack-pack guidance from the enhancer install.
+4. [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml): record of detected and selected stack packs.
+5. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
+6. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for this workflow layer.
+7. [tests/](../../tests/): regression protection for the validator.
+8. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
 
 ## What To Keep
 - rules that Codex should see immediately

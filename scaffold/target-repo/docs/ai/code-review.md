@@ -10,6 +10,7 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 5. If a skill changed, verify the trigger is narrow and the `## Do not use` section is still accurate.
 6. If a script changed, verify it is deterministic and dependency-light.
 7. If repo commands changed, confirm [.github/workflows/validate.yml](../../.github/workflows/validate.yml) changed with them.
+8. If stack packs are selected, confirm [AGENTS.md](../../AGENTS.md), [docs/ai/stack-guidance.md](./stack-guidance.md), and [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml) still match.
 
 ## Review Priorities
 1. Wrong or stale instructions
@@ -30,3 +31,4 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 - Local validation and CI should run the same commands.
 - Keep summaries high signal; avoid changelog-style file inventories unless reviewers need them.
 - If this repo still contains inherited enhancer guidance, call out what still needs adaptation.
+- If stack-pack selection changed, call out both the root `AGENTS.md` summary and the deeper `docs/ai/stack-guidance.md` update.

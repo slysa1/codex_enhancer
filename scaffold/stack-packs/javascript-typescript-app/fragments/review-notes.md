@@ -1,0 +1,3 @@
+- Note which scripts were used for lint, typecheck, test, and build.
+- Call out config changes that affect the wider toolchain.
+- Flag any skipped typecheck or build step explicitly.

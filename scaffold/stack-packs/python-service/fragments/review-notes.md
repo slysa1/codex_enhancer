@@ -1,0 +1,3 @@
+- Record which Python commands were actually discovered and used.
+- Call out config or entrypoint changes that may affect deployment or local setup.
+- Note whether regression coverage was added or intentionally deferred.

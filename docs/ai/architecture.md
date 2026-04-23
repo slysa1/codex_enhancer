@@ -6,16 +6,17 @@ This repository contains the enhancer itself, not an application stack. The work
 ## Current Layers
 1. [README.md](../../README.md): human-facing overview and quick start.
 2. [AGENTS.md](../../AGENTS.md): short entrypoint for repo purpose, workflow, commands, and definition of done.
-3. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline.
+3. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, and [v2 design](./v2-design.md).
 4. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
 5. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, and guided install flow.
 6. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos.
-7. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
-8. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.
-9. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for the enhancer source repo.
-10. [scaffold/target-repo/](../../scaffold/target-repo/): target-repo files that should not be copied verbatim from the source repo.
-11. [tests/](../../tests/): regression protection for the validator, installer core, and GUI-facing helpers.
-12. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
+7. [scripts/stack_packs.py](../../scripts/stack_packs.py) and [scaffold/stack-packs/](../../scaffold/stack-packs/): file-based registry and loader for optional v2 stack packs.
+8. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
+9. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.
+10. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for the enhancer source repo.
+11. [scaffold/target-repo/](../../scaffold/target-repo/): target-repo files that should not be copied verbatim from the source repo.
+12. [tests/](../../tests/): regression protection for the validator, installer core, GUI-facing helpers, and stack-pack loader.
+13. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
 
 ## Decision Guide
 
@@ -33,6 +34,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - Evals or regression fixtures once the repo owns behavior that can actually regress
 - Stack-specific helper scripts once real install, build, lint, or test commands exist
 - Additional skills only after repeated use proves they remove real prompt repetition
+- Optional stack packs only if they stay file-based, visible, and conservative as described in [v2-design.md](./v2-design.md)
 
 ### Niche Later
 - Domain-specific playbooks for migrations, incidents, releases, or API contracts

@@ -12,7 +12,9 @@ This repository uses a Codex-native workflow layer so Codex can understand the r
 - [AGENTS.md](AGENTS.md): repo-wide operating map and default workflow.
 - [docs/ai/architecture.md](docs/ai/architecture.md): what should stay minimal and what should be moved into deeper docs or skills.
 - [docs/ai/code-review.md](docs/ai/code-review.md): review and PR-prep checklist for workflow assets and future repo rules.
+- [docs/ai/stack-guidance.md](docs/ai/stack-guidance.md): optional stack-pack guidance selected during enhancer install.
 - [.codex/skills/](.codex/skills/): repo-local skills for repeated procedures. Read [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md) before editing or adding skills.
+- [.codex/enhancer/manifest.toml](.codex/enhancer/manifest.toml): record of detected and selected enhancer stack packs.
 - [scripts/check.py](scripts/check.py): deterministic validation for this repo's Codex workflow layer.
 - [tests/](tests/): unit tests for the validator.
 - [.github/workflows/validate.yml](.github/workflows/validate.yml): CI that mirrors the local validation commands.
@@ -22,6 +24,9 @@ This repository uses a Codex-native workflow layer so Codex can understand the r
 
 ## Existing Repo Guidance To Review
 {{EXISTING_GUIDANCE}}
+
+## Selected Stack Packs
+{{PACK_AGENTS_SUMMARY}}
 
 ## Default Workflow
 1. Inspect the relevant files before editing anything.

@@ -29,23 +29,45 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Run `python scripts/check.py` and `{TEST_COMMAND}`.
 
         See [docs/ai/architecture.md](docs/ai/architecture.md),
-        [docs/ai/code-review.md](docs/ai/code-review.md),
-        [.codex/skills/](.codex/skills/), [tests/](tests/), and `adapt-enhancer`.
+        [docs/ai/code-review.md](docs/ai/code-review.md), [docs/ai/stack-guidance.md](docs/ai/stack-guidance.md),
+        [.codex/enhancer/manifest.toml](.codex/enhancer/manifest.toml), [.codex/skills/](.codex/skills/),
+        [tests/](tests/), and `adapt-enhancer`.
+
+        ## Selected Stack Packs
+
+        - No stack packs are selected yet. Keep [docs/ai/stack-guidance.md](docs/ai/stack-guidance.md) and
+          [.codex/enhancer/manifest.toml](.codex/enhancer/manifest.toml) aligned if pack selection changes later.
         """,
         "docs/ai/architecture.md": """
         # Architecture
 
-        Keep the workflow layer minimal.
+        Keep the workflow layer minimal and see [stack guidance](stack-guidance.md)
+        plus [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml).
         """,
         "docs/ai/code-review.md": f"""
         # Review
 
         Run `python scripts/check.py` and `{TEST_COMMAND}`.
+        Check [stack guidance](stack-guidance.md) and
+        [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml).
+        """,
+        "docs/ai/stack-guidance.md": """
+        # Stack Guidance
+
+        No stack packs are selected yet.
         """,
         ".codex/skills/AGENTS.md": """
         # Skills
 
         Keep skills narrow.
+        """,
+        ".codex/enhancer/manifest.toml": """
+        schema_version = 1
+        enhancer_version = "2"
+        selected_packs = []
+
+        [generated_files]
+        stack_guidance = "docs/ai/stack-guidance.md"
         """,
         ".codex/skills/plan-change/SKILL.md": """
         ---
@@ -191,6 +213,71 @@ class ValidateTests(unittest.TestCase):
                 any(
                     ".github/workflows/validate.yml is missing required text" in error
                     and "python -m unittest discover -s tests -p \"test_*.py\" -v" in error
+                    for error in errors
+                )
+            )
+
+    def test_selected_pack_must_appear_in_stack_guidance(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root)
+            write_file(
+                root,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "2"
+                selected_packs = ["python-service"]
+
+                [generated_files]
+                stack_guidance = "docs/ai/stack-guidance.md"
+                """,
+            )
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "docs/ai/stack-guidance.md is missing guidance for selected pack 'python-service'"
+                    in error
+                    for error in errors
+                )
+            )
+
+    def test_selected_pack_must_appear_in_root_agents_summary(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root)
+            write_file(
+                root,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "2"
+                selected_packs = ["python-service"]
+
+                [generated_files]
+                stack_guidance = "docs/ai/stack-guidance.md"
+                """,
+            )
+            write_file(
+                root,
+                "docs/ai/stack-guidance.md",
+                """
+                # Stack Guidance
+
+                Selected packs: `python-service`
+
+                ## Python service
+
+                Pack id: `python-service`
+                """,
+            )
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "AGENTS.md is missing a root summary for selected pack 'python-service'"
+                    in error
                     for error in errors
                 )
             )

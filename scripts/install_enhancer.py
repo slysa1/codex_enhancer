@@ -22,6 +22,19 @@ from scripts.enhancer_spec import (
     INSTALL_TEMPLATE_ASSETS,
     TEST_COMMAND,
 )
+from scripts.stack_packs import (
+    PackDetection,
+    PackSelection,
+    detect_stack_packs,
+    format_detection_reason,
+    load_stack_packs,
+    render_agents_summary,
+    render_install_follow_up_lines,
+    render_stack_guidance,
+    render_stack_pack_manifest,
+    resolve_stack_pack_selection,
+    selected_pack_names,
+)
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
@@ -58,9 +71,33 @@ class InstallPlan:
     force: bool
     writes: tuple[PlannedWrite, ...]
     gitignore: GitignorePlan
+    pack_detections: tuple[PackDetection, ...]
+    pack_selections: tuple[PackSelection, ...]
+    manifest_preview: str
+
+
+@dataclass(frozen=True)
+class ConflictSummary:
+    critical_proposals: tuple[Path, ...]
+    standard_proposals: tuple[Path, ...]
+    critical_overwrites: tuple[Path, ...]
+    standard_overwrites: tuple[Path, ...]
 
 
 ProgressCallback = Callable[[int, int, str], None]
+
+
+CRITICAL_CONFLICT_PATHS = frozenset(
+    {
+        Path("AGENTS.md"),
+        Path("docs/ai/architecture.md"),
+        Path("docs/ai/code-review.md"),
+        Path("scripts/check.py"),
+        Path("scripts/enhancer_spec.py"),
+        Path("scripts/enhancer_validator.py"),
+        Path(".github/workflows/validate.yml"),
+    }
+)
 
 
 def infer_mode(target: Path) -> str:
@@ -210,18 +247,23 @@ def proposal_destination(destination: Path) -> Path:
     return PROPOSAL_ROOT / destination
 
 
-def build_replacements(target: Path) -> dict[str, str]:
+def build_replacements(target: Path, pack_selections: tuple[PackSelection, ...]) -> dict[str, str]:
     commands = discover_commands(target)
     repo_name = target.name or "Repository"
     return {
         "REPO_NAME": repo_name,
         "DISCOVERED_COMMANDS": render_discovered_commands(commands),
         "EXISTING_GUIDANCE": render_existing_guidance(discover_existing_guidance(target)),
+        "PACK_AGENTS_SUMMARY": render_agents_summary(pack_selections),
     }
 
 
-def plan_template_writes(target: Path, force: bool) -> list[PlannedWrite]:
-    replacements = build_replacements(target)
+def plan_template_writes(
+    target: Path,
+    force: bool,
+    pack_selections: tuple[PackSelection, ...],
+) -> list[PlannedWrite]:
+    replacements = build_replacements(target, pack_selections)
     writes: list[PlannedWrite] = []
 
     for asset in INSTALL_TEMPLATE_ASSETS:
@@ -277,6 +319,47 @@ def plan_copy_writes(target: Path, force: bool) -> list[PlannedWrite]:
     return writes
 
 
+def plan_generated_writes(
+    target: Path,
+    force: bool,
+    pack_selections: tuple[PackSelection, ...],
+    manifest_preview: str,
+) -> list[PlannedWrite]:
+    generated_assets = (
+        (
+            Path("docs/ai/stack-guidance.md"),
+            render_stack_guidance(pack_selections),
+            "generated stack guidance",
+        ),
+        (
+            Path(".codex/enhancer/manifest.toml"),
+            manifest_preview,
+            "generated stack-pack manifest",
+        ),
+    )
+
+    writes: list[PlannedWrite] = []
+    for destination, content, source_label in generated_assets:
+        action = "create"
+        write_path = destination
+        if (target / destination).exists():
+            if force:
+                action = "overwrite"
+            else:
+                action = "proposal"
+                write_path = proposal_destination(destination)
+        writes.append(
+            PlannedWrite(
+                destination=destination,
+                write_path=write_path,
+                content=content,
+                source_label=source_label,
+                action=action,
+            )
+        )
+    return writes
+
+
 def compute_gitignore_update(target: Path) -> GitignorePlan:
     gitignore = target / ".gitignore"
     if gitignore.exists():
@@ -305,18 +388,49 @@ def apply_gitignore_update(path: Path, missing_lines: tuple[str, ...]) -> None:
     write_text_file(path, "\n".join(missing_lines) + "\n")
 
 
-def build_install_plan(target: Path, mode: str = "auto", force: bool = False) -> InstallPlan:
+def build_install_plan(
+    target: Path,
+    mode: str = "auto",
+    force: bool = False,
+    *,
+    use_recommended_packs: bool = False,
+    include_packs: tuple[str, ...] = (),
+    exclude_packs: tuple[str, ...] = (),
+) -> InstallPlan:
     resolved_target = target.resolve()
     validate_mode(resolved_target, mode)
     effective_mode = infer_mode(resolved_target) if mode == "auto" else mode
-    writes = tuple(plan_template_writes(resolved_target, force=force) + plan_copy_writes(resolved_target, force=force))
     gitignore = compute_gitignore_update(resolved_target)
+    pack_detections = detect_stack_packs(resolved_target)
+    pack_selections = resolve_stack_pack_selection(
+        pack_detections,
+        use_recommended_packs=use_recommended_packs,
+        include_packs=include_packs,
+        exclude_packs=exclude_packs,
+    )
+    manifest_preview = render_stack_pack_manifest(
+        pack_detections,
+        selected_packs=selected_pack_names(pack_selections),
+    )
+    writes = tuple(
+        plan_template_writes(resolved_target, force=force, pack_selections=pack_selections)
+        + plan_copy_writes(resolved_target, force=force)
+        + plan_generated_writes(
+            resolved_target,
+            force=force,
+            pack_selections=pack_selections,
+            manifest_preview=manifest_preview,
+        )
+    )
     return InstallPlan(
         target=resolved_target,
         mode=effective_mode,
         force=force,
         writes=writes,
         gitignore=gitignore,
+        pack_detections=pack_detections,
+        pack_selections=pack_selections,
+        manifest_preview=manifest_preview,
     )
 
 
@@ -329,6 +443,11 @@ def format_plan_header(plan: InstallPlan, write: bool) -> str:
 
 def format_plan_lines(plan: InstallPlan) -> list[str]:
     lines: list[str] = []
+    lines.extend(format_pack_lines(plan))
+    conflict_lines = format_conflict_severity_lines(plan)
+    if conflict_lines:
+        lines.extend(conflict_lines)
+        lines.append("")
     for planned_write in plan.writes:
         if planned_write.action == "proposal":
             lines.append(
@@ -351,8 +470,163 @@ def format_plan_lines(plan: InstallPlan) -> list[str]:
     return lines
 
 
+def format_pack_lines(plan: InstallPlan) -> list[str]:
+    lines = ["Stack pack selection:"]
+    if not plan.pack_selections:
+        lines.append("- none")
+        lines.append("")
+        return lines
+
+    for selection in plan.pack_selections:
+        lines.append(f"- {selection.pack.name}: {describe_pack_selection(selection)}")
+    selected_names = selected_pack_names(plan.pack_selections)
+    if selected_names:
+        rendered_names = ", ".join(f'"{name}"' for name in selected_names)
+        lines.append(f"- Manifest preview selected_packs = [{rendered_names}]")
+    else:
+        lines.append("- Manifest preview selected_packs = []")
+    lines.append("- Stack guidance and the pack manifest will be generated during install.")
+    lines.append("")
+    return lines
+
+
+def summarize_conflicts(plan: InstallPlan) -> ConflictSummary:
+    critical_proposals: list[Path] = []
+    standard_proposals: list[Path] = []
+    critical_overwrites: list[Path] = []
+    standard_overwrites: list[Path] = []
+
+    for planned_write in plan.writes:
+        if planned_write.action not in {"proposal", "overwrite"}:
+            continue
+        is_critical = planned_write.destination in CRITICAL_CONFLICT_PATHS
+        if planned_write.action == "proposal":
+            if is_critical:
+                critical_proposals.append(planned_write.destination)
+            else:
+                standard_proposals.append(planned_write.destination)
+            continue
+        if is_critical:
+            critical_overwrites.append(planned_write.destination)
+        else:
+            standard_overwrites.append(planned_write.destination)
+
+    return ConflictSummary(
+        critical_proposals=tuple(critical_proposals),
+        standard_proposals=tuple(standard_proposals),
+        critical_overwrites=tuple(critical_overwrites),
+        standard_overwrites=tuple(standard_overwrites),
+    )
+
+
+def _format_conflict_paths(paths: tuple[Path, ...]) -> str:
+    return ", ".join(f"`{path.as_posix()}`" for path in paths)
+
+
+def format_conflict_severity_lines(plan: InstallPlan) -> list[str]:
+    summary = summarize_conflicts(plan)
+    if not any(
+        (
+            summary.critical_proposals,
+            summary.standard_proposals,
+            summary.critical_overwrites,
+            summary.standard_overwrites,
+        )
+    ):
+        return []
+
+    lines = ["Conflict severity:"]
+    if summary.critical_proposals:
+        lines.append("- Critical proposal files: " + _format_conflict_paths(summary.critical_proposals))
+    if summary.standard_proposals:
+        lines.append("- Standard proposal files: " + _format_conflict_paths(summary.standard_proposals))
+    if summary.critical_overwrites:
+        lines.append("- Critical overwrite files: " + _format_conflict_paths(summary.critical_overwrites))
+    if summary.standard_overwrites:
+        lines.append("- Standard overwrite files: " + _format_conflict_paths(summary.standard_overwrites))
+    if summary.critical_proposals and not plan.force:
+        lines.append(
+            "- Proposal mode keeps the listed critical files in place and writes reviewable copies under "
+            "`.codex/enhancer-proposals/`."
+        )
+    if summary.critical_overwrites:
+        lines.append("- Force mode will replace the listed critical enhancer-owned files.")
+    return lines
+
+
+def build_overwrite_confirmation_message(plan: InstallPlan) -> str:
+    summary = summarize_conflicts(plan)
+    lines = ["Confirm the overwrite list before running the installer."]
+    if summary.critical_overwrites:
+        lines.extend(
+            [
+                "",
+                "Critical enhancer-owned files will be replaced:",
+                *[f"- {path.as_posix()}" for path in summary.critical_overwrites],
+            ]
+        )
+    return "\n".join(lines)
+
+
+def describe_pack_selection(selection: PackSelection) -> str:
+    reason = format_detection_reason(
+        PackDetection(
+            pack=selection.pack,
+            detected=selection.detected,
+            recommended=selection.recommended,
+            reasons=selection.reasons,
+        )
+    )
+    if selection.selection_source == "recommended":
+        return f"selected from recommended detection ({reason})"
+    if selection.selection_source == "explicit-include":
+        return f"selected explicitly via --pack ({reason})"
+    if selection.selection_source == "explicit-exclude":
+        return f"skipped explicitly via --no-pack ({reason})"
+    if selection.selection_source == "default":
+        return f"selected by pack default ({reason})"
+    if selection.detected and selection.recommended:
+        return f"available as recommended but not selected ({reason})"
+    if selection.detected:
+        return f"detected but not selected ({reason})"
+    return f"not detected ({reason})"
+
+
+def format_pack_catalog(target: Path | None = None) -> str:
+    packs = load_stack_packs()
+    detections_by_name: dict[str, PackDetection] = {}
+    if target is not None:
+        detections_by_name = {
+            detection.pack.name: detection
+            for detection in detect_stack_packs(target, packs=packs)
+        }
+
+    lines = ["Available stack packs:"]
+    for pack in packs:
+        lines.append(f"- {pack.name}: {pack.label}")
+        lines.append(f"  {pack.description}")
+        if target is not None:
+            detection = detections_by_name[pack.name]
+            status = "recommended" if detection.recommended else "detected" if detection.detected else "not detected"
+            lines.append(f"  status: {status}")
+            lines.append(f"  evidence: {format_detection_reason(detection)}")
+    return "\n".join(lines)
+
+
 def format_plan_report(plan: InstallPlan, write: bool) -> str:
-    lines = [format_plan_header(plan, write), *format_plan_lines(plan), "", *format_next_steps(plan, write)]
+    lines = [format_plan_header(plan, write), *format_plan_lines(plan)]
+    if write:
+        lines.extend(["", *format_next_steps(plan, write=True)])
+        return "\n".join(lines)
+
+    lines.extend(
+        [
+            "",
+            *format_after_install_preview(plan),
+            "",
+            *format_next_steps(plan, write=False),
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -376,9 +650,14 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
         lines.append(
             "- Use the `adapt-enhancer` skill to replace any inherited generic sections with repo-specific guidance."
         )
+    lines.extend(render_install_follow_up_lines(plan.pack_selections))
     lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
     lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
     return lines
+
+
+def format_after_install_preview(plan: InstallPlan) -> list[str]:
+    return ["After install:", *format_next_steps(plan, write=True)]
 
 
 def overwrite_paths(plan: InstallPlan) -> tuple[Path, ...]:
@@ -422,8 +701,12 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--target",
-        required=True,
         help="path to the new or existing repository that should receive the enhancer scaffold",
+    )
+    parser.add_argument(
+        "--list-packs",
+        action="store_true",
+        help="print the available stack packs and exit",
     )
     parser.add_argument(
         "--mode",
@@ -441,12 +724,53 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="overwrite colliding files instead of writing proposals under .codex/enhancer-proposals/",
     )
+    parser.add_argument(
+        "--use-recommended-packs",
+        action="store_true",
+        help="select all detected stack packs that are marked as recommended",
+    )
+    parser.add_argument(
+        "--pack",
+        action="append",
+        default=[],
+        help="explicitly select a stack pack by name; repeatable",
+    )
+    parser.add_argument(
+        "--no-pack",
+        action="append",
+        default=[],
+        help="explicitly skip a stack pack by name; repeatable",
+    )
     args = parser.parse_args(argv)
+
+    if args.list_packs and args.target is None:
+        print(format_pack_catalog())
+        return 0
+
+    if args.target is None:
+        print("Missing required --target. Use --list-packs to inspect available stack packs without a target repo.")
+        return 1
 
     target = Path(args.target).resolve()
 
+    if args.list_packs:
+        try:
+            validate_mode(target, args.mode)
+        except ValueError as error:
+            print(str(error))
+            return 1
+        print(format_pack_catalog(target))
+        return 0
+
     try:
-        plan = build_install_plan(target, mode=args.mode, force=args.force)
+        plan = build_install_plan(
+            target,
+            mode=args.mode,
+            force=args.force,
+            use_recommended_packs=args.use_recommended_packs,
+            include_packs=tuple(args.pack),
+            exclude_packs=tuple(args.no_pack),
+        )
     except ValueError as error:
         print(str(error))
         return 1

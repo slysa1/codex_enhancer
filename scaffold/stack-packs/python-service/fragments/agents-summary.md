@@ -1,0 +1,3 @@
+- Use commands discovered from real Python project files, not guessed defaults.
+- Prefer the repo's existing env, test, lint, and type tools.
+- Add or update the smallest meaningful regression test when behavior changes.

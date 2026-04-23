@@ -18,10 +18,12 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [install_enhancer.bat](install_enhancer.bat): Windows launcher that opens the GUI installer.
 - [scripts/install_enhancer.py](scripts/install_enhancer.py): bootstrap installer for new and existing repos.
 - [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py): GUI wrapper for previewing, confirming, and applying installs.
+- [scripts/stack_packs.py](scripts/stack_packs.py): loader and detection layer for optional v2 stack packs.
 - [scripts/enhancer_spec.py](scripts/enhancer_spec.py): shared install and validation spec.
 - [scripts/enhancer_validator.py](scripts/enhancer_validator.py): reusable validation engine.
 - [scripts/check.py](scripts/check.py): deterministic validation for the enhancer source repo.
 - [scaffold/target-repo/](scaffold/target-repo/): install scaffold for files that should differ in target repos.
+- [scaffold/stack-packs/](scaffold/stack-packs/): file-based registry for optional v2 stack packs and their fragments.
 - [tests/](tests/): unit tests for the validator and installer.
 - [.github/workflows/validate.yml](.github/workflows/validate.yml): CI that mirrors the local validation commands.
 

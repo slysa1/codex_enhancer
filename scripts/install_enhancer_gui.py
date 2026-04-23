@@ -28,10 +28,13 @@ from scripts.install_enhancer import (
     SOURCE_ROOT,
     InstallPlan,
     apply_install_plan,
+    build_overwrite_confirmation_message,
     build_install_plan,
-    format_next_steps,
+    format_after_install_preview,
+    format_conflict_severity_lines,
     overwrite_paths,
 )
+from scripts.stack_packs import PackSelection, selected_pack_names
 
 
 WINDOW_TITLE = "Codex Enhancer Installer"
@@ -71,25 +74,36 @@ def build_plan_preview(plan: InstallPlan) -> str:
             if plan.force
             else "Conflict handling: write proposals for colliding enhancer files"
         ),
-        "",
-        "Files to create:",
-        *format_section_entries(create_paths),
-        "",
-        "Files to overwrite:",
-        *format_section_entries(overwrite_items),
-        "",
-        "Proposal files:",
-        *format_section_entries(proposal_items),
-        "",
-        ".gitignore update:",
     ]
+    conflict_lines = format_conflict_severity_lines(plan)
+    if conflict_lines:
+        lines.extend(("", *conflict_lines))
+
+    lines.extend(
+        [
+            "",
+            "Stack packs:",
+            *format_pack_entries(plan.pack_selections),
+            "",
+            "Files to create:",
+            *format_section_entries(create_paths),
+            "",
+            "Files to overwrite:",
+            *format_section_entries(overwrite_items),
+            "",
+            "Proposal files:",
+            *format_section_entries(proposal_items),
+            "",
+            ".gitignore update:",
+        ]
+    )
 
     if plan.gitignore.missing_lines:
         lines.extend(f"- add {line}" for line in plan.gitignore.missing_lines)
     else:
         lines.append("- already contains the required enhancer entries")
 
-    lines.extend(("", "After install:", *format_next_steps(plan, write=True)))
+    lines.extend(("", *format_after_install_preview(plan)))
     return "\n".join(lines)
 
 
@@ -97,6 +111,48 @@ def format_section_entries(entries: list[str]) -> list[str]:
     if not entries:
         return ["- none"]
     return [f"- {entry}" for entry in entries]
+
+
+def format_pack_entries(selections: tuple[PackSelection, ...]) -> list[str]:
+    if not selections:
+        return ["- none"]
+
+    entries: list[str] = []
+    selected_names = selected_pack_names(selections)
+    for selection in selections:
+        state = "selected" if selection.selected else "available"
+        recommended = "recommended" if selection.recommended else "optional"
+        reason = "; ".join(selection.reasons)
+        entries.append(
+            f"- {selection.pack.label} (`{selection.pack.name}`): {state}, {recommended} ({reason})"
+        )
+    if selected_names:
+        entries.append("- Manifest selected packs: " + ", ".join(f"`{name}`" for name in selected_names))
+    else:
+        entries.append("- Manifest selected packs: none")
+    return entries
+
+
+def build_completion_message(plan: InstallPlan) -> str:
+    selected_names = selected_pack_names(plan.pack_selections)
+    lines = [
+        "Codex Enhancer was installed successfully.",
+        "",
+        f"Target folder: {plan.target}",
+        "",
+        "Installed stack packs:",
+    ]
+    if selected_names:
+        lines.extend(f"- {name}" for name in selected_names)
+    else:
+        lines.append("- none selected")
+    lines.extend(
+        [
+            "",
+            "The installer will open the README from this repo next so you land on the usage guidance.",
+        ]
+    )
+    return "\n".join(lines)
 
 
 class InstallerApp:
@@ -116,6 +172,8 @@ class InstallerApp:
         )
 
         self.current_plan: InstallPlan | None = None
+        self.pack_vars: dict[str, tk.BooleanVar] = {}
+        self.pack_summary_labels: list[ttk.Label] = []
 
         self._build_layout()
         self._wire_events()
@@ -168,8 +226,27 @@ class InstallerApp:
         )
         self.force_check.grid(row=2, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
+        pack_frame = ttk.LabelFrame(frame, text="Stack packs", padding=12)
+        pack_frame.grid(row=3, column=0, sticky="ew", pady=(14, 0))
+        pack_frame.columnconfigure(0, weight=1)
+        self.pack_frame = pack_frame
+        self.pack_intro = ttk.Label(
+            pack_frame,
+            text=(
+                "Review the detected stack packs after scanning the target repo. Recommended packs "
+                "start selected, and you can toggle them before installation."
+            ),
+            wraplength=700,
+        )
+        self.pack_intro.grid(row=0, column=0, sticky="w")
+
+        self.pack_container = ttk.Frame(pack_frame)
+        self.pack_container.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        self.pack_container.columnconfigure(0, weight=1)
+        self._show_pack_placeholder("No pack scan yet. Click 'Review install plan' to detect stack packs.")
+
         action_frame = ttk.Frame(frame)
-        action_frame.grid(row=3, column=0, sticky="ew", pady=(14, 12))
+        action_frame.grid(row=4, column=0, sticky="ew", pady=(14, 12))
         action_frame.columnconfigure(0, weight=1)
 
         self.review_button = ttk.Button(action_frame, text="Review install plan", command=self._review_plan)
@@ -186,7 +263,7 @@ class InstallerApp:
         self.confirm_check.grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
         preview_frame = ttk.LabelFrame(frame, text="Install preview", padding=12)
-        preview_frame.grid(row=4, column=0, sticky="nsew")
+        preview_frame.grid(row=5, column=0, sticky="nsew")
         preview_frame.columnconfigure(0, weight=1)
         preview_frame.rowconfigure(0, weight=1)
 
@@ -199,7 +276,7 @@ class InstallerApp:
         self.preview.configure(state="disabled")
 
         status_frame = ttk.Frame(frame)
-        status_frame.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        status_frame.grid(row=6, column=0, sticky="ew", pady=(12, 0))
         status_frame.columnconfigure(0, weight=1)
 
         self.status_label = ttk.Label(status_frame, textvariable=self.status_var, wraplength=700)
@@ -236,6 +313,7 @@ class InstallerApp:
         self.current_plan = None
         self.confirm_overwrite_var.set(False)
         self.confirm_check.configure(state="disabled")
+        self._show_pack_placeholder("Inputs changed. Review the install plan again to detect stack packs.")
         self.status_var.set("Inputs changed. Review the install plan again before installing.")
         self.progress.configure(value=0, maximum=1)
         self._refresh_install_button()
@@ -269,21 +347,19 @@ class InstallerApp:
             return
 
         try:
-            plan = build_install_plan(
-                Path(raw_target),
-                mode=self._mode_value(),
-                force=self.force_var.get(),
-            )
+            plan = self._build_plan(use_recommended_packs=True)
         except ValueError as error:
             self.current_plan = None
             self._set_preview_text("No valid install plan is available yet.")
             self.status_var.set(str(error))
             self.progress.configure(value=0, maximum=1)
             self._refresh_install_button()
+            self._show_pack_placeholder("No valid pack scan is available yet.")
             messagebox.showerror(WINDOW_TITLE, str(error))
             return
 
         self.current_plan = plan
+        self._populate_pack_controls(plan)
         self._set_preview_text(build_plan_preview(plan))
         self.progress.configure(value=0, maximum=len(plan.writes) + 1)
 
@@ -301,6 +377,83 @@ class InstallerApp:
 
         self._refresh_install_button()
 
+    def _build_plan(
+        self,
+        *,
+        use_recommended_packs: bool = False,
+        include_packs: tuple[str, ...] = (),
+    ) -> InstallPlan:
+        raw_target = self.target_var.get().strip()
+        return build_install_plan(
+            Path(raw_target),
+            mode=self._mode_value(),
+            force=self.force_var.get(),
+            use_recommended_packs=use_recommended_packs,
+            include_packs=include_packs,
+        )
+
+    def _clear_pack_controls(self) -> None:
+        for child in self.pack_container.winfo_children():
+            child.destroy()
+        self.pack_vars = {}
+        self.pack_summary_labels = []
+
+    def _show_pack_placeholder(self, message: str) -> None:
+        self._clear_pack_controls()
+        label = ttk.Label(self.pack_container, text=message, wraplength=700)
+        label.grid(row=0, column=0, sticky="w")
+        self.pack_summary_labels = [label]
+
+    def _populate_pack_controls(self, plan: InstallPlan) -> None:
+        self._clear_pack_controls()
+        for row_index, selection in enumerate(plan.pack_selections):
+            variable = tk.BooleanVar(value=selection.selected)
+            variable.trace_add("write", self._on_pack_toggle)
+            self.pack_vars[selection.pack.name] = variable
+
+            checkbox = ttk.Checkbutton(
+                self.pack_container,
+                text=f"{selection.pack.label} ({selection.pack.name})",
+                variable=variable,
+            )
+            checkbox.grid(row=row_index * 2, column=0, sticky="w")
+
+            reason = "; ".join(selection.reasons)
+            summary = ttk.Label(
+                self.pack_container,
+                text=f"{'Recommended' if selection.recommended else 'Optional'}: {reason}",
+                wraplength=680,
+            )
+            summary.grid(row=row_index * 2 + 1, column=0, sticky="w", padx=(24, 0), pady=(0, 8))
+            self.pack_summary_labels.append(summary)
+
+    def _on_pack_toggle(self, *_args: object) -> None:
+        if not self.pack_vars:
+            return
+        try:
+            plan = self._build_plan(include_packs=self._selected_pack_names_from_ui())
+        except ValueError as error:
+            self.status_var.set(str(error))
+            return
+
+        self.current_plan = plan
+        self._set_preview_text(build_plan_preview(plan))
+        overwrite_list = overwrite_paths(plan)
+        if overwrite_list and not self.confirm_overwrite_var.get():
+            self.status_var.set(
+                "Pack selection updated. Review the overwrite list carefully, then install."
+            )
+        else:
+            self.status_var.set("Pack selection updated.")
+        self._refresh_install_button()
+
+    def _selected_pack_names_from_ui(self) -> tuple[str, ...]:
+        return tuple(
+            name
+            for name, variable in self.pack_vars.items()
+            if variable.get()
+        )
+
     def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
         self.review_button.configure(state=state)
@@ -308,6 +461,11 @@ class InstallerApp:
         self.target_entry.configure(state=state)
         self.mode_combo.configure(state="disabled" if busy else "readonly")
         self.force_check.configure(state=state)
+        for child in self.pack_container.winfo_children():
+            try:
+                child.configure(state=state)
+            except tk.TclError:
+                continue
         if busy:
             self.install_button.configure(state="disabled")
             self.confirm_check.configure(state="disabled")
@@ -325,7 +483,7 @@ class InstallerApp:
         if overwrite_paths(plan) and not self.confirm_overwrite_var.get():
             messagebox.showwarning(
                 WINDOW_TITLE,
-                "Confirm the overwrite list before running the installer.",
+                build_overwrite_confirmation_message(plan),
             )
             return
 
@@ -354,8 +512,7 @@ class InstallerApp:
 
         messagebox.showinfo(
             WINDOW_TITLE,
-            "Codex Enhancer was installed successfully.\n\n"
-            "The installer will open the README from this repo next so you land on the usage guidance.",
+            build_completion_message(plan),
         )
 
         try:

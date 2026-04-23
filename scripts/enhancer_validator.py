@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 
 from scripts.enhancer_spec import ValidationProfile
@@ -335,6 +336,68 @@ def check_content_requirements(
             print(f"OK content rules: {relative_path.as_posix()}")
 
 
+def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: list[str], verbose: bool) -> None:
+    manifest_path = root / ".codex/enhancer/manifest.toml"
+    stack_guidance_path = root / "docs/ai/stack-guidance.md"
+    agents_path = root / "AGENTS.md"
+    if not manifest_path.exists() or not stack_guidance_path.exists():
+        return
+
+    try:
+        manifest = tomllib.loads(load_text(manifest_path))
+    except tomllib.TOMLDecodeError:
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml is not valid TOML",
+            "Regenerate the enhancer manifest or fix the TOML syntax by hand.",
+        )
+        return
+
+    selected_packs = manifest.get("selected_packs", [])
+    if not isinstance(selected_packs, list) or any(not isinstance(item, str) for item in selected_packs):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define selected_packs as a list of strings",
+            "Keep selected_packs as a simple TOML string array.",
+        )
+        return
+
+    generated_files = manifest.get("generated_files", {})
+    if not isinstance(generated_files, dict) or generated_files.get("stack_guidance") != "docs/ai/stack-guidance.md":
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must record docs/ai/stack-guidance.md under [generated_files]",
+            "Keep the generated_files.stack_guidance entry aligned with the installed stack guidance file.",
+        )
+
+    stack_guidance = load_text(stack_guidance_path)
+    agents_text = load_text(agents_path) if agents_path.exists() else ""
+    if selected_packs:
+        for pack_name in selected_packs:
+            snippet = f"`{pack_name}`"
+            if snippet not in stack_guidance:
+                add_error(
+                    errors,
+                    f"docs/ai/stack-guidance.md is missing guidance for selected pack {pack_name!r}",
+                    "Regenerate the stack guidance or add the missing selected-pack section.",
+                )
+            if snippet not in agents_text:
+                add_error(
+                    errors,
+                    f"AGENTS.md is missing a root summary for selected pack {pack_name!r}",
+                    "Keep the root AGENTS summary aligned with the selected stack packs in the manifest.",
+                )
+    elif "No stack packs are selected yet." not in stack_guidance:
+        add_error(
+            errors,
+            "docs/ai/stack-guidance.md should explain that no stack packs are selected",
+            "Keep the placeholder guidance visible until one or more packs are selected.",
+        )
+
+    if verbose:
+        print("OK stack pack outputs: .codex/enhancer/manifest.toml and docs/ai/stack-guidance.md")
+
+
 def validate(root: Path, profile: ValidationProfile, verbose: bool = False) -> list[str]:
     errors: list[str] = []
 
@@ -343,6 +406,7 @@ def validate(root: Path, profile: ValidationProfile, verbose: bool = False) -> l
     check_markdown_links(root, errors, verbose)
     check_skills(root, profile, errors, verbose)
     check_content_requirements(root, profile, errors, verbose)
+    check_stack_pack_outputs(root, profile, errors, verbose)
 
     return errors
 

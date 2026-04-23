@@ -1,0 +1,18 @@
+schema_version = 1
+name = "monorepo-workspace"
+label = "Monorepo workspace"
+description = "Rules for repositories that coordinate multiple packages or apps from a shared workspace root."
+version = "0.1.0"
+
+[discovery]
+any_files = ["pnpm-workspace.yaml", "turbo.json", "nx.json", "rush.json", "lerna.json"]
+
+[ui]
+recommended_if_detected = true
+default_selected = false
+order = 10
+
+[render]
+agents_summary = "fragments/agents-summary.md"
+stack_guidance = "fragments/stack-guidance.md"
+review_notes = "fragments/review-notes.md"
