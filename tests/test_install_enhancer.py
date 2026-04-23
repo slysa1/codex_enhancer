@@ -68,7 +68,9 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertIn("Available stack packs:", output)
         self.assertIn("monorepo-workspace", output)
         self.assertIn("javascript-typescript-app", output)
+        self.assertIn("frontend-ui", output)
         self.assertIn("python-service", output)
+        self.assertIn("node-api-service", output)
 
     def test_inspect_install_reports_repo_without_enhancer(self) -> None:
         with repo_fixture("inspect_missing") as install_target:
@@ -424,6 +426,60 @@ class InstallEnhancerTests(unittest.TestCase):
             )
             self.assertIn("Next step:", output)
             self.assertIn("Re-run this command with --write", output)
+
+    def test_use_recommended_packs_selects_frontend_bundle(self) -> None:
+        with repo_fixture("install_recommended_frontend") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+            write_file(install_target, "src/App.tsx", "export function App() { return <main />; }\n")
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(
+                "javascript-typescript-app: selected from recommended detection",
+                output,
+            )
+            self.assertIn("frontend-ui: selected from recommended detection", output)
+            self.assertIn(
+                'selected_packs = ["javascript-typescript-app", "frontend-ui"]',
+                output,
+            )
+
+    def test_use_recommended_packs_selects_node_api_bundle(self) -> None:
+        with repo_fixture("install_recommended_node_api") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+            write_file(install_target, "src/server.ts", "export const server = {};\n")
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(
+                "javascript-typescript-app: selected from recommended detection",
+                output,
+            )
+            self.assertIn("node-api-service: selected from recommended detection", output)
+            self.assertIn(
+                'selected_packs = ["javascript-typescript-app", "node-api-service"]',
+                output,
+            )
 
     def test_refresh_generated_requires_existing_installed_target(self) -> None:
         with repo_fixture("refresh_missing_manifest") as install_target:

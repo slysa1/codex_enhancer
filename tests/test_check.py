@@ -228,6 +228,35 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "scaffold/stack-packs/javascript-typescript-app/fragments/review-notes.md": """
         JS review notes.
         """,
+        "scaffold/stack-packs/frontend-ui/pack.toml": """
+        schema_version = 1
+        name = "frontend-ui"
+        label = "Frontend UI"
+        description = "Frontend UI rules."
+        version = "0.1.0"
+
+        [discovery]
+        any_globs = ["src/**/*.tsx"]
+
+        [ui]
+        recommended_if_detected = true
+        default_selected = false
+        order = 25
+
+        [render]
+        agents_summary = "fragments/agents-summary.md"
+        stack_guidance = "fragments/stack-guidance.md"
+        review_notes = "fragments/review-notes.md"
+        """,
+        "scaffold/stack-packs/frontend-ui/fragments/agents-summary.md": """
+        Frontend summary.
+        """,
+        "scaffold/stack-packs/frontend-ui/fragments/stack-guidance.md": """
+        Frontend guidance.
+        """,
+        "scaffold/stack-packs/frontend-ui/fragments/review-notes.md": """
+        Frontend review notes.
+        """,
         "scaffold/stack-packs/python-service/pack.toml": """
         schema_version = 1
         name = "python-service"
@@ -256,6 +285,36 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scaffold/stack-packs/python-service/fragments/review-notes.md": """
         Python review notes.
+        """,
+        "scaffold/stack-packs/node-api-service/pack.toml": """
+        schema_version = 1
+        name = "node-api-service"
+        label = "Node API service"
+        description = "Node API service rules."
+        version = "0.1.0"
+
+        [discovery]
+        all_files = ["package.json"]
+        any_globs = ["src/server.*"]
+
+        [ui]
+        recommended_if_detected = true
+        default_selected = false
+        order = 35
+
+        [render]
+        agents_summary = "fragments/agents-summary.md"
+        stack_guidance = "fragments/stack-guidance.md"
+        review_notes = "fragments/review-notes.md"
+        """,
+        "scaffold/stack-packs/node-api-service/fragments/agents-summary.md": """
+        Node API summary.
+        """,
+        "scaffold/stack-packs/node-api-service/fragments/stack-guidance.md": """
+        Node API guidance.
+        """,
+        "scaffold/stack-packs/node-api-service/fragments/review-notes.md": """
+        Node API review notes.
         """,
     }
 

@@ -1,0 +1,29 @@
+schema_version = 1
+name = "node-api-service"
+label = "Node API service"
+description = "Rules for Node.js or TypeScript repositories that expose API or service entrypoints."
+version = "0.1.0"
+
+[discovery]
+all_files = ["package.json"]
+any_files = ["nest-cli.json"]
+any_globs = [
+  "src/server.*",
+  "src/routes/**/*",
+  "src/controllers/**/*",
+  "server/**/*",
+  "api/**/*",
+  "openapi*.json",
+  "openapi*.yaml",
+  "openapi*.yml",
+]
+
+[ui]
+recommended_if_detected = true
+default_selected = false
+order = 35
+
+[render]
+agents_summary = "fragments/agents-summary.md"
+stack_guidance = "fragments/stack-guidance.md"
+review_notes = "fragments/review-notes.md"

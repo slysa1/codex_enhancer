@@ -1,0 +1,33 @@
+schema_version = 1
+name = "frontend-ui"
+label = "Frontend UI"
+description = "Rules for repositories that ship browser-facing UI surfaces."
+version = "0.1.0"
+
+[discovery]
+any_globs = [
+  "src/**/*.tsx",
+  "src/**/*.jsx",
+  "src/**/*.vue",
+  "src/**/*.svelte",
+  "app/**/*.tsx",
+  "app/**/*.jsx",
+  "pages/**/*.tsx",
+  "pages/**/*.jsx",
+  "components/**/*.tsx",
+  "components/**/*.jsx",
+  "vite.config.*",
+  "next.config.*",
+  "astro.config.*",
+  "svelte.config.*",
+]
+
+[ui]
+recommended_if_detected = true
+default_selected = false
+order = 25
+
+[render]
+agents_summary = "fragments/agents-summary.md"
+stack_guidance = "fragments/stack-guidance.md"
+review_notes = "fragments/review-notes.md"

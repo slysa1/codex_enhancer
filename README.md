@@ -83,6 +83,15 @@ List the currently available stack packs:
 python scripts/install_enhancer.py --list-packs
 ```
 
+Current shipped packs:
+- `monorepo-workspace`
+- `javascript-typescript-app`
+- `frontend-ui`
+- `python-service`
+- `node-api-service`
+
+The `library-package` pack is still intentionally deferred; the current detector is path-based, and the repo does not yet use stronger manifest evidence for library detection.
+
 Preview a new-repo install:
 
 ```bash

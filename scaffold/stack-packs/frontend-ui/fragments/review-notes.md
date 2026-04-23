@@ -1,0 +1,3 @@
+- Note which UI states were checked, skipped, or left implicit.
+- Call out accessibility-sensitive changes such as focus flow, semantics, or keyboard behavior.
+- Flag any unverified responsive or browser-specific behavior explicitly.

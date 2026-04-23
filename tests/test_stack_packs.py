@@ -48,7 +48,13 @@ class StackPackTests(unittest.TestCase):
 
         self.assertEqual(
             tuple(pack.name for pack in packs),
-            ("monorepo-workspace", "javascript-typescript-app", "python-service"),
+            (
+                "monorepo-workspace",
+                "javascript-typescript-app",
+                "frontend-ui",
+                "python-service",
+                "node-api-service",
+            ),
         )
 
     def test_detects_monorepo_pack_from_workspace_file(self) -> None:
@@ -89,6 +95,30 @@ class StackPackTests(unittest.TestCase):
 
             self.assertTrue(detected["python-service"].detected)
             self.assertTrue(detected["python-service"].recommended)
+
+    def test_detects_frontend_ui_pack_from_component_source(self) -> None:
+        with repo_fixture("pack_frontend") as root:
+            write_file(root, "package.json", '{"name": "demo"}\n')
+            write_file(root, "src/App.tsx", "export function App() { return <main />; }\n")
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+
+            self.assertTrue(detected["frontend-ui"].detected)
+            self.assertTrue(detected["frontend-ui"].recommended)
+            self.assertIn("src/App.tsx", "; ".join(detected["frontend-ui"].reasons))
+
+    def test_detects_node_api_pack_from_server_entrypoint(self) -> None:
+        with repo_fixture("pack_node_api") as root:
+            write_file(root, "package.json", '{"name": "demo"}\n')
+            write_file(root, "src/server.ts", "export const server = {};\n")
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+
+            self.assertTrue(detected["node-api-service"].detected)
+            self.assertTrue(detected["node-api-service"].recommended)
+            self.assertIn("src/server.ts", "; ".join(detected["node-api-service"].reasons))
 
     def test_render_pack_fragment_includes_pack_label(self) -> None:
         pack = next(pack for pack in load_stack_packs() if pack.name == "python-service")
@@ -137,6 +167,20 @@ class StackPackTests(unittest.TestCase):
             self.assertIn("Selected packs: `javascript-typescript-app`", summary)
             self.assertIn("`javascript-typescript-app` (JavaScript / TypeScript app):", summary)
             self.assertIn("Respect the repo's actual package manager and lockfile", summary)
+
+    def test_render_agents_summary_supports_multiple_selected_packs(self) -> None:
+        with repo_fixture("pack_agents_summary_multi") as root:
+            write_file(root, "package.json", '{"name": "demo"}\n')
+            write_file(root, "tsconfig.json", "{}\n")
+            write_file(root, "src/App.tsx", "export function App() { return <main />; }\n")
+
+            detections = detect_stack_packs(root)
+            selections = resolve_stack_pack_selection(detections, use_recommended_packs=True)
+            summary = render_agents_summary(selections)
+
+            self.assertIn("Selected packs: `javascript-typescript-app`, `frontend-ui`", summary)
+            self.assertIn("`frontend-ui` (Frontend UI):", summary)
+            self.assertIn("Check loading, empty, error, and success states", summary)
 
     def test_load_selected_packs_from_manifest_reads_existing_selection(self) -> None:
         with repo_fixture("pack_manifest_read") as root:
@@ -221,6 +265,23 @@ class StackPackTests(unittest.TestCase):
             )
             self.assertTrue(any("`python-service`:" in line for line in lines))
             self.assertTrue(any("existing env, test, lint, and type tools" in line for line in lines))
+
+    def test_render_install_follow_up_lines_include_node_api_summary(self) -> None:
+        with repo_fixture("pack_follow_up_node_api") as root:
+            write_file(root, "package.json", '{"name": "demo"}\n')
+            write_file(root, "tsconfig.json", "{}\n")
+            write_file(root, "src/server.ts", "export const server = {};\n")
+
+            detections = detect_stack_packs(root)
+            selections = resolve_stack_pack_selection(detections, use_recommended_packs=True)
+            lines = render_install_follow_up_lines(selections)
+
+            self.assertIn(
+                "- Review `AGENTS.md` and `docs/ai/stack-guidance.md` for selected packs: `javascript-typescript-app`, `node-api-service`.",
+                lines,
+            )
+            self.assertTrue(any("`node-api-service`:" in line for line in lines))
+            self.assertTrue(any("auth, validation, and error behavior" in line for line in lines))
 
 
 if __name__ == "__main__":

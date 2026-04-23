@@ -476,3 +476,145 @@ Main risk:
 - upgrade plans distinguish safe regenerated outputs from repo-owned scaffold proposals
 - applying an upgrade remains reviewable in git
 - old installs can move forward without reinstalling blindly
+
+## Proposed 2.3 Evidence-Based Pack Expansion
+
+### Goal
+Expand the shipped stack-pack catalog without adding new installer machinery, hidden state, or content-parsing heuristics that would make recommendations harder to trust.
+
+### Scope
+- add two new optional packs that fit the current file-based detector
+- keep the packs composable with the existing `javascript-typescript-app` and `monorepo-workspace` packs
+- update pack tests, required-file validation, and docs in the same change
+
+### Non-Goals
+- no pack dependency graph
+- no nested `AGENTS.md` generation
+- no package-content parser for `package.json` or `pyproject.toml`
+- no `library-package` pack yet
+
+### Exact 2.3 Packs
+
+#### `frontend-ui`
+Why now:
+- browser-facing UI repos are common enough to justify first-class guidance
+- the guidance is useful across React, Next, Vue, Svelte, Astro, and similar layouts
+- detection can stay conservative and visible through file paths alone
+
+Detect when:
+- UI-oriented source files such as `src/**/*.tsx`, `src/**/*.jsx`, `src/**/*.vue`, or `src/**/*.svelte` exist
+- or common frontend entry/config files such as `vite.config.*`, `next.config.*`, `astro.config.*`, or `svelte.config.*` exist
+- or common UI folders such as `app/**`, `pages/**`, or `components/**` contain browser-facing files
+
+Rules to ship:
+- verify loading, empty, error, and success states when the surface has them
+- preserve accessibility basics such as labels, keyboard reachability, focus behavior, and semantic structure
+- keep changes aligned with the existing design system or visual language
+- avoid adding browser automation unless the repo already has it or the task explicitly calls for it
+
+#### `node-api-service`
+Why now:
+- API/service repos are another common JavaScript/TypeScript target shape
+- the guidance is high-signal and review-oriented without inventing commands
+- it layers cleanly with the existing JS/TS pack
+
+Detect when:
+- `package.json` exists and service-oriented paths such as `src/server.*`, `src/routes/**`, `src/controllers/**`, `server/**`, `api/**`, or `openapi*.{json,yaml,yml}` exist
+- or Node service indicators such as `nest-cli.json` exist
+
+Rules to ship:
+- treat request/response or schema changes as contract changes that need paired updates
+- check auth, validation, and error behavior, not just happy paths
+- call out backward-compatibility risk when routes, payloads, or error shapes change
+- keep API docs, shared types, or fixtures aligned when the repo already has them
+
+### Deferred Pack
+
+#### `library-package`
+Why defer:
+- a good `library-package` recommendation likely needs stronger evidence than raw file paths
+- with the current detector it would be too easy to misclassify normal apps as libraries
+- it is a better fit for a later release if the pack system gains a narrow, reviewable way to inspect manifest metadata
+
+### 2.3 Step 1: Roadmap And Scope Lock
+Objective:
+- record the exact 2.3 pack scope, shipped candidates, and deferred pack in durable docs
+
+Files to change:
+- `docs/ai/v2-design.md`
+
+Files deliberately not added:
+- no runtime changes yet
+
+Validation:
+- source docs stay aligned with the current architecture guidance
+
+Main risk:
+- roadmap drift between docs and implementation; keep the follow-on patch small and direct
+
+### 2.3 Step 2: Add `frontend-ui`
+Objective:
+- ship the `frontend-ui` pack with conservative detection, summary guidance, stack guidance, and review notes
+
+Files to change:
+- `scaffold/stack-packs/frontend-ui/`
+- source validation spec
+- pack tests and installer-facing tests as needed
+
+Files deliberately not added:
+- no UI-specific script wrappers
+
+Validation:
+- pack detection tests
+- stack-guidance and agents-summary render tests
+
+Main risk:
+- false positives in repos that happen to contain a small UI surface; keep detection signals visible and path-based
+
+### 2.3 Step 3: Add `node-api-service`
+Objective:
+- ship the `node-api-service` pack with service-focused guidance and review notes
+
+Files to change:
+- `scaffold/stack-packs/node-api-service/`
+- source validation spec
+- pack tests and installer-facing tests as needed
+
+Files deliberately not added:
+- no OpenAPI parser
+- no contract test harness
+
+Validation:
+- pack detection tests
+- manifest/render tests for selected API-service packs
+
+Main risk:
+- over-detecting frontend repos that happen to include an `api/` folder; prefer stronger service-oriented paths
+
+### 2.3 Step 4: Align Docs And Validation
+Objective:
+- keep the source validator, README, and test fixtures aligned with the expanded shipped pack set
+
+Files to change:
+- `README.md`
+- `scripts/enhancer_spec.py`
+- `tests/test_check.py`
+- `tests/test_install_enhancer.py`
+- `tests/test_stack_packs.py`
+
+Files deliberately not added:
+- no separate validator for each pack
+
+Validation:
+- `python scripts/check.py --verbose`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- forgetting to update the source required-file inventory or fixture repo shape when new packs are added
+
+### 2.3 Success Bar
+- the shipped pack catalog grows without changing installer architecture
+- a JS/TS repo can compose `javascript-typescript-app` with `frontend-ui` or `node-api-service`
+- selected-pack summaries remain short in `AGENTS.md`
+- deeper guidance remains in `docs/ai/stack-guidance.md`
+- deferred packs stay explicitly out of scope until the detector can justify them
