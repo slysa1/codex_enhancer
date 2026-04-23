@@ -7,8 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+ENHANCER_VERSION = "2.1"
+ENHANCER_MANIFEST_SCHEMA_VERSION = 1
+
 CHECK_COMMAND = "python scripts/check.py"
 TEST_COMMAND = 'python -m unittest discover -s tests -p "test_*.py" -v'
+ENHANCER_VERSION = "2.1"
+ENHANCER_MANIFEST_SCHEMA_VERSION = 1
 
 GITIGNORE_LINES = (
     "__pycache__/",

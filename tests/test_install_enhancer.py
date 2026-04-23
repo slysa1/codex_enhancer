@@ -14,11 +14,12 @@ from scripts.install_enhancer import (
     apply_install_plan,
     build_install_plan,
     build_overwrite_confirmation_message,
+    build_upgrade_plan,
     format_next_steps,
     overwrite_paths,
 )
 from scripts.install_enhancer_gui import build_completion_message, build_plan_preview
-from scripts.enhancer_spec import GITIGNORE_LINES, TARGET_VALIDATION_PROFILE
+from scripts.enhancer_spec import ENHANCER_VERSION, GITIGNORE_LINES, TARGET_VALIDATION_PROFILE
 from scripts.enhancer_validator import validate as validate_profile
 
 
@@ -68,6 +69,304 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertIn("monorepo-workspace", output)
         self.assertIn("javascript-typescript-app", output)
         self.assertIn("python-service", output)
+
+    def test_inspect_install_reports_repo_without_enhancer(self) -> None:
+        with repo_fixture("inspect_missing") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(["--target", str(install_target), "--inspect-install"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(f"Source enhancer version: `{ENHANCER_VERSION}`", output)
+            self.assertIn("Target enhancer version: not installed", output)
+            self.assertIn("no enhancer install was found", output)
+
+    def test_inspect_install_reports_current_target_state(self) -> None:
+        with repo_fixture("inspect_current") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(["--target", str(install_target), "--inspect-install"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(f"Source enhancer version: `{ENHANCER_VERSION}`", output)
+            self.assertIn(f"Target enhancer version: `{ENHANCER_VERSION}`", output)
+            self.assertIn("Status: target install matches the current source version.", output)
+            self.assertIn("Selected packs: `javascript-typescript-app`", output)
+
+    def test_inspect_install_reports_older_target_version(self) -> None:
+        with repo_fixture("inspect_outdated") as install_target:
+            write_file(
+                install_target,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "2"
+                selected_packs = ["python-service"]
+
+                [generated_files]
+                stack_guidance = "docs/ai/stack-guidance.md"
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+                adapt_manually = ["AGENTS.md"]
+                """,
+            )
+
+            exit_code, output = run_installer(["--target", str(install_target), "--inspect-install"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Target enhancer version: `2`", output)
+            self.assertIn("Status: target install is older than the current source version.", output)
+            self.assertIn("Selected packs: `python-service`", output)
+
+    def test_inspect_install_rejects_write_and_force_flags(self) -> None:
+        with repo_fixture("inspect_invalid") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--inspect-install", "--write"]
+            )
+            self.assertEqual(exit_code, 1)
+            self.assertIn("cannot be combined", output)
+
+    def test_upgrade_enhancer_requires_existing_install(self) -> None:
+        with repo_fixture("upgrade_missing") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(["--target", str(install_target), "--upgrade-enhancer"])
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("does not contain an enhancer install yet", output)
+
+    def test_upgrade_enhancer_rejects_force_and_pack_flags(self) -> None:
+        with repo_fixture("upgrade_invalid") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--upgrade-enhancer", "--force"]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("cannot be combined", output)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--upgrade-enhancer", "--pack", "python-service"]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("cannot be combined", output)
+
+    def test_upgrade_enhancer_reports_no_drift_for_current_install(self) -> None:
+        with repo_fixture("upgrade_current") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(["--target", str(install_target), "--upgrade-enhancer"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Planned Codex Enhancer upgrade reconcile plan", output)
+            self.assertIn("Upgrade drift: none.", output)
+            self.assertIn("Upgrade reconcile keeps the installed pack selection", output)
+            self.assertIn("`--upgrade-enhancer --write`", output)
+
+    def test_upgrade_enhancer_write_is_noop_for_current_install(self) -> None:
+        with repo_fixture("upgrade_apply_current") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--upgrade-enhancer", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Applying Codex Enhancer upgrade reconcile plan", output)
+            self.assertIn("Upgrade drift: none.", output)
+            self.assertIn("No reconcile changes were needed", output)
+            self.assertFalse((install_target / ".codex/enhancer-proposals").exists())
+
+    def test_upgrade_enhancer_groups_outdated_install_changes(self) -> None:
+        with repo_fixture("upgrade_outdated") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            write_file(install_target, "docs/ai/stack-guidance.md", "# stale guidance\n")
+            write_file(install_target, ".codex/skills/plan-change/SKILL.md", "# stale skill\n")
+            write_file(install_target, "AGENTS.md", "# Custom Repo\n")
+            write_file(
+                install_target,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "2"
+                selected_packs = ["javascript-typescript-app"]
+
+                [generated_files]
+                stack_guidance = "docs/ai/stack-guidance.md"
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+                adapt_manually = ["AGENTS.md"]
+                """,
+            )
+
+            exit_code, output = run_installer(["--target", str(install_target), "--upgrade-enhancer"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Managed generated outputs:", output)
+            self.assertIn("- overwrite: docs/ai/stack-guidance.md", output)
+            self.assertIn("- overwrite: .codex/enhancer/manifest.toml", output)
+            self.assertIn("Source-aligned direct copies:", output)
+            self.assertIn(".codex/skills/plan-change/SKILL.md", output)
+            self.assertIn("Repo-owned proposal files:", output)
+            self.assertIn(".codex/enhancer-proposals/AGENTS.md", output)
+
+    def test_upgrade_enhancer_write_applies_outdated_install_changes(self) -> None:
+        with repo_fixture("upgrade_apply_outdated") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            write_file(install_target, "docs/ai/stack-guidance.md", "# stale guidance\n")
+            write_file(install_target, ".codex/skills/plan-change/SKILL.md", "# stale skill\n")
+            write_file(install_target, "AGENTS.md", "# Custom Repo\n")
+            write_file(
+                install_target,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "2"
+                selected_packs = ["javascript-typescript-app"]
+
+                [generated_files]
+                stack_guidance = "docs/ai/stack-guidance.md"
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+                adapt_manually = ["AGENTS.md"]
+                """,
+            )
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--upgrade-enhancer", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Applying Codex Enhancer upgrade reconcile plan", output)
+            self.assertIn(
+                "Review the proposal files under `.codex/enhancer-proposals/`",
+                output,
+            )
+            self.assertNotEqual(
+                (install_target / "docs/ai/stack-guidance.md").read_text(encoding="utf-8"),
+                "# stale guidance\n",
+            )
+            self.assertNotEqual(
+                (install_target / ".codex/skills/plan-change/SKILL.md").read_text(encoding="utf-8"),
+                "# stale skill\n",
+            )
+            self.assertEqual(
+                (install_target / "AGENTS.md").read_text(encoding="utf-8"),
+                "# Custom Repo\n",
+            )
+            self.assertTrue((install_target / ".codex/enhancer-proposals/AGENTS.md").exists())
+            self.assertIn(
+                f'enhancer_version = "{ENHANCER_VERSION}"',
+                (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8"),
+            )
+
+    def test_upgrade_enhancer_plans_creates_for_partially_missing_install(self) -> None:
+        with repo_fixture("upgrade_missing_files") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+            write_file(
+                install_target,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "2.0"
+                selected_packs = ["javascript-typescript-app"]
+
+                [generated_files]
+                stack_guidance = "docs/ai/stack-guidance.md"
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+                adapt_manually = ["AGENTS.md"]
+                """,
+            )
+
+            exit_code, output = run_installer(["--target", str(install_target), "--upgrade-enhancer"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Managed generated outputs:", output)
+            self.assertIn("- create: docs/ai/stack-guidance.md", output)
+            self.assertIn("Source-aligned direct copies:", output)
+            self.assertIn("- create: .codex/skills/review-prep/SKILL.md", output)
 
     def test_dry_run_does_not_create_target(self) -> None:
         with repo_fixture("install_parent") as parent:
@@ -275,6 +574,29 @@ class InstallEnhancerTests(unittest.TestCase):
             errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
             self.assertEqual(errors, [])
 
+    def test_target_validation_requires_manifest_enhancer_version(self) -> None:
+        with repo_fixture("install_manifest_version") as target:
+            install_target = target / "repo"
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+
+            manifest_path = install_target / ".codex/enhancer/manifest.toml"
+            manifest_text = manifest_path.read_text(encoding="utf-8").replace(
+                f'enhancer_version = "{ENHANCER_VERSION}"\n',
+                "",
+            )
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any("must define enhancer_version as a non-empty string" in error for error in errors)
+            )
+
     def test_existing_repo_writes_proposals_for_conflicts(self) -> None:
         with repo_fixture("install_existing") as install_target:
             write_file(
@@ -405,6 +727,7 @@ class InstallEnhancerTests(unittest.TestCase):
             stack_guidance = (install_target / "docs/ai/stack-guidance.md").read_text(encoding="utf-8")
 
             self.assertIn("Selected packs: `javascript-typescript-app`", agents)
+            self.assertIn(f'enhancer_version = "{ENHANCER_VERSION}"', manifest)
             self.assertIn("`javascript-typescript-app` (JavaScript / TypeScript app):", agents)
             self.assertIn('selected_packs = ["javascript-typescript-app"]', manifest)
             self.assertIn(
@@ -646,6 +969,46 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertNotIn("Conflict severity:", preview)
             self.assertIn("Manifest selected packs: `javascript-typescript-app`", preview)
 
+    def test_gui_upgrade_preview_uses_upgrade_wording(self) -> None:
+        with repo_fixture("install_preview_upgrade") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            write_file(install_target, "docs/ai/stack-guidance.md", "# stale guidance\n")
+            write_file(install_target, ".codex/skills/plan-change/SKILL.md", "# stale skill\n")
+            write_file(install_target, "AGENTS.md", "# Custom Repo\n")
+
+            plan = build_upgrade_plan(install_target)
+            preview = build_plan_preview(plan)
+
+            self.assertIn("Operation: Upgrade or reconcile existing install", preview)
+            self.assertIn(
+                "Upgrade behavior: overwrite tracked managed outputs and source-aligned copies; write repo-owned scaffold drift as proposals.",
+                preview,
+            )
+            self.assertIn("Managed generated outputs:", preview)
+            self.assertIn("Source-aligned direct copies:", preview)
+            self.assertIn("Repo-owned proposal files:", preview)
+            self.assertIn("After upgrade:", preview)
+            self.assertIn(
+                "Review the proposal files under `.codex/enhancer-proposals/`",
+                preview,
+            )
+            self.assertIn("Manifest selected packs: `javascript-typescript-app`", preview)
+
     def test_next_steps_include_pack_aware_follow_up_when_packs_are_selected(self) -> None:
         with repo_fixture("install_next_steps_pack") as install_target:
             write_file(install_target, "package.json", '{"name": "demo"}\n')
@@ -719,6 +1082,33 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Stack packs from the target manifest:", message)
             self.assertIn("- javascript-typescript-app", message)
 
+    def test_gui_completion_message_reports_upgrade(self) -> None:
+        with repo_fixture("install_completion_upgrade") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            write_file(install_target, "docs/ai/stack-guidance.md", "# stale guidance\n")
+
+            plan = build_upgrade_plan(install_target)
+            message = build_completion_message(plan)
+
+            self.assertIn("Codex Enhancer upgrade reconcile completed successfully.", message)
+            self.assertIn("Stack packs from the target manifest:", message)
+            self.assertIn("- javascript-typescript-app", message)
+
     def test_build_overwrite_confirmation_message_lists_critical_files(self) -> None:
         with repo_fixture("install_confirm_message") as install_target:
             write_file(install_target, "AGENTS.md", "# Existing Repo\n")
@@ -729,6 +1119,32 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Confirm the overwrite list before running the installer.", message)
             self.assertIn("Critical enhancer-owned files will be replaced:", message)
             self.assertIn("- AGENTS.md", message)
+
+    def test_build_overwrite_confirmation_message_lists_upgrade_overwrites(self) -> None:
+        with repo_fixture("upgrade_confirm_message") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            write_file(install_target, "docs/ai/stack-guidance.md", "# stale guidance\n")
+
+            plan = build_upgrade_plan(install_target)
+            message = build_overwrite_confirmation_message(plan)
+
+            self.assertIn("Tracked enhancer files will be updated in place:", message)
+            self.assertIn("- docs/ai/stack-guidance.md", message)
 
 
 if __name__ == "__main__":

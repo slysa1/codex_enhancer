@@ -7,8 +7,10 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
+from scripts.enhancer_spec import ENHANCER_VERSION
 from scripts.stack_packs import (
     detect_stack_packs,
+    load_enhancer_install_state,
     load_selected_packs_from_manifest,
     load_stack_packs,
     render_agents_summary,
@@ -113,6 +115,7 @@ class StackPackTests(unittest.TestCase):
             )
 
             self.assertIn('selected_packs = ["javascript-typescript-app"]', manifest)
+            self.assertIn(f'enhancer_version = "{ENHANCER_VERSION}"', manifest)
             self.assertIn('name = "javascript-typescript-app"', manifest)
             self.assertIn("selected = true", manifest)
             self.assertIn('stack_guidance = "docs/ai/stack-guidance.md"', manifest)
@@ -142,14 +145,37 @@ class StackPackTests(unittest.TestCase):
                 ".codex/enhancer/manifest.toml",
                 """
                 schema_version = 1
-                enhancer_version = "2"
+                enhancer_version = "%s"
                 selected_packs = ["python-service"]
-                """,
+                """ % ENHANCER_VERSION,
             )
 
             selected = load_selected_packs_from_manifest(root)
 
             self.assertEqual(selected, ("python-service",))
+
+    def test_load_enhancer_install_state_reads_version_and_ownership(self) -> None:
+        with repo_fixture("pack_install_state") as root:
+            write_file(
+                root,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "%s"
+                selected_packs = ["python-service"]
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md"]
+                adapt_manually = ["AGENTS.md"]
+                """ % ENHANCER_VERSION,
+            )
+
+            state = load_enhancer_install_state(root)
+
+            self.assertEqual(state.enhancer_version, ENHANCER_VERSION)
+            self.assertEqual(state.selected_packs, ("python-service",))
+            self.assertEqual(state.safe_to_regenerate, ("docs/ai/stack-guidance.md",))
+            self.assertEqual(state.adapt_manually, ("AGENTS.md",))
 
     def test_resolve_manifest_pack_selection_marks_selected_packs(self) -> None:
         with repo_fixture("pack_manifest_selection") as root:

@@ -17,16 +17,19 @@ if __package__ in (None, ""):
 
 from scripts.enhancer_spec import (
     CHECK_COMMAND,
+    ENHANCER_VERSION,
     GITIGNORE_LINES,
     INSTALL_COPY_ASSETS,
     INSTALL_TEMPLATE_ASSETS,
     TEST_COMMAND,
 )
 from scripts.stack_packs import (
+    EnhancerInstallState,
     PackDetection,
     PackSelection,
     detect_stack_packs,
     format_detection_reason,
+    load_enhancer_install_state,
     load_selected_packs_from_manifest,
     load_stack_packs,
     render_agents_summary,
@@ -81,6 +84,16 @@ class InstallPlan:
 
 
 @dataclass(frozen=True)
+class InstallInspection:
+    target: Path
+    manifest_path: Path
+    source_version: str
+    target_version: str | None
+    status: str
+    install_state: EnhancerInstallState | None
+
+
+@dataclass(frozen=True)
 class ConflictSummary:
     critical_proposals: tuple[Path, ...]
     standard_proposals: tuple[Path, ...]
@@ -120,6 +133,14 @@ INSTALL_MANAGED_DESTINATIONS = (
     + GENERATED_OUTPUT_DESTINATIONS
 )
 
+SOURCE_ALIGNED_UPGRADE_DESTINATIONS = frozenset(
+    {
+        Path(".codex/skills/AGENTS.md"),
+        Path(".codex/skills/plan-change/SKILL.md"),
+        Path(".codex/skills/review-prep/SKILL.md"),
+    }
+)
+
 
 def infer_mode(target: Path) -> str:
     if not target.exists():
@@ -146,6 +167,113 @@ def validate_mode(target: Path, mode: str) -> None:
         raise ValueError(
             f"Target {target} does not look like an existing repo; use --mode new or --mode auto."
         )
+
+
+def _version_key(version: str) -> tuple[tuple[int, int | str], ...]:
+    key: list[tuple[int, int | str]] = []
+    for part in version.split("."):
+        key.append((0, int(part)) if part.isdigit() else (1, part))
+    return tuple(key)
+
+
+def inspect_install(target: Path) -> InstallInspection:
+    resolved_target = target.resolve()
+    if not resolved_target.exists():
+        raise ValueError(f"Target {resolved_target} does not exist yet.")
+    if not resolved_target.is_dir():
+        raise ValueError(f"Target {resolved_target} exists but is not a directory.")
+
+    manifest_path = resolved_target / ".codex/enhancer/manifest.toml"
+    if not manifest_path.exists():
+        return InstallInspection(
+            target=resolved_target,
+            manifest_path=manifest_path,
+            source_version=ENHANCER_VERSION,
+            target_version=None,
+            status="not-installed",
+            install_state=None,
+        )
+
+    install_state = load_enhancer_install_state(resolved_target)
+    target_version = install_state.enhancer_version
+    if target_version is None:
+        status = "legacy"
+    elif _version_key(target_version) == _version_key(ENHANCER_VERSION):
+        status = "current"
+    elif _version_key(target_version) < _version_key(ENHANCER_VERSION):
+        status = "upgrade-recommended"
+    else:
+        status = "source-behind-target"
+
+    return InstallInspection(
+        target=resolved_target,
+        manifest_path=manifest_path,
+        source_version=ENHANCER_VERSION,
+        target_version=target_version,
+        status=status,
+        install_state=install_state,
+    )
+
+
+def _format_string_list(values: tuple[str, ...]) -> str:
+    if not values:
+        return "none"
+    return ", ".join(f"`{value}`" for value in values)
+
+
+def format_install_inspection(inspection: InstallInspection) -> str:
+    lines = [
+        f"Codex Enhancer install inspection for {inspection.target}",
+        f"- Source enhancer version: `{inspection.source_version}`",
+        f"- Target manifest: `{inspection.manifest_path.relative_to(inspection.target).as_posix()}`",
+    ]
+
+    if inspection.status == "not-installed":
+        lines.extend(
+            [
+                "- Target enhancer version: not installed",
+                "- Status: no enhancer install was found in the target repo.",
+                "",
+                "Next step:",
+                "- Run a full install preview to bootstrap this repo with Codex Enhancer.",
+            ]
+        )
+        return "\n".join(lines)
+
+    target_version = inspection.target_version or "unknown"
+    lines.append(f"- Target enhancer version: `{target_version}`")
+    state = inspection.install_state or EnhancerInstallState(None, (), (), ())
+    lines.append(f"- Selected packs: {_format_string_list(state.selected_packs)}")
+    lines.append(f"- Safe to regenerate: {_format_string_list(state.safe_to_regenerate)}")
+    lines.append(f"- Adapt manually: {_format_string_list(state.adapt_manually)}")
+
+    if inspection.status == "current":
+        status_line = "target install matches the current source version."
+        next_step = "- No upgrade drift is reported. Use `--refresh-generated` only if you need to re-render managed outputs."
+    elif inspection.status == "legacy":
+        status_line = "target install is missing a precise enhancer version and should be treated as a legacy install."
+        next_step = (
+            "- Use `--upgrade-enhancer` to preview reconcile drift, then re-run with `--write` when the plan looks correct."
+        )
+    elif inspection.status == "upgrade-recommended":
+        status_line = "target install is older than the current source version."
+        next_step = (
+            "- Use `--upgrade-enhancer` to preview scaffold reconcile drift, then re-run with `--write` to apply it. "
+            "Use `--refresh-generated` only if you just need managed outputs."
+        )
+    else:
+        status_line = "target install reports a newer enhancer version than this source repo."
+        next_step = "- Treat this repo as ahead of the current source and inspect the upgrade preview carefully before reconciling anything."
+
+    lines.extend(
+        [
+            f"- Status: {status_line}",
+            "",
+            "Next step:",
+            next_step,
+        ]
+    )
+    return "\n".join(lines)
 
 
 def parse_make_like_targets(path: Path) -> set[str]:
@@ -229,9 +357,16 @@ def discover_commands(target: Path) -> dict[str, str]:
     return commands
 
 
-def discover_existing_guidance(target: Path) -> list[str]:
+def discover_existing_guidance(
+    target: Path,
+    *,
+    ignore_paths: tuple[Path, ...] = (),
+) -> list[str]:
+    ignored = set(ignore_paths)
     found: list[str] = []
     for relative_path in COMMON_GUIDANCE_PATHS:
+        if relative_path in ignored:
+            continue
         full_path = target / relative_path
         if full_path.exists():
             found.append(relative_path.as_posix())
@@ -268,13 +403,58 @@ def proposal_destination(destination: Path) -> Path:
     return PROPOSAL_ROOT / destination
 
 
-def build_replacements(target: Path, pack_selections: tuple[PackSelection, ...]) -> dict[str, str]:
+def _plan_changed_write(
+    target: Path,
+    destination: Path,
+    content: str,
+    source_label: str,
+    *,
+    existing_action: str,
+) -> PlannedWrite | None:
+    destination_path = target / destination
+    if destination_path.exists():
+        existing_content = destination_path.read_text(encoding="utf-8")
+        if existing_content == content:
+            return None
+        if existing_action == "proposal":
+            return PlannedWrite(
+                destination=destination,
+                write_path=proposal_destination(destination),
+                content=content,
+                source_label=source_label,
+                action="proposal",
+            )
+        return PlannedWrite(
+            destination=destination,
+            write_path=destination,
+            content=content,
+            source_label=source_label,
+            action=existing_action,
+        )
+
+    return PlannedWrite(
+        destination=destination,
+        write_path=destination,
+        content=content,
+        source_label=source_label,
+        action="create",
+    )
+
+
+def build_replacements(
+    target: Path,
+    pack_selections: tuple[PackSelection, ...],
+    *,
+    ignore_existing_guidance: tuple[Path, ...] = (),
+) -> dict[str, str]:
     commands = discover_commands(target)
     repo_name = target.name or "Repository"
     return {
         "REPO_NAME": repo_name,
         "DISCOVERED_COMMANDS": render_discovered_commands(commands),
-        "EXISTING_GUIDANCE": render_existing_guidance(discover_existing_guidance(target)),
+        "EXISTING_GUIDANCE": render_existing_guidance(
+            discover_existing_guidance(target, ignore_paths=ignore_existing_guidance)
+        ),
         "PACK_AGENTS_SUMMARY": render_agents_summary(pack_selections),
     }
 
@@ -379,6 +559,97 @@ def plan_generated_writes(
             )
         )
     return writes
+
+
+def build_upgrade_plan(target: Path) -> InstallPlan:
+    inspection = inspect_install(target)
+    if inspection.status == "not-installed":
+        raise ValueError(
+            "Target repo does not contain an enhancer install yet; run a full install preview instead."
+        )
+
+    resolved_target = inspection.target
+    ownership = summarize_output_ownership(INSTALL_MANAGED_DESTINATIONS)
+    pack_detections = detect_stack_packs(resolved_target)
+    install_state = inspection.install_state or EnhancerInstallState(None, (), (), ())
+    pack_selections = resolve_manifest_pack_selection(
+        pack_detections,
+        selected_packs=install_state.selected_packs,
+    )
+    manifest_preview = render_stack_pack_manifest(
+        pack_detections,
+        selected_packs=selected_pack_names(pack_selections),
+        safe_to_regenerate=ownership.safe_to_regenerate,
+        adapt_manually=ownership.adapt_manually,
+    )
+
+    writes: list[PlannedWrite] = []
+    replacements = build_replacements(
+        resolved_target,
+        pack_selections,
+        ignore_existing_guidance=(Path("AGENTS.md"),),
+    )
+
+    for asset in INSTALL_TEMPLATE_ASSETS:
+        template_path = SOURCE_ROOT / asset.template_path
+        content = render_template(template_path.read_text(encoding="utf-8"), replacements)
+        planned = _plan_changed_write(
+            resolved_target,
+            asset.destination,
+            content,
+            asset.template_path.as_posix(),
+            existing_action="proposal",
+        )
+        if planned is not None:
+            writes.append(planned)
+
+    for asset in INSTALL_COPY_ASSETS:
+        source_path = SOURCE_ROOT / asset.source_path
+        content = source_path.read_text(encoding="utf-8")
+        planned = _plan_changed_write(
+            resolved_target,
+            asset.destination,
+            content,
+            asset.source_path.as_posix(),
+            existing_action=(
+                "overwrite"
+                if asset.destination in SOURCE_ALIGNED_UPGRADE_DESTINATIONS
+                else "proposal"
+            ),
+        )
+        if planned is not None:
+            writes.append(planned)
+
+    for planned in plan_generated_writes(
+        resolved_target,
+        force=True,
+        pack_selections=pack_selections,
+        manifest_preview=manifest_preview,
+    ):
+        changed = _plan_changed_write(
+            resolved_target,
+            planned.destination,
+            planned.content,
+            planned.source_label,
+            existing_action="overwrite",
+        )
+        if changed is not None:
+            writes.append(changed)
+
+    gitignore = compute_gitignore_update(resolved_target)
+    gitignore_plan = gitignore if gitignore.missing_lines else None
+
+    return InstallPlan(
+        target=resolved_target,
+        operation="upgrade-enhancer",
+        mode="existing",
+        force=False,
+        writes=tuple(writes),
+        gitignore=gitignore_plan,
+        pack_detections=pack_detections,
+        pack_selections=pack_selections,
+        manifest_preview=manifest_preview,
+    )
 
 
 def compute_gitignore_update(target: Path) -> GitignorePlan:
@@ -500,6 +771,9 @@ def build_install_plan(
 
 def format_plan_header(plan: InstallPlan, write: bool) -> str:
     noun = (
+        "Codex Enhancer upgrade reconcile plan"
+        if plan.operation == "upgrade-enhancer"
+        else
         "Codex Enhancer generated-output refresh"
         if plan.operation == "refresh-generated"
         else "Codex Enhancer install"
@@ -517,6 +791,20 @@ def format_plan_lines(plan: InstallPlan) -> list[str]:
     if ownership_lines:
         lines.extend(ownership_lines)
         lines.append("")
+    if plan.operation == "upgrade-enhancer":
+        lines.extend(format_upgrade_write_groups(plan))
+        if plan.gitignore is not None:
+            lines.extend(
+                [
+                    "",
+                    ".gitignore reconcile:",
+                    f"- merge: {plan.gitignore.destination.as_posix()} add {', '.join(plan.gitignore.missing_lines)}",
+                ]
+            )
+        elif not plan.writes:
+            lines.append("Upgrade drift: none. The tracked enhancer files already match this source version.")
+        return lines
+
     conflict_lines = format_conflict_severity_lines(plan)
     if conflict_lines:
         lines.extend(conflict_lines)
@@ -559,7 +847,9 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
         lines.append(f"- Manifest preview selected_packs = [{rendered_names}]")
     else:
         lines.append("- Manifest preview selected_packs = []")
-    if plan.operation == "refresh-generated":
+    if plan.operation == "upgrade-enhancer":
+        lines.append("- Upgrade reconcile keeps the installed pack selection and compares tracked enhancer files against the current source.")
+    elif plan.operation == "refresh-generated":
         lines.append("- Stack guidance and the pack manifest will be regenerated from the existing target manifest.")
     else:
         lines.append("- Stack guidance and the pack manifest will be generated during install.")
@@ -568,7 +858,7 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
 
 
 def summarize_conflicts(plan: InstallPlan) -> ConflictSummary:
-    if plan.operation == "refresh-generated":
+    if plan.operation in {"refresh-generated", "upgrade-enhancer"}:
         return ConflictSummary(
             critical_proposals=(),
             standard_proposals=(),
@@ -641,6 +931,8 @@ def format_output_ownership_lines(plan: InstallPlan) -> list[str]:
         lines.append("- Adapt manually after install: " + _format_conflict_paths(summary.adapt_manually))
     if plan.operation == "refresh-generated":
         lines.append("- Manual scaffold files stay untouched during refresh.")
+    elif plan.operation == "upgrade-enhancer":
+        lines.append("- Generated outputs and source-aligned copies are previewed separately from repo-owned proposal files.")
     else:
         lines.append("- Review merged `.gitignore` changes manually if the target repo uses different ignore conventions.")
     return lines
@@ -648,6 +940,54 @@ def format_output_ownership_lines(plan: InstallPlan) -> list[str]:
 
 def _format_conflict_paths(paths: tuple[Path, ...]) -> str:
     return ", ".join(f"`{path.as_posix()}`" for path in paths)
+
+
+def format_upgrade_write_groups(plan: InstallPlan) -> list[str]:
+    generated = [
+        item for item in plan.writes if item.destination in GENERATED_OUTPUT_DESTINATIONS
+    ]
+    direct_copies = [
+        item for item in plan.writes if item.destination in SOURCE_ALIGNED_UPGRADE_DESTINATIONS
+    ]
+    repo_owned = [
+        item
+        for item in plan.writes
+        if item.destination not in GENERATED_OUTPUT_DESTINATIONS
+        and item.destination not in SOURCE_ALIGNED_UPGRADE_DESTINATIONS
+    ]
+
+    lines: list[str] = []
+    if generated:
+        lines.extend(["Managed generated outputs:"])
+        lines.extend(_format_write_lines(generated))
+        lines.append("")
+    if direct_copies:
+        lines.extend(["Source-aligned direct copies:"])
+        lines.extend(_format_write_lines(direct_copies))
+        lines.append("")
+    if repo_owned:
+        lines.extend(["Repo-owned proposal files:"])
+        lines.extend(_format_write_lines(repo_owned))
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _format_write_lines(planned_writes: list[PlannedWrite]) -> list[str]:
+    lines: list[str] = []
+    for planned_write in planned_writes:
+        if planned_write.action == "proposal":
+            lines.append(
+                f"- proposal: {planned_write.write_path.as_posix()} "
+                f"(for {planned_write.destination.as_posix()}, from {planned_write.source_label})"
+            )
+            continue
+        lines.append(
+            f"- {planned_write.action}: {planned_write.write_path.as_posix()} "
+            f"(from {planned_write.source_label})"
+        )
+    return lines
 
 
 def format_conflict_severity_lines(plan: InstallPlan) -> list[str]:
@@ -692,6 +1032,16 @@ def build_overwrite_confirmation_message(plan: InstallPlan) -> str:
                 *[f"- {path.as_posix()}" for path in summary.critical_overwrites],
             ]
         )
+    elif plan.operation == "upgrade-enhancer":
+        overwrite_targets = overwrite_paths(plan)
+        if overwrite_targets:
+            lines.extend(
+                [
+                    "",
+                    "Tracked enhancer files will be updated in place:",
+                    *[f"- {path.as_posix()}" for path in overwrite_targets],
+                ]
+            )
     return "\n".join(lines)
 
 
@@ -744,6 +1094,10 @@ def format_pack_catalog(target: Path | None = None) -> str:
 
 def format_plan_report(plan: InstallPlan, write: bool) -> str:
     lines = [format_plan_header(plan, write), *format_plan_lines(plan)]
+    if plan.operation == "upgrade-enhancer":
+        lines.extend(["", *format_next_steps(plan, write=write)])
+        return "\n".join(lines)
+
     if write:
         lines.extend(["", *format_next_steps(plan, write=True)])
         return "\n".join(lines)
@@ -761,6 +1115,32 @@ def format_plan_report(plan: InstallPlan, write: bool) -> str:
 
 def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
     proposals = [item for item in plan.writes if item.action == "proposal"]
+    if plan.operation == "upgrade-enhancer":
+        if not write:
+            return [
+                "Next step:",
+                "- Re-run this command with `--upgrade-enhancer --write` when the grouped reconcile plan looks correct.",
+                "- If you only need managed outputs today, use `--refresh-generated --write` instead of a full reconcile.",
+            ]
+
+        lines = ["Next steps:"]
+        if not plan.writes and plan.gitignore is None:
+            lines.append("- No reconcile changes were needed; the tracked enhancer files already matched this source version.")
+        elif proposals:
+            lines.append(
+                "- Review the proposal files under `.codex/enhancer-proposals/` and merge the repo-owned scaffold changes you want to keep."
+            )
+            lines.append(
+                "- Use the `adapt-enhancer` skill after merging if repo-specific guidance needs another cleanup pass."
+            )
+        else:
+            lines.append("- Repo-owned scaffold files were already aligned, so only tracked managed outputs and source-aligned copies were updated in place.")
+        if plan.gitignore is not None and plan.gitignore.missing_lines:
+            lines.append("- Review merged `.gitignore` entries if the target repo uses different ignore conventions.")
+        lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
+        lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
+        return lines
+
     if not write:
         action = "refresh preview" if plan.operation == "refresh-generated" else "preview"
         return [
@@ -810,10 +1190,16 @@ def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | 
     current_step = 0
 
     if progress_callback:
+        if plan.operation == "upgrade-enhancer":
+            message = "Preparing upgrade..."
+        elif plan.operation == "refresh-generated":
+            message = "Preparing refresh..."
+        else:
+            message = "Preparing install..."
         progress_callback(
             current_step,
             total_steps,
-            "Preparing refresh..." if plan.operation == "refresh-generated" else "Preparing install...",
+            message,
         )
 
     plan.target.mkdir(parents=True, exist_ok=True)
@@ -849,6 +1235,16 @@ def main(argv: list[str]) -> int:
         "--list-packs",
         action="store_true",
         help="print the available stack packs and exit",
+    )
+    parser.add_argument(
+        "--inspect-install",
+        action="store_true",
+        help="inspect source-vs-target enhancer install state without planning writes",
+    )
+    parser.add_argument(
+        "--upgrade-enhancer",
+        action="store_true",
+        help="preview or apply a reconcile of an existing enhancer install against the current source repo",
     )
     parser.add_argument(
         "--mode",
@@ -907,6 +1303,52 @@ def main(argv: list[str]) -> int:
             print(str(error))
             return 1
         print(format_pack_catalog(target))
+        return 0
+
+    if args.inspect_install and (
+        args.upgrade_enhancer
+        or
+        args.write
+        or args.force
+        or args.refresh_generated
+        or args.use_recommended_packs
+        or args.pack
+        or args.no_pack
+    ):
+        print("--inspect-install only inspects the target repo and cannot be combined with write, refresh, force, or pack-selection flags.")
+        return 1
+
+    if args.inspect_install:
+        try:
+            inspection = inspect_install(target)
+        except ValueError as error:
+            print(str(error))
+            return 1
+        print(format_install_inspection(inspection))
+        return 0
+
+    if args.upgrade_enhancer and (
+        args.force
+        or args.refresh_generated
+        or args.use_recommended_packs
+        or args.pack
+        or args.no_pack
+    ):
+        print("--upgrade-enhancer keeps the installed pack selection and cannot be combined with refresh, force, or pack-selection flags.")
+        return 1
+
+    if args.upgrade_enhancer:
+        if args.mode == "new":
+            print("--upgrade-enhancer only works with --mode existing or --mode auto.")
+            return 1
+        try:
+            plan = build_upgrade_plan(target)
+        except ValueError as error:
+            print(str(error))
+            return 1
+        print(format_plan_report(plan, write=args.write))
+        if args.write:
+            apply_install_plan(plan)
         return 0
 
     if args.refresh_generated and args.force:

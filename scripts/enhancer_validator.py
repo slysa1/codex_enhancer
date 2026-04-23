@@ -362,6 +362,14 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
         )
         return
 
+    enhancer_version = manifest.get("enhancer_version")
+    if not isinstance(enhancer_version, str) or not enhancer_version.strip():
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define enhancer_version as a non-empty string",
+            "Record the installed enhancer version so future upgrades can compare target state to the current source.",
+        )
+
     generated_files = manifest.get("generated_files", {})
     if not isinstance(generated_files, dict) or generated_files.get("stack_guidance") != "docs/ai/stack-guidance.md":
         add_error(

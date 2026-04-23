@@ -8,6 +8,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.enhancer_spec import ENHANCER_MANIFEST_SCHEMA_VERSION, ENHANCER_VERSION
+
 
 STACK_PACK_ROOT = Path(__file__).resolve().parents[1] / "scaffold/stack-packs"
 TARGET_MANIFEST_PATH = Path(".codex/enhancer/manifest.toml")
@@ -65,6 +67,14 @@ class PackSelection:
     reasons: tuple[str, ...]
     selected: bool
     selection_source: str
+
+
+@dataclass(frozen=True)
+class EnhancerInstallState:
+    enhancer_version: str | None
+    selected_packs: tuple[str, ...]
+    safe_to_regenerate: tuple[str, ...]
+    adapt_manually: tuple[str, ...]
 
 
 def _required_str(data: dict[str, object], key: str) -> str:
@@ -383,6 +393,10 @@ def resolve_stack_pack_selection(
 
 
 def load_selected_packs_from_manifest(target: Path) -> tuple[str, ...]:
+    return load_enhancer_install_state(target).selected_packs
+
+
+def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
     manifest_path = target.resolve() / TARGET_MANIFEST_PATH
     if not manifest_path.exists():
         raise ValueError(
@@ -397,6 +411,15 @@ def load_selected_packs_from_manifest(target: Path) -> tuple[str, ...]:
             f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: {error}"
         ) from error
 
+    enhancer_version = manifest.get("enhancer_version")
+    if enhancer_version is not None and (
+        not isinstance(enhancer_version, str) or not enhancer_version.strip()
+    ):
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+            "enhancer_version must be a non-empty string when present."
+        )
+
     selected_packs = manifest.get("selected_packs", [])
     if not isinstance(selected_packs, list) or any(
         not isinstance(item, str) or not item.strip() for item in selected_packs
@@ -405,7 +428,42 @@ def load_selected_packs_from_manifest(target: Path) -> tuple[str, ...]:
             f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
             "selected_packs must be a list of strings."
         )
-    return tuple(selected_packs)
+
+    managed_outputs = manifest.get("managed_outputs", {})
+    if managed_outputs == {}:
+        safe_to_regenerate: tuple[str, ...] = ()
+        adapt_manually: tuple[str, ...] = ()
+    elif not isinstance(managed_outputs, dict):
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+            "managed_outputs must be a table when present."
+        )
+    else:
+        raw_safe = managed_outputs.get("safe_to_regenerate", [])
+        if not isinstance(raw_safe, list) or any(
+            not isinstance(item, str) or not item.strip() for item in raw_safe
+        ):
+            raise ValueError(
+                f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+                "managed_outputs.safe_to_regenerate must be a list of strings."
+            )
+        raw_manual = managed_outputs.get("adapt_manually", [])
+        if not isinstance(raw_manual, list) or any(
+            not isinstance(item, str) or not item.strip() for item in raw_manual
+        ):
+            raise ValueError(
+                f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+                "managed_outputs.adapt_manually must be a list of strings."
+            )
+        safe_to_regenerate = tuple(raw_safe)
+        adapt_manually = tuple(raw_manual)
+
+    return EnhancerInstallState(
+        enhancer_version=enhancer_version,
+        selected_packs=tuple(selected_packs),
+        safe_to_regenerate=safe_to_regenerate,
+        adapt_manually=adapt_manually,
+    )
 
 
 def resolve_manifest_pack_selection(
@@ -589,8 +647,8 @@ def render_stack_pack_manifest(
     selected = tuple(selected_packs)
     selected_set = set(selected)
     lines = [
-        "schema_version = 1",
-        'enhancer_version = "2"',
+        f"schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}",
+        f'enhancer_version = "{ENHANCER_VERSION}"',
         f"selected_packs = [{', '.join(_toml_string(item) for item in selected)}]",
         "",
     ]

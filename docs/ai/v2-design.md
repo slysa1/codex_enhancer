@@ -142,7 +142,7 @@ The installed target repo should record the chosen packs in a visible manifest.
 ### Proposed `.codex/enhancer/manifest.toml`
 ```toml
 schema_version = 1
-enhancer_version = "2"
+enhancer_version = "2.1"
 selected_packs = ["monorepo-workspace", "javascript-typescript-app"]
 
 [[detected_packs]]
@@ -378,3 +378,101 @@ Main risk:
 - Installed output stays readable to a human without hidden context.
 - Pack rules improve guidance without forcing fake commands.
 - Removing a pack remains a normal git diff, not a tooling migration.
+
+## Proposed 2.2 Upgrade And Reconcile Existing Installs
+
+### Goal
+Make already-installed target repos easier to inspect, compare, and reconcile as Codex Enhancer evolves, without replacing normal git review or hiding state in a separate upgrader database.
+
+### Scope
+- inspect source-vs-target enhancer version and selected-pack state
+- plan upgrades for enhancer-owned files in existing repos
+- keep proposal-mode safety for repo-owned scaffold files
+- support targeted refresh of managed outputs plus deliberate reconciliation of manual scaffold files
+
+### Non-Goals
+- no background updater
+- no hidden migration history
+- no automatic merging of user-authored `AGENTS.md` content
+- no silent in-place overwrite of repo-owned workflow files
+
+### 2.2 Step 1: Install State And Inspection
+Objective:
+- add a visible source-vs-target inspection layer so upgrade planning has a deterministic baseline
+
+Files to change:
+- `scripts/enhancer_spec.py`
+- `scripts/stack_packs.py`
+- `scripts/install_enhancer.py`
+- validator and tests
+
+Files deliberately not added:
+- no upgrade apply mode yet
+- no GUI upgrade flow yet
+
+Validation:
+- manifest render/load tests
+- CLI inspection tests
+
+Main risk:
+- overfitting manifest rules before the upgrade flow is implemented
+
+### 2.2 Step 2: CLI Upgrade Planning
+Objective:
+- add `--upgrade-enhancer` as a dry-run planner for existing installs
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `README.md`
+- tests
+
+Files deliberately not added:
+- no one-shot auto-merge engine
+
+Validation:
+- dry-run tests for current, older, and partially missing installs
+
+Main risk:
+- upgrade plans become too noisy; keep them grouped by generated outputs, direct copies, and repo-owned proposals
+
+### 2.2 Step 3: Apply Upgrade And Reconcile
+Objective:
+- apply upgrade plans with the same proposal and overwrite discipline used by install mode
+
+Files to change:
+- installer core
+- manifest rendering
+- tests
+
+Files deliberately not added:
+- no custom diff store
+
+Validation:
+- end-to-end upgrade tests from older fixture installs into current source state
+
+Main risk:
+- clobbering repo-specific scaffold edits instead of proposing them
+
+### 2.2 Step 4: GUI Upgrade Parity
+Objective:
+- add upgrade inspection and apply flow to the Windows GUI
+
+Files to change:
+- `scripts/install_enhancer_gui.py`
+- tests
+- `README.md`
+
+Files deliberately not added:
+- no second GUI app
+
+Validation:
+- helper-level GUI preview tests for upgrade messaging and plan state
+
+Main risk:
+- GUI state drifts from CLI behavior; reuse one core planner
+
+### 2.2 Success Bar
+- a user can inspect an installed repo and see whether it is current, older, legacy, or ahead of source
+- upgrade plans distinguish safe regenerated outputs from repo-owned scaffold proposals
+- applying an upgrade remains reviewable in git
+- old installs can move forward without reinstalling blindly

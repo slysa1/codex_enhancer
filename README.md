@@ -65,9 +65,9 @@ install_enhancer.bat
 The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py), which lets you:
 - type a target repo path manually
 - browse for a target folder
-- choose between a full scaffold install and a managed-output refresh
+- choose between a full scaffold install, an upgrade/reconcile pass, and a managed-output refresh
 - review detected stack packs and adjust the selected set before install
-- review stack packs from the existing target manifest during refresh
+- review stack packs from the existing target manifest during upgrade and refresh
 - review which files will be created, proposed, or overwritten, with critical conflicts called out separately
 - confirm overwrite actions before install
 - watch installation progress
@@ -131,6 +131,24 @@ Apply that refresh:
 python scripts/install_enhancer.py --target ../my-existing-repo --refresh-generated --write
 ```
 
+Inspect an existing install before planning a later upgrade or reconcile:
+
+```bash
+python scripts/install_enhancer.py --target ../my-existing-repo --inspect-install
+```
+
+Preview an upgrade/reconcile plan for an existing enhancer install:
+
+```bash
+python scripts/install_enhancer.py --target ../my-existing-repo --upgrade-enhancer
+```
+
+Apply that upgrade/reconcile plan:
+
+```bash
+python scripts/install_enhancer.py --target ../my-existing-repo --upgrade-enhancer --write
+```
+
 For an existing repo with conflicting files:
 - by default, conflicting files are written as proposals under `.codex/enhancer-proposals/`
 - previews distinguish critical enhancer-owned conflicts from standard ones
@@ -144,8 +162,10 @@ For stack-pack selection:
 - conflicting `--pack` and `--no-pack` selections for the same name are rejected
 - `--refresh-generated` re-renders only enhancer-managed outputs using the target repo's existing `.codex/enhancer/manifest.toml`
 - `--refresh-generated` rejects `--force` and pack-selection flags so the refresh stays aligned with the installed manifest
+- `--inspect-install` reports source-vs-target enhancer version, selected packs, and managed-output ownership without planning writes
+- `--upgrade-enhancer` previews grouped reconcile drift for an existing install, and `--upgrade-enhancer --write` applies that reconcile plan
 
-The CLI and GUI now share the same pack-selection core. The GUI starts with recommended detected packs selected and lets you adjust that set before install. In refresh mode, the GUI reads the target repo's existing `.codex/enhancer/manifest.toml`, shows the current selected packs as read-only context, and refreshes only the managed outputs.
+The CLI and GUI now share the same pack-selection core. The GUI starts with recommended detected packs selected and lets you adjust that set before install. In upgrade and refresh mode, the GUI reads the target repo's existing `.codex/enhancer/manifest.toml`, shows the current selected packs as read-only context, and keeps that manifest selection fixed while it previews the reconcile or refresh.
 
 What gets installed:
 
@@ -176,10 +196,27 @@ Use `--refresh-generated` when you want to rebuild only the safe outputs above. 
 - overwrite `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
 - leave `AGENTS.md`, skills, docs, scripts, tests, CI, and `.gitignore` alone
 
+Use `--inspect-install` when you want to compare the current source repo to an already-installed target before planning an upgrade or reconcile. It reports:
+- the source enhancer version from this repo
+- the target enhancer version recorded in `.codex/enhancer/manifest.toml`
+- selected stack packs
+- files marked safe to regenerate vs files usually adapted manually
+
+Use `--upgrade-enhancer` when you want a reconcile preview for an existing install. It groups drift into:
+- managed generated outputs that can be re-rendered from the current source
+- source-aligned direct-copy files
+- repo-owned scaffold files that should be reviewed as proposals
+
+Re-run the same command with `--write` when the grouped reconcile plan looks correct. Upgrade apply will:
+- overwrite managed generated outputs and source-aligned direct-copy files in place
+- write repo-owned scaffold drift under `.codex/enhancer-proposals/` for manual review and merge
+- preserve the installed pack selection from the target manifest
+- leave pack selection changes to a full install flow instead of silently changing them during upgrade
+
 Use a full install preview instead when you need to:
 - add or remove selected packs
-- update `AGENTS.md` or other scaffold files
-- review conflicts against existing repo-owned guidance
+- bootstrap a repo that does not already have `.codex/enhancer/manifest.toml`
+- choose force-based overwrite behavior for a fresh install instead of proposal-based reconcile output
 
 After installation, adapt the repo in this order:
 1. Review `AGENTS.md` and `docs/ai/stack-guidance.md` for any selected stack packs and confirm that guidance matches the target repo.
@@ -255,6 +292,7 @@ python scripts/check.py
 python scripts/check.py --verbose
 python -m unittest discover -s tests -p "test_*.py" -v
 python scripts/install_enhancer.py --list-packs
+python scripts/install_enhancer.py --target ../my-existing-repo --inspect-install
 python scripts/install_enhancer.py --target ../my-new-repo --mode new
 install_enhancer.bat
 ```
@@ -305,8 +343,9 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 ### `scripts/install_enhancer_gui.py`
 [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py) is the Windows-first GUI layer over the installer core. It adds:
 - manual path entry plus folder browsing
-- detected stack-pack selection with recommended defaults
-- a readable install preview grouped by creates, overwrites, and proposals
+- detected stack-pack selection with recommended defaults for install mode
+- read-only manifest-based pack context for upgrade and refresh mode
+- a readable preview for install, upgrade, and refresh operations
 - an overwrite acknowledgement gate before destructive install actions
 - a progress bar tied to real install steps
 - a completion dialog that lists the installed stack packs

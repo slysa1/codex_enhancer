@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from scripts import check
+from scripts.enhancer_spec import ENHANCER_VERSION
 
 
 TEST_COMMAND = 'python -m unittest discover -s tests -p "test_*.py" -v'
@@ -61,9 +62,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         Keep skills narrow.
         """,
-        ".codex/enhancer/manifest.toml": """
+        ".codex/enhancer/manifest.toml": f"""
         schema_version = 1
-        enhancer_version = "2"
+        enhancer_version = "{ENHANCER_VERSION}"
         selected_packs = []
 
         [generated_files]
@@ -227,9 +228,9 @@ class ValidateTests(unittest.TestCase):
             write_file(
                 root,
                 ".codex/enhancer/manifest.toml",
-                """
+                f"""
                 schema_version = 1
-                enhancer_version = "2"
+                enhancer_version = "{ENHANCER_VERSION}"
                 selected_packs = ["python-service"]
 
                 [generated_files]
@@ -257,9 +258,9 @@ class ValidateTests(unittest.TestCase):
             write_file(
                 root,
                 ".codex/enhancer/manifest.toml",
-                """
+                f"""
                 schema_version = 1
-                enhancer_version = "2"
+                enhancer_version = "{ENHANCER_VERSION}"
                 selected_packs = ["python-service"]
 
                 [generated_files]
@@ -300,9 +301,9 @@ class ValidateTests(unittest.TestCase):
             write_file(
                 root,
                 ".codex/enhancer/manifest.toml",
-                """
+                f"""
                 schema_version = 1
-                enhancer_version = "2"
+                enhancer_version = "{ENHANCER_VERSION}"
                 selected_packs = []
 
                 [generated_files]
