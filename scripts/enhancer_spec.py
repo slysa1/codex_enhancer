@@ -7,18 +7,37 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ENHANCER_VERSION = "2.1"
-ENHANCER_MANIFEST_SCHEMA_VERSION = 1
+ENHANCER_VERSION = "3.0"
+ENHANCER_MANIFEST_SCHEMA_VERSION = 2
+SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS = frozenset({1, ENHANCER_MANIFEST_SCHEMA_VERSION})
 
 CHECK_COMMAND = "python scripts/check.py"
 TEST_COMMAND = 'python -m unittest discover -s tests -p "test_*.py" -v'
-ENHANCER_VERSION = "2.1"
-ENHANCER_MANIFEST_SCHEMA_VERSION = 1
 
 GITIGNORE_LINES = (
     "__pycache__/",
     "*.py[cod]",
     "tests/_tmp/",
+)
+
+
+@dataclass(frozen=True)
+class ManagedSection:
+    """A visible enhancer-owned section inside an otherwise repo-owned file."""
+
+    identifier: str
+    path: Path
+    start_marker: str
+    end_marker: str
+
+
+MANAGED_SECTIONS = (
+    ManagedSection(
+        identifier="AGENTS.md:selected-stack-packs",
+        path=Path("AGENTS.md"),
+        start_marker="<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs start -->",
+        end_marker="<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->",
+    ),
 )
 
 
@@ -59,7 +78,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("install_enhancer.bat"),
         Path("docs/ai/architecture.md"),
         Path("docs/ai/code-review.md"),
-        Path("docs/ai/v2-design.md"),
+        Path("docs/ai/roadmap.md"),
         Path(".codex/skills/AGENTS.md"),
         Path(".codex/skills/plan-change/SKILL.md"),
         Path(".codex/skills/review-prep/SKILL.md"),
@@ -113,7 +132,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             TEST_COMMAND,
             "install_enhancer.bat",
             "scripts/install_enhancer_gui.py",
-            "docs/ai/v2-design.md",
+            "docs/ai/roadmap.md",
         ),
         Path("AGENTS.md"): (
             CHECK_COMMAND,
@@ -121,7 +140,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "install_enhancer.bat",
             "docs/ai/architecture.md",
             "docs/ai/code-review.md",
-            "docs/ai/v2-design.md",
+            "docs/ai/roadmap.md",
             ".codex/skills/",
             "tests/",
         ),

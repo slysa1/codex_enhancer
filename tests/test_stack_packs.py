@@ -7,7 +7,7 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-from scripts.enhancer_spec import ENHANCER_VERSION
+from scripts.enhancer_spec import ENHANCER_MANIFEST_SCHEMA_VERSION, ENHANCER_VERSION
 from scripts.stack_packs import (
     detect_stack_packs,
     load_enhancer_install_state,
@@ -18,6 +18,7 @@ from scripts.stack_packs import (
     render_pack_fragment,
     render_stack_pack_manifest,
     resolve_manifest_pack_selection,
+    resolve_managed_pack_selection,
     resolve_stack_pack_selection,
 )
 
@@ -145,9 +146,15 @@ class StackPackTests(unittest.TestCase):
             )
 
             self.assertIn('selected_packs = ["javascript-typescript-app"]', manifest)
+            self.assertIn(f"schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}", manifest)
             self.assertIn(f'enhancer_version = "{ENHANCER_VERSION}"', manifest)
+            self.assertIn("[lifecycle]", manifest)
+            self.assertIn('state = "active"', manifest)
+            self.assertIn('pack_selection = "manifest"', manifest)
+            self.assertIn('managed_sections = ["AGENTS.md:selected-stack-packs"]', manifest)
             self.assertIn('name = "javascript-typescript-app"', manifest)
             self.assertIn("selected = true", manifest)
+            self.assertIn('evidence = ["found package.json", "matched tsconfig.json"]', manifest)
             self.assertIn('stack_guidance = "docs/ai/stack-guidance.md"', manifest)
             self.assertIn(
                 'safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]',
@@ -198,28 +205,84 @@ class StackPackTests(unittest.TestCase):
 
             self.assertEqual(selected, ("python-service",))
 
-    def test_load_enhancer_install_state_reads_version_and_ownership(self) -> None:
+    def test_load_enhancer_install_state_reads_version_ownership_and_lifecycle(self) -> None:
         with repo_fixture("pack_install_state") as root:
             write_file(
                 root,
                 ".codex/enhancer/manifest.toml",
                 """
-                schema_version = 1
+                schema_version = %s
                 enhancer_version = "%s"
+                selected_packs = ["python-service"]
+
+                [lifecycle]
+                state = "active"
+                pack_selection = "manifest"
+                managed_sections = ["AGENTS.md:stack-packs"]
+
+                [[detected_packs]]
+                name = "python-service"
+                selected = true
+                recommended = true
+                detected = true
+                reason = "found pyproject.toml"
+                evidence = ["found pyproject.toml"]
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md"]
+                adapt_manually = ["AGENTS.md"]
+                """ % (ENHANCER_MANIFEST_SCHEMA_VERSION, ENHANCER_VERSION),
+            )
+
+            state = load_enhancer_install_state(root)
+
+            self.assertEqual(state.schema_version, ENHANCER_MANIFEST_SCHEMA_VERSION)
+            self.assertEqual(state.enhancer_version, ENHANCER_VERSION)
+            self.assertEqual(state.selected_packs, ("python-service",))
+            self.assertEqual(state.safe_to_regenerate, ("docs/ai/stack-guidance.md",))
+            self.assertEqual(state.adapt_manually, ("AGENTS.md",))
+            self.assertEqual(state.lifecycle_state, "active")
+            self.assertEqual(state.pack_selection_mode, "manifest")
+            self.assertEqual(state.managed_sections, ("AGENTS.md:stack-packs",))
+            self.assertEqual(state.pack_evidence[0].name, "python-service")
+            self.assertEqual(state.pack_evidence[0].evidence, ("found pyproject.toml",))
+
+    def test_load_enhancer_install_state_accepts_legacy_schema_one(self) -> None:
+        with repo_fixture("pack_install_state_legacy_schema") as root:
+            write_file(
+                root,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "2.1"
                 selected_packs = ["python-service"]
 
                 [managed_outputs]
                 safe_to_regenerate = ["docs/ai/stack-guidance.md"]
                 adapt_manually = ["AGENTS.md"]
-                """ % ENHANCER_VERSION,
+                """,
             )
 
             state = load_enhancer_install_state(root)
 
-            self.assertEqual(state.enhancer_version, ENHANCER_VERSION)
-            self.assertEqual(state.selected_packs, ("python-service",))
-            self.assertEqual(state.safe_to_regenerate, ("docs/ai/stack-guidance.md",))
-            self.assertEqual(state.adapt_manually, ("AGENTS.md",))
+            self.assertEqual(state.schema_version, 1)
+            self.assertEqual(state.enhancer_version, "2.1")
+            self.assertEqual(state.lifecycle_state, None)
+
+    def test_load_enhancer_install_state_rejects_unsupported_schema(self) -> None:
+        with repo_fixture("pack_install_state_bad_schema") as root:
+            write_file(
+                root,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 99
+                enhancer_version = "99.0"
+                selected_packs = []
+                """,
+            )
+
+            with self.assertRaisesRegex(ValueError, "unsupported .*schema_version 99"):
+                load_enhancer_install_state(root)
 
     def test_resolve_manifest_pack_selection_marks_selected_packs(self) -> None:
         with repo_fixture("pack_manifest_selection") as root:
@@ -242,6 +305,70 @@ class StackPackTests(unittest.TestCase):
             selected = next(item for item in selections if item.pack.name == "python-service")
             self.assertTrue(selected.selected)
             self.assertEqual(selected.selection_source, "manifest")
+
+    def test_resolve_managed_pack_selection_adds_and_removes_packs(self) -> None:
+        with repo_fixture("pack_manage_add_remove") as root:
+            write_file(root, "package.json", '{"name": "demo"}\n')
+            write_file(root, "tsconfig.json", "{}\n")
+
+            detections = detect_stack_packs(root)
+            selections = resolve_managed_pack_selection(
+                detections,
+                current_selected_packs=("javascript-typescript-app",),
+                add_packs=("python-service",),
+                remove_packs=("javascript-typescript-app",),
+            )
+
+            selected_names = tuple(item.pack.name for item in selections if item.selected)
+            removed = next(item for item in selections if item.pack.name == "javascript-typescript-app")
+            added = next(item for item in selections if item.pack.name == "python-service")
+
+            self.assertEqual(selected_names, ("python-service",))
+            self.assertFalse(removed.selected)
+            self.assertEqual(removed.selection_source, "manage-remove")
+            self.assertTrue(added.selected)
+            self.assertEqual(added.selection_source, "manage-add")
+
+    def test_resolve_managed_pack_selection_replaces_pack_set(self) -> None:
+        with repo_fixture("pack_manage_set") as root:
+            write_file(root, "package.json", '{"name": "demo"}\n')
+            write_file(root, "tsconfig.json", "{}\n")
+            write_file(root, "src/App.tsx", "export function App() { return <main />; }\n")
+
+            detections = detect_stack_packs(root)
+            selections = resolve_managed_pack_selection(
+                detections,
+                current_selected_packs=("javascript-typescript-app", "frontend-ui"),
+                set_packs=("python-service",),
+            )
+
+            selected_names = tuple(item.pack.name for item in selections if item.selected)
+            removed = next(item for item in selections if item.pack.name == "frontend-ui")
+            replacement = next(item for item in selections if item.pack.name == "python-service")
+
+            self.assertEqual(selected_names, ("python-service",))
+            self.assertEqual(removed.selection_source, "manage-set-remove")
+            self.assertEqual(replacement.selection_source, "manage-set")
+
+    def test_resolve_managed_pack_selection_rejects_conflicts(self) -> None:
+        with repo_fixture("pack_manage_conflict") as root:
+            detections = detect_stack_packs(root)
+
+            with self.assertRaisesRegex(ValueError, "Conflicting stack-pack management"):
+                resolve_managed_pack_selection(
+                    detections,
+                    current_selected_packs=(),
+                    add_packs=("python-service",),
+                    remove_packs=("python-service",),
+                )
+
+            with self.assertRaisesRegex(ValueError, "--set-pack cannot be combined"):
+                resolve_managed_pack_selection(
+                    detections,
+                    current_selected_packs=(),
+                    add_packs=("python-service",),
+                    set_packs=("python-service",),
+                )
 
     def test_render_install_follow_up_lines_uses_selected_pack_summaries(self) -> None:
         with repo_fixture("pack_follow_up") as root:

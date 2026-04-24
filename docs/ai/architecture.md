@@ -6,11 +6,11 @@ This repository contains the enhancer itself, not an application stack. The work
 ## Current Layers
 1. [README.md](../../README.md): human-facing overview and quick start.
 2. [AGENTS.md](../../AGENTS.md): short entrypoint for repo purpose, workflow, commands, and definition of done.
-3. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, and [v2 design](./v2-design.md).
+3. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, and the phased [design roadmap](./roadmap.md).
 4. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
-5. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, and guided install or managed-output refresh flow.
-6. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus safe generated-output refreshes.
-7. [scripts/stack_packs.py](../../scripts/stack_packs.py) and [scaffold/stack-packs/](../../scaffold/stack-packs/): file-based registry and loader for optional v2 stack packs.
+5. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, pack management, upgrade/reconcile, and guided install or managed-output refresh flow.
+6. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus pack management, upgrade/reconcile, and safe generated-output refreshes.
+7. [scripts/stack_packs.py](../../scripts/stack_packs.py) and [scaffold/stack-packs/](../../scaffold/stack-packs/): file-based registry, loader, and manifest renderer for optional stack packs.
 8. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
 9. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.
 10. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for the enhancer source repo.
@@ -34,7 +34,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - Evals or regression fixtures once the repo owns behavior that can actually regress
 - Stack-specific helper scripts once real install, build, lint, or test commands exist
 - Additional skills only after repeated use proves they remove real prompt repetition
-- Optional stack packs only if they stay file-based, visible, and conservative as described in [v2-design.md](./v2-design.md)
+- Optional stack packs only if they stay file-based, visible, and conservative as described in [roadmap.md](./roadmap.md)
 
 ### Niche Later
 - Domain-specific playbooks for migrations, incidents, releases, or API contracts
@@ -57,6 +57,8 @@ This repository contains the enhancer itself, not an application stack. The work
 - If a script needs third-party dependencies, justify them in the same change.
 - If the installer changes, keep the launcher, GUI, scaffold, shared spec, source validator, and tests aligned in the same patch.
 - If a change introduces a new top-level workflow asset, update [AGENTS.md](../../AGENTS.md) so the repo map stays accurate.
+- If a scaffold file gains or loses an enhancer-managed section marker, update the manifest renderer and validator expectations in the same patch.
+- If pack management changes, keep CLI flags, GUI mode labels, manifest rendering, managed-section behavior, README guidance, and tests aligned in the same patch.
 
 ## When To Add More Structure
 - Add install, build, lint, and test commands to [AGENTS.md](../../AGENTS.md) only after they exist in the repo.

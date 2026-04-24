@@ -17,10 +17,12 @@ if __package__ in (None, ""):
 
 from scripts.enhancer_spec import (
     CHECK_COMMAND,
+    ENHANCER_MANIFEST_SCHEMA_VERSION,
     ENHANCER_VERSION,
     GITIGNORE_LINES,
     INSTALL_COPY_ASSETS,
     INSTALL_TEMPLATE_ASSETS,
+    MANAGED_SECTIONS,
     TEST_COMMAND,
 )
 from scripts.stack_packs import (
@@ -38,6 +40,7 @@ from scripts.stack_packs import (
     render_stack_guidance,
     render_stack_pack_manifest,
     resolve_manifest_pack_selection,
+    resolve_managed_pack_selection,
     resolve_stack_pack_selection,
     selected_pack_names,
 )
@@ -126,6 +129,7 @@ GENERATED_OUTPUT_DESTINATIONS = (
     Path("docs/ai/stack-guidance.md"),
     Path(".codex/enhancer/manifest.toml"),
 )
+SELECTED_STACK_PACKS_SECTION_ID = "AGENTS.md:selected-stack-packs"
 
 INSTALL_MANAGED_DESTINATIONS = (
     tuple(asset.destination for asset in INSTALL_TEMPLATE_ASSETS)
@@ -198,6 +202,8 @@ def inspect_install(target: Path) -> InstallInspection:
     target_version = install_state.enhancer_version
     if target_version is None:
         status = "legacy"
+    elif install_state.schema_version != ENHANCER_MANIFEST_SCHEMA_VERSION:
+        status = "upgrade-recommended"
     elif _version_key(target_version) == _version_key(ENHANCER_VERSION):
         status = "current"
     elif _version_key(target_version) < _version_key(ENHANCER_VERSION):
@@ -243,9 +249,15 @@ def format_install_inspection(inspection: InstallInspection) -> str:
     target_version = inspection.target_version or "unknown"
     lines.append(f"- Target enhancer version: `{target_version}`")
     state = inspection.install_state or EnhancerInstallState(None, (), (), ())
+    schema_version = "unknown" if state.schema_version is None else str(state.schema_version)
+    lines.append(f"- Target manifest schema: `{schema_version}`")
     lines.append(f"- Selected packs: {_format_string_list(state.selected_packs)}")
     lines.append(f"- Safe to regenerate: {_format_string_list(state.safe_to_regenerate)}")
     lines.append(f"- Adapt manually: {_format_string_list(state.adapt_manually)}")
+    if state.lifecycle_state or state.pack_selection_mode or state.managed_sections:
+        lines.append(f"- Lifecycle state: `{state.lifecycle_state or 'unknown'}`")
+        lines.append(f"- Pack selection mode: `{state.pack_selection_mode or 'unknown'}`")
+        lines.append(f"- Managed sections: {_format_string_list(state.managed_sections)}")
 
     if inspection.status == "current":
         status_line = "target install matches the current source version."
@@ -256,7 +268,10 @@ def format_install_inspection(inspection: InstallInspection) -> str:
             "- Use `--upgrade-enhancer` to preview reconcile drift, then re-run with `--write` when the plan looks correct."
         )
     elif inspection.status == "upgrade-recommended":
-        status_line = "target install is older than the current source version."
+        if state.schema_version != ENHANCER_MANIFEST_SCHEMA_VERSION and inspection.target_version == ENHANCER_VERSION:
+            status_line = "target install uses an older manifest schema than the current source version."
+        else:
+            status_line = "target install is older than the current source version."
         next_step = (
             "- Use `--upgrade-enhancer` to preview scaffold reconcile drift, then re-run with `--write` to apply it. "
             "Use `--refresh-generated` only if you just need managed outputs."
@@ -561,6 +576,56 @@ def plan_generated_writes(
     return writes
 
 
+def _selected_stack_packs_section():
+    for section in MANAGED_SECTIONS:
+        if section.identifier == SELECTED_STACK_PACKS_SECTION_ID:
+            return section
+    raise ValueError(f"Missing managed section spec: {SELECTED_STACK_PACKS_SECTION_ID}")
+
+
+def replace_managed_section_content(
+    text: str,
+    *,
+    start_marker: str,
+    end_marker: str,
+    replacement: str,
+) -> str:
+    start_count = text.count(start_marker)
+    end_count = text.count(end_marker)
+    if start_count != 1 or end_count != 1:
+        raise ValueError(
+            "AGENTS.md must contain exactly one selected stack-pack managed section marker pair."
+        )
+
+    start_index = text.index(start_marker)
+    end_index = text.index(end_marker)
+    if start_index > end_index:
+        raise ValueError("AGENTS.md has reversed selected stack-pack managed section markers.")
+
+    before = text[: start_index + len(start_marker)]
+    after = text[end_index:]
+    return f"{before}\n{replacement.strip()}\n{after}"
+
+
+def render_managed_agents_summary_update(
+    target: Path,
+    pack_selections: tuple[PackSelection, ...],
+) -> str:
+    section = _selected_stack_packs_section()
+    agents_path = target / section.path
+    if not agents_path.exists():
+        raise ValueError(
+            "Target AGENTS.md is missing; run --upgrade-enhancer before managing packs."
+        )
+
+    return replace_managed_section_content(
+        agents_path.read_text(encoding="utf-8"),
+        start_marker=section.start_marker,
+        end_marker=section.end_marker,
+        replacement=render_agents_summary(pack_selections),
+    )
+
+
 def build_upgrade_plan(target: Path) -> InstallPlan:
     inspection = inspect_install(target)
     if inspection.status == "not-installed":
@@ -646,6 +711,84 @@ def build_upgrade_plan(target: Path) -> InstallPlan:
         force=False,
         writes=tuple(writes),
         gitignore=gitignore_plan,
+        pack_detections=pack_detections,
+        pack_selections=pack_selections,
+        manifest_preview=manifest_preview,
+    )
+
+
+def build_pack_management_plan(
+    target: Path,
+    *,
+    add_packs: tuple[str, ...] = (),
+    remove_packs: tuple[str, ...] = (),
+    set_packs: tuple[str, ...] | None = None,
+    require_changes: bool = False,
+) -> InstallPlan:
+    inspection = inspect_install(target)
+    if inspection.status == "not-installed":
+        raise ValueError(
+            "Target repo does not contain an enhancer install yet; run a full install preview first."
+        )
+    if inspection.status != "current":
+        raise ValueError(
+            "Target enhancer install is not current; run --upgrade-enhancer before managing packs."
+        )
+    if require_changes and not add_packs and not remove_packs and set_packs is None:
+        raise ValueError("--manage-packs requires --add-pack, --remove-pack, or --set-pack.")
+
+    resolved_target = inspection.target
+    ownership = summarize_output_ownership(INSTALL_MANAGED_DESTINATIONS)
+    pack_detections = detect_stack_packs(resolved_target)
+    install_state = inspection.install_state or EnhancerInstallState(None, (), (), ())
+    pack_selections = resolve_managed_pack_selection(
+        pack_detections,
+        current_selected_packs=install_state.selected_packs,
+        add_packs=add_packs,
+        remove_packs=remove_packs,
+        set_packs=set_packs,
+    )
+    manifest_preview = render_stack_pack_manifest(
+        pack_detections,
+        selected_packs=selected_pack_names(pack_selections),
+        safe_to_regenerate=ownership.safe_to_regenerate,
+        adapt_manually=ownership.adapt_manually,
+    )
+
+    writes: list[PlannedWrite] = []
+    agents_update = _plan_changed_write(
+        resolved_target,
+        Path("AGENTS.md"),
+        render_managed_agents_summary_update(resolved_target, pack_selections),
+        "managed AGENTS.md selected stack-pack section",
+        existing_action="overwrite",
+    )
+    if agents_update is not None:
+        writes.append(agents_update)
+
+    for planned in plan_generated_writes(
+        resolved_target,
+        force=True,
+        pack_selections=pack_selections,
+        manifest_preview=manifest_preview,
+    ):
+        changed = _plan_changed_write(
+            resolved_target,
+            planned.destination,
+            planned.content,
+            planned.source_label,
+            existing_action="overwrite",
+        )
+        if changed is not None:
+            writes.append(changed)
+
+    return InstallPlan(
+        target=resolved_target,
+        operation="manage-packs",
+        mode="existing",
+        force=False,
+        writes=tuple(writes),
+        gitignore=None,
         pack_detections=pack_detections,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
@@ -774,6 +917,9 @@ def format_plan_header(plan: InstallPlan, write: bool) -> str:
         "Codex Enhancer upgrade reconcile plan"
         if plan.operation == "upgrade-enhancer"
         else
+        "Codex Enhancer stack-pack management plan"
+        if plan.operation == "manage-packs"
+        else
         "Codex Enhancer generated-output refresh"
         if plan.operation == "refresh-generated"
         else "Codex Enhancer install"
@@ -849,6 +995,8 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
         lines.append("- Manifest preview selected_packs = []")
     if plan.operation == "upgrade-enhancer":
         lines.append("- Upgrade reconcile keeps the installed pack selection and compares tracked enhancer files against the current source.")
+    elif plan.operation == "manage-packs":
+        lines.append("- Pack management updates the selected target manifest packs, managed AGENTS section, and generated pack guidance.")
     elif plan.operation == "refresh-generated":
         lines.append("- Stack guidance and the pack manifest will be regenerated from the existing target manifest.")
     else:
@@ -858,7 +1006,7 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
 
 
 def summarize_conflicts(plan: InstallPlan) -> ConflictSummary:
-    if plan.operation in {"refresh-generated", "upgrade-enhancer"}:
+    if plan.operation in {"refresh-generated", "upgrade-enhancer", "manage-packs"}:
         return ConflictSummary(
             critical_proposals=(),
             standard_proposals=(),
@@ -923,6 +1071,15 @@ def format_output_ownership_lines(plan: InstallPlan) -> list[str]:
     summary = summarize_output_ownership(tuple(item.destination for item in plan.writes))
     if not summary.safe_to_regenerate and not summary.adapt_manually:
         return []
+
+    if plan.operation == "manage-packs":
+        lines = ["Output ownership:"]
+        if summary.safe_to_regenerate:
+            lines.append("- Regenerated managed outputs: " + _format_conflict_paths(summary.safe_to_regenerate))
+        if summary.adapt_manually:
+            lines.append("- Managed sections updated in place: " + _format_conflict_paths(summary.adapt_manually))
+        lines.append("- Repo-owned content outside managed markers stays untouched.")
+        return lines
 
     lines = ["Output ownership:"]
     if summary.safe_to_regenerate:
@@ -1062,6 +1219,14 @@ def describe_pack_selection(selection: PackSelection) -> str:
         return f"skipped explicitly via --no-pack ({reason})"
     if selection.selection_source == "manifest":
         return f"selected from existing target manifest ({reason})"
+    if selection.selection_source == "manage-add":
+        return f"added by --add-pack ({reason})"
+    if selection.selection_source == "manage-remove":
+        return f"removed by --remove-pack ({reason})"
+    if selection.selection_source == "manage-set":
+        return f"selected by --set-pack ({reason})"
+    if selection.selection_source == "manage-set-remove":
+        return f"removed by --set-pack replacement ({reason})"
     if selection.selection_source == "default":
         return f"selected by pack default ({reason})"
     if selection.detected and selection.recommended:
@@ -1142,13 +1307,34 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
         return lines
 
     if not write:
-        action = "refresh preview" if plan.operation == "refresh-generated" else "preview"
+        action = (
+            "refresh preview"
+            if plan.operation == "refresh-generated"
+            else "pack-management preview"
+            if plan.operation == "manage-packs"
+            else "preview"
+        )
         return [
             "Next step:",
             f"- Re-run this command with --write when the {action} looks correct.",
         ]
 
     lines = ["Next steps:"]
+    if plan.operation == "manage-packs":
+        selected_names = selected_pack_names(plan.pack_selections)
+        if selected_names:
+            lines.append(
+                "- Review the updated managed stack-pack section in `AGENTS.md` for: "
+                + ", ".join(f"`{name}`" for name in selected_names)
+                + "."
+            )
+        else:
+            lines.append("- Review the updated managed stack-pack section in `AGENTS.md`; no packs are selected now.")
+        lines.append("- Review the regenerated `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`.")
+        lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
+        lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
+        return lines
+
     if plan.operation == "refresh-generated":
         lines.extend(render_refresh_follow_up_lines(plan.pack_selections))
         lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
@@ -1173,7 +1359,13 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
 
 
 def format_after_install_preview(plan: InstallPlan) -> list[str]:
-    heading = "After refresh:" if plan.operation == "refresh-generated" else "After install:"
+    heading = (
+        "After refresh:"
+        if plan.operation == "refresh-generated"
+        else "After pack management:"
+        if plan.operation == "manage-packs"
+        else "After install:"
+    )
     return [heading, *format_next_steps(plan, write=True)]
 
 
@@ -1192,6 +1384,8 @@ def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | 
     if progress_callback:
         if plan.operation == "upgrade-enhancer":
             message = "Preparing upgrade..."
+        elif plan.operation == "manage-packs":
+            message = "Preparing pack management..."
         elif plan.operation == "refresh-generated":
             message = "Preparing refresh..."
         else:
@@ -1247,6 +1441,11 @@ def main(argv: list[str]) -> int:
         help="preview or apply a reconcile of an existing enhancer install against the current source repo",
     )
     parser.add_argument(
+        "--manage-packs",
+        action="store_true",
+        help="preview or apply selected stack-pack changes in an existing enhancer install",
+    )
+    parser.add_argument(
         "--mode",
         choices=("auto", "new", "existing"),
         default="auto",
@@ -1284,6 +1483,24 @@ def main(argv: list[str]) -> int:
         default=[],
         help="explicitly skip a stack pack by name; repeatable",
     )
+    parser.add_argument(
+        "--add-pack",
+        action="append",
+        default=[],
+        help="add a stack pack to an existing installed manifest; repeatable and requires --manage-packs",
+    )
+    parser.add_argument(
+        "--remove-pack",
+        action="append",
+        default=[],
+        help="remove a stack pack from an existing installed manifest; repeatable and requires --manage-packs",
+    )
+    parser.add_argument(
+        "--set-pack",
+        action="append",
+        default=[],
+        help="replace the installed stack-pack selection with this exact pack set; repeatable and requires --manage-packs",
+    )
     args = parser.parse_args(argv)
 
     if args.list_packs and args.target is None:
@@ -1307,6 +1524,7 @@ def main(argv: list[str]) -> int:
 
     if args.inspect_install and (
         args.upgrade_enhancer
+        or args.manage_packs
         or
         args.write
         or args.force
@@ -1314,6 +1532,9 @@ def main(argv: list[str]) -> int:
         or args.use_recommended_packs
         or args.pack
         or args.no_pack
+        or args.add_pack
+        or args.remove_pack
+        or args.set_pack
     ):
         print("--inspect-install only inspects the target repo and cannot be combined with write, refresh, force, or pack-selection flags.")
         return 1
@@ -1329,10 +1550,14 @@ def main(argv: list[str]) -> int:
 
     if args.upgrade_enhancer and (
         args.force
+        or args.manage_packs
         or args.refresh_generated
         or args.use_recommended_packs
         or args.pack
         or args.no_pack
+        or args.add_pack
+        or args.remove_pack
+        or args.set_pack
     ):
         print("--upgrade-enhancer keeps the installed pack selection and cannot be combined with refresh, force, or pack-selection flags.")
         return 1
@@ -1343,6 +1568,40 @@ def main(argv: list[str]) -> int:
             return 1
         try:
             plan = build_upgrade_plan(target)
+        except ValueError as error:
+            print(str(error))
+            return 1
+        print(format_plan_report(plan, write=args.write))
+        if args.write:
+            apply_install_plan(plan)
+        return 0
+
+    if (args.add_pack or args.remove_pack or args.set_pack) and not args.manage_packs:
+        print("--add-pack, --remove-pack, and --set-pack require --manage-packs.")
+        return 1
+
+    if args.manage_packs and (
+        args.force
+        or args.refresh_generated
+        or args.use_recommended_packs
+        or args.pack
+        or args.no_pack
+    ):
+        print("--manage-packs updates installed pack selection and cannot be combined with install, refresh, force, or install-time pack-selection flags.")
+        return 1
+
+    if args.manage_packs:
+        if args.mode == "new":
+            print("--manage-packs only works with --mode existing or --mode auto.")
+            return 1
+        try:
+            plan = build_pack_management_plan(
+                target,
+                add_packs=tuple(args.add_pack),
+                remove_packs=tuple(args.remove_pack),
+                set_packs=tuple(args.set_pack) if args.set_pack else None,
+                require_changes=True,
+            )
         except ValueError as error:
             print(str(error))
             return 1
@@ -1363,6 +1622,9 @@ def main(argv: list[str]) -> int:
         args.use_recommended_packs
         or args.pack
         or args.no_pack
+        or args.add_pack
+        or args.remove_pack
+        or args.set_pack
     ):
         print(
             "--refresh-generated uses the target repo's existing manifest selection; "

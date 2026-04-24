@@ -7,7 +7,7 @@ This file explains how the Codex workflow layer should stay minimal inside {{REP
 1. [AGENTS.md](../../AGENTS.md): the short repo-wide operating map plus a concise summary of any selected stack packs.
 2. [docs/ai/](../ai/): durable detail that would bloat `AGENTS.md` if kept inline.
 3. [docs/ai/stack-guidance.md](./stack-guidance.md): selected stack-pack guidance from the enhancer install and safe to regenerate later.
-4. [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml): record of detected and selected stack packs plus managed-output ownership; also safe to regenerate later.
+4. [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml): record of detected and selected stack packs, lifecycle state, visible pack evidence, and managed-output ownership; also safe to regenerate later.
 5. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
 6. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for this workflow layer.
 7. [tests/](../../tests/): regression protection for the validator.
@@ -28,6 +28,8 @@ This file explains how the Codex workflow layer should stay minimal inside {{REP
 ## Managed Output Rule
 - Treat [docs/ai/stack-guidance.md](./stack-guidance.md) and [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml) as installer-managed outputs that are safe to regenerate later.
 - Treat [AGENTS.md](../../AGENTS.md) and the rest of the scaffolded workflow files as repo-owned starting points that should usually be adapted by hand.
+- Keep the manifest schema and lifecycle metadata intact when editing by hand; use the enhancer upgrade or refresh flow if schema drift appears.
+- Keep the visible managed-section markers around the selected stack-pack summary in [AGENTS.md](../../AGENTS.md); only the content inside those markers is enhancer-owned and safe for pack-management updates.
 
 ## Extension Rules
 - Prefer updating [AGENTS.md](../../AGENTS.md) or an existing doc before adding a new file.

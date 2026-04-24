@@ -1,7 +1,7 @@
-# Codex Enhancer V2 Design
+# Codex Enhancer Roadmap
 
 ## Purpose
-V2 should make Codex Enhancer meaningfully more helpful in common real-world repositories without turning it into a generic framework. The core idea is optional stack packs: small, visible, repo-local overlays that add durable guidance for common app shapes while preserving the current thin enhancer model.
+This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the planned `3.0` managed-section and lifecycle model. The core idea remains optional stack packs: small, visible, repo-local overlays that add durable guidance for common app shapes while preserving the current thin enhancer model.
 
 ## V2 Goals
 - Keep the root enhancer simple and readable.
@@ -28,7 +28,7 @@ V2 should make Codex Enhancer meaningfully more helpful in common real-world rep
 |-- docs/ai/
 |   |-- architecture.md
 |   |-- code-review.md
-|   `-- v2-design.md
+|   `-- roadmap.md
 |-- scaffold/
 |   |-- target-repo/
 |   `-- stack-packs/
@@ -141,22 +141,37 @@ The installed target repo should record the chosen packs in a visible manifest.
 
 ### Proposed `.codex/enhancer/manifest.toml`
 ```toml
-schema_version = 1
-enhancer_version = "2.1"
+schema_version = 2
+enhancer_version = "3.0"
 selected_packs = ["monorepo-workspace", "javascript-typescript-app"]
+
+[lifecycle]
+state = "active"
+pack_selection = "manifest"
+managed_sections = ["AGENTS.md:selected-stack-packs"]
 
 [[detected_packs]]
 name = "monorepo-workspace"
 selected = true
+recommended = true
+detected = true
 reason = "Found pnpm-workspace.yaml"
+evidence = ["Found pnpm-workspace.yaml"]
 
 [[detected_packs]]
 name = "python-service"
 selected = false
+recommended = false
+detected = false
 reason = "No pyproject.toml or requirements.txt found"
+evidence = ["No pyproject.toml or requirements.txt found"]
 
 [generated_files]
 stack_guidance = "docs/ai/stack-guidance.md"
+
+[managed_outputs]
+safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+adapt_manually = ["AGENTS.md"]
 ```
 
 ## Installer UX
@@ -343,7 +358,7 @@ Files to change:
 - tests and docs
 
 Files deliberately not added:
-- no frontend-ui pack yet
+- no frontend-ui or node-api-service pack in the initial v2 launch
 - no database pack yet
 
 Validation:
@@ -541,7 +556,7 @@ Objective:
 - record the exact 2.3 pack scope, shipped candidates, and deferred pack in durable docs
 
 Files to change:
-- `docs/ai/v2-design.md`
+- `docs/ai/roadmap.md`
 
 Files deliberately not added:
 - no runtime changes yet
@@ -618,3 +633,214 @@ Main risk:
 - selected-pack summaries remain short in `AGENTS.md`
 - deeper guidance remains in `docs/ai/stack-guidance.md`
 - deferred packs stay explicitly out of scope until the detector can justify them
+
+## Proposed 3.0 Managed Sections, Pack Lifecycle, And Stronger Evidence
+
+### Goal
+Make Codex Enhancer feel mature in long-lived target repos by supporting safe pack changes after install, section-aware refresh and upgrade behavior, and stronger evidence-backed recommendations without adding hidden state or framework machinery.
+
+### Scope
+- carry the `2.3` shipped packs (`frontend-ui` and `node-api-service`) forward as first-class pack-management and validation targets
+- evolve the target manifest so it can explain managed sections, pack evidence, and compatibility state
+- add visible managed sections to scaffolded files so the enhancer can refresh owned regions without taking over entire files
+- add a deliberate pack-management flow for adding and removing packs after install
+- strengthen pack detection with narrow, reviewable manifest evidence
+- ship `library-package` only after the stronger evidence layer exists
+- make refresh, upgrade, validation, and docs understand the fuller lifecycle
+
+### Non-Goals
+- no packaged updater or background service
+- no hidden migration database
+- no generic plugin marketplace
+- no broad config parser that invents commands from arbitrary manifest content
+- no large pack explosion beyond what the stronger evidence layer can justify
+
+### 3.0 Step 1: Compatibility And Manifest Evolution
+Objective:
+- lock the `3.0` compatibility story and extend the target manifest with visible lifecycle metadata for managed sections, evidence, and pack state
+
+Files to change:
+- `scripts/enhancer_spec.py`
+- `scripts/stack_packs.py`
+- `scripts/enhancer_validator.py`
+- target manifest rendering tests
+- roadmap and operator docs as needed
+
+Files deliberately not added:
+- no hidden cache
+- no separate migration database
+
+Validation:
+- manifest render/load tests for `2.x` and `3.0` states
+- validator tests for older, current, and malformed manifests
+
+Main risk:
+- making the manifest too opaque or too noisy; keep new fields human-readable and directly tied to visible repo files
+
+Implemented baseline:
+- source installs now render enhancer version `3.0` with manifest schema `2`
+- schema `1` manifests remain readable for inspect and upgrade flows
+- current validation requires schema `2`, lifecycle metadata, and visible pack evidence in generated manifests
+
+### 3.0 Step 2: Managed Sections In Target Scaffold
+Objective:
+- add visible managed-section markers to selected scaffold files so pack summaries and other enhancer-owned regions can be refreshed without replacing the whole file
+
+Files to change:
+- `scaffold/target-repo/AGENTS.md`
+- any target scaffold docs that need managed regions
+- `scripts/install_enhancer.py`
+- `scripts/enhancer_validator.py`
+- target-side tests
+- installer tests
+
+Files deliberately not added:
+- no separate template engine
+- no hidden patch format
+
+Validation:
+- install and refresh tests that preserve user-owned content outside managed markers
+- validator tests for missing, duplicated, or corrupted managed markers
+
+Main risk:
+- damaging hand-edited repo guidance or making managed markers so noisy that people stop trusting the files
+
+Implemented baseline:
+- target `AGENTS.md` now wraps the selected stack-pack summary in one visible managed-section marker pair
+- generated manifests record `AGENTS.md:selected-stack-packs` under `lifecycle.managed_sections`
+- target validation catches missing, duplicated, or reversed managed-section markers
+
+### 3.0 Step 3: Pack Management Flow
+Objective:
+- add a first-class way to add and remove selected packs after install, with dry-run previews and the same review discipline as install and upgrade
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `scripts/install_enhancer_gui.py`
+- `scripts/stack_packs.py`
+- `README.md`
+- installer tests
+
+Files deliberately not added:
+- no separate pack-manager app
+- no interactive terminal wizard
+
+Validation:
+- CLI tests for add-pack, remove-pack, and replace-pack flows
+- GUI helper tests for pack-management preview, confirmation, and completion messaging
+
+Main risk:
+- pack changes drift from the target manifest or generated guidance; one shared planner should own both preview and apply behavior
+
+Implemented baseline:
+- `--manage-packs` previews and applies selected-pack changes for already-installed target repos
+- `--add-pack`, `--remove-pack`, and exact `--set-pack` replacement flows share one manifest-based resolver
+- pack management updates the visible managed `AGENTS.md:selected-stack-packs` section plus `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
+- the GUI exposes a Manage stack packs mode that toggles manifest-based pack selection without reinstalling the scaffold
+
+### 3.0 Step 4: Stronger Evidence Layer
+Objective:
+- add a narrow, transparent evidence model that can inspect common manifest files and explain why a pack was recommended without guessing repo commands
+
+Files to change:
+- `scripts/stack_packs.py`
+- `scripts/install_enhancer.py`
+- pack metadata as needed
+- pack tests
+- installer tests
+
+Files deliberately not added:
+- no AST parser
+- no framework-specific inference engine
+
+Validation:
+- evidence tests for `package.json`, `pyproject.toml`, and other supported manifests
+- command-discovery tests for npm, pnpm, yarn, and bun evidence from lockfiles or `packageManager`
+- preview tests that surface the exact evidence shown to users
+
+Main risk:
+- hidden heuristics create false confidence; every recommendation should map to visible, reviewable evidence text
+- package-manager evidence drifts from generated commands; command discovery should respect the target repo's lockfile or `packageManager` field instead of defaulting JavaScript repos to npm
+
+### 3.0 Step 5: Ship `library-package` And Pack Interaction Rules
+Objective:
+- add the deferred `library-package` pack once the stronger evidence layer can justify it, and document the normal interaction patterns between existing and new overlapping packs
+
+Files to change:
+- `scaffold/stack-packs/library-package/`
+- `scripts/stack_packs.py`
+- `scripts/enhancer_spec.py`
+- `README.md`
+- `docs/ai/architecture.md`
+- pack tests and installer tests
+
+Files deliberately not added:
+- no dependency solver for pack combinations
+- no language-specific release harness
+
+Validation:
+- render tests that preserve the existing `frontend-ui` and `node-api-service` combinations
+- library-detection tests that distinguish reusable packages from normal apps
+- render tests for `library-package` alone and in combination with compatible packs
+
+Main risk:
+- misclassifying apps as libraries and shipping the wrong guidance; keep the pack conservative and evidence-heavy
+
+### 3.0 Step 6: Section-Aware Upgrade, Refresh, And Validation
+Objective:
+- make refresh and upgrade flows section-aware where safe, while keeping proposal mode for real repo-owned drift and enforcing the new lifecycle rules in validation
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `scripts/install_enhancer_gui.py`
+- `scripts/enhancer_validator.py`
+- `scaffold/target-repo/tests/test_check.py`
+- `tests/test_install_enhancer.py`
+- `tests/test_stack_packs.py`
+
+Files deliberately not added:
+- no auto-merge engine
+- no standalone upgrader binary
+
+Validation:
+- lifecycle tests covering install -> manage packs -> refresh -> upgrade
+- compatibility tests for `2.x -> 3.0` transitions
+- proposal-collision tests that prove existing files under `.codex/enhancer-proposals/` are preserved or explicitly handled
+- version-comparison tests that treat equivalent versions such as `3.0` and `3.0.0` consistently
+- validator coverage for manifest/section drift and invalid pack-state changes
+
+Main risk:
+- lifecycle state drifts across install, refresh, and upgrade paths; the planner and validator have to share the same ownership rules
+- proposal mode silently overwrites review work if deterministic proposal paths collide; existing proposal files should be treated as conflicts, uniquely named, or require an explicit overwrite choice
+- source-vs-target inspection becomes noisy if version comparison treats semantically equivalent dotted versions as newer or older
+
+### 3.0 Step 7: Docs, Migration Notes, And Release Alignment
+Objective:
+- align human-facing docs, review guidance, and CI expectations with the fuller `3.0` lifecycle so installed repos can actually use the new capabilities safely
+
+Files to change:
+- `README.md`
+- `AGENTS.md`
+- `docs/ai/architecture.md`
+- `docs/ai/code-review.md`
+- release or migration notes if the diff is large enough
+- `.github/workflows/validate.yml` only if validation commands change
+
+Files deliberately not added:
+- no separate documentation site
+- no extra CI workflow unless the deterministic validation surface truly changes
+
+Validation:
+- `python scripts/check.py --verbose`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- doc-link validation for any new migration note references
+
+Main risk:
+- operator docs lag the shipped lifecycle behavior and turn `3.0` into tribal knowledge instead of visible repo guidance
+
+### 3.0 Success Bar
+- an installed repo can change selected packs without reinstalling the enhancer from scratch
+- managed sections make refresh and upgrade safer without hiding what the enhancer owns
+- pack recommendations are backed by explicit, reviewable evidence instead of vague heuristics
+- `library-package` is available only if the stronger detector can justify it
+- install, inspect, manage-packs, refresh, and upgrade all stay aligned across CLI, GUI, docs, and validation

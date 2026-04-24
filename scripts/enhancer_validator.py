@@ -7,7 +7,11 @@ import re
 import tomllib
 from pathlib import Path
 
-from scripts.enhancer_spec import ValidationProfile
+from scripts.enhancer_spec import (
+    ENHANCER_MANIFEST_SCHEMA_VERSION,
+    MANAGED_SECTIONS,
+    ValidationProfile,
+)
 
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
@@ -370,6 +374,91 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
             "Record the installed enhancer version so future upgrades can compare target state to the current source.",
         )
 
+    schema_version = manifest.get("schema_version")
+    if not isinstance(schema_version, int):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define schema_version as an integer",
+            "Record the enhancer manifest schema so install, refresh, and upgrade flows can reason about compatibility.",
+        )
+    elif schema_version != ENHANCER_MANIFEST_SCHEMA_VERSION:
+        add_error(
+            errors,
+            f".codex/enhancer/manifest.toml must use schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}",
+            "Run the current enhancer upgrade flow to regenerate the manifest before validating with the current checker.",
+        )
+
+    lifecycle = manifest.get("lifecycle", {})
+    if not isinstance(lifecycle, dict):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define [lifecycle] as a table",
+            "Keep lifecycle metadata visible in the manifest so future pack and section management can stay reviewable.",
+        )
+        lifecycle = {}
+    elif schema_version == ENHANCER_MANIFEST_SCHEMA_VERSION:
+        if lifecycle.get("state") != "active":
+            add_error(
+                errors,
+                '.codex/enhancer/manifest.toml must set lifecycle.state = "active"',
+                "Current installs should explicitly mark the enhancer lifecycle as active.",
+            )
+        if lifecycle.get("pack_selection") != "manifest":
+            add_error(
+                errors,
+                '.codex/enhancer/manifest.toml must set lifecycle.pack_selection = "manifest"',
+                "Pack selection should remain anchored in the visible target manifest.",
+            )
+        managed_sections = lifecycle.get("managed_sections", [])
+        if not isinstance(managed_sections, list) or any(not isinstance(item, str) for item in managed_sections):
+            add_error(
+                errors,
+                ".codex/enhancer/manifest.toml must define lifecycle.managed_sections as a list of strings",
+                "Use a simple TOML string array for managed section identifiers.",
+            )
+            managed_sections = []
+        else:
+            expected_sections = {section.identifier for section in MANAGED_SECTIONS}
+            missing_sections = sorted(expected_sections - set(managed_sections))
+            if missing_sections:
+                add_error(
+                    errors,
+                    ".codex/enhancer/manifest.toml is missing managed section ids: "
+                    + ", ".join(missing_sections),
+                    "Keep lifecycle.managed_sections aligned with visible managed markers in scaffold files.",
+                )
+            check_managed_section_markers(root, set(managed_sections), errors)
+
+    detected_packs = manifest.get("detected_packs", [])
+    if isinstance(detected_packs, list):
+        for entry in detected_packs:
+            if not isinstance(entry, dict):
+                add_error(
+                    errors,
+                    ".codex/enhancer/manifest.toml detected_packs entries must be TOML tables",
+                    "Keep each detected pack as a [[detected_packs]] table.",
+                )
+                continue
+            evidence = entry.get("evidence")
+            if evidence is None:
+                add_error(
+                    errors,
+                    ".codex/enhancer/manifest.toml detected_packs entries must include evidence",
+                    "Record visible evidence for every pack recommendation, even when the pack was not selected.",
+                )
+            elif not isinstance(evidence, list) or any(not isinstance(item, str) for item in evidence):
+                add_error(
+                    errors,
+                    ".codex/enhancer/manifest.toml detected_packs evidence must be a list of strings",
+                    "Use a simple TOML string array for pack evidence.",
+                )
+    else:
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml detected_packs must be an array of tables",
+            "Keep pack detection records under repeated [[detected_packs]] TOML tables.",
+        )
+
     generated_files = manifest.get("generated_files", {})
     if not isinstance(generated_files, dict) or generated_files.get("stack_guidance") != "docs/ai/stack-guidance.md":
         add_error(
@@ -443,6 +532,39 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
 
     if verbose:
         print("OK stack pack outputs: .codex/enhancer/manifest.toml and docs/ai/stack-guidance.md")
+
+
+def check_managed_section_markers(root: Path, managed_section_ids: set[str], errors: list[str]) -> None:
+    for section in MANAGED_SECTIONS:
+        if section.identifier not in managed_section_ids:
+            continue
+
+        full_path = root / section.path
+        if not full_path.exists():
+            add_error(
+                errors,
+                f"{section.path.as_posix()} is missing managed section {section.identifier!r}",
+                "Restore the managed section file or remove the section id from the manifest in the same change.",
+            )
+            continue
+
+        text = load_text(full_path)
+        start_count = text.count(section.start_marker)
+        end_count = text.count(section.end_marker)
+        if start_count != 1 or end_count != 1:
+            add_error(
+                errors,
+                f"{section.path.as_posix()} must contain exactly one managed section marker pair for {section.identifier!r}",
+                "Keep one visible start marker and one visible end marker around the enhancer-owned content.",
+            )
+            continue
+
+        if text.index(section.start_marker) > text.index(section.end_marker):
+            add_error(
+                errors,
+                f"{section.path.as_posix()} has reversed managed section markers for {section.identifier!r}",
+                "Place the managed section start marker before the matching end marker.",
+            )
 
 
 def validate(root: Path, profile: ValidationProfile, verbose: bool = False) -> list[str]:

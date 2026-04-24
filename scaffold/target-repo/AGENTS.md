@@ -26,7 +26,9 @@ This repository uses a Codex-native workflow layer so Codex can understand the r
 {{EXISTING_GUIDANCE}}
 
 ## Selected Stack Packs
+<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs start -->
 {{PACK_AGENTS_SUMMARY}}
+<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->
 
 ## Default Workflow
 1. Inspect the relevant files before editing anything.

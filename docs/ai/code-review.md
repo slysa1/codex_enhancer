@@ -11,10 +11,10 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 6. If a script changed, verify it is deterministic and dependency-light.
 7. If repo commands changed, confirm [.github/workflows/validate.yml](../../.github/workflows/validate.yml) changed with them.
 8. If installer, scaffold, or stack-pack behavior changed, confirm the end-to-end installer tests still pass.
-9. If stack-pack generation changed, verify target `AGENTS.md`, `docs/ai/stack-guidance.md`, and `.codex/enhancer/manifest.toml` stay aligned with the selected packs.
+9. If stack-pack generation or management changed, verify target `AGENTS.md`, `docs/ai/stack-guidance.md`, and `.codex/enhancer/manifest.toml` stay aligned with the selected packs.
 10. If output ownership rules changed, verify previews and the target manifest still distinguish safe-to-regenerate outputs from scaffold files that should usually be adapted manually.
 11. If the GUI installer changed, verify the overwrite preview, pack-selection controls, confirmation gate, progress updates, and README handoff still match the installer core.
-12. If roadmap or stack-pack design changed, confirm [v2-design.md](./v2-design.md) still matches the intended architecture.
+12. If roadmap or stack-pack design changed, confirm the phased roadmap in [roadmap.md](./roadmap.md) still matches the intended architecture.
 
 ## Review Priorities
 1. Wrong or stale instructions
@@ -37,6 +37,6 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 - Keep summaries high signal; avoid changelog-style file inventories unless reviewers need them.
 - If a change adds future-facing guidance, say what event should trigger the next update.
 - If a change affects the installer, call out proposal-mode behavior, overwrite semantics, selected-pack defaults, generated target outputs, and any GUI-only behavior.
-- If stack-pack selection changed, call out both the root `AGENTS.md` summary and the deeper `docs/ai/stack-guidance.md` update.
+- If stack-pack selection changed, call out both the managed root `AGENTS.md` summary and the deeper `docs/ai/stack-guidance.md` update.
 - If output ownership changed, call out which files are now considered safe to regenerate versus usually adapted manually.
 - Prefer one coherent patch over speculative scaffolding.

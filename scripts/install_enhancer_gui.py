@@ -32,6 +32,7 @@ from scripts.install_enhancer import (
     apply_install_plan,
     build_overwrite_confirmation_message,
     build_install_plan,
+    build_pack_management_plan,
     build_upgrade_plan,
     format_after_install_preview,
     format_conflict_severity_lines,
@@ -46,6 +47,7 @@ WINDOW_TITLE = "Codex Enhancer Installer"
 PRODUCT_README = SOURCE_ROOT / "README.md"
 OPERATION_CHOICES = (
     ("Install or update scaffold", "install"),
+    ("Manage stack packs", "manage-packs"),
     ("Upgrade or reconcile existing install", "upgrade-enhancer"),
     ("Refresh managed outputs", "refresh-generated"),
 )
@@ -62,6 +64,10 @@ INSTALL_PACK_INTRO = (
 REFRESH_PACK_INTRO = (
     "Refresh reads selected packs from the target repo's existing enhancer manifest. "
     "Use install mode if you need to change pack selection or update scaffold files."
+)
+MANAGE_PACK_INTRO = (
+    "Pack management reads the target repo's existing enhancer manifest, lets you change "
+    "the selected set, and updates only the managed AGENTS section plus generated pack outputs."
 )
 UPGRADE_PACK_INTRO = (
     "Upgrade keeps the selected packs from the target repo's existing enhancer manifest. "
@@ -81,6 +87,8 @@ def open_product_readme() -> None:
 def operation_label(plan: InstallPlan) -> str:
     if plan.operation == "refresh-generated":
         return "Refresh managed outputs"
+    if plan.operation == "manage-packs":
+        return "Manage stack packs"
     if plan.operation == "upgrade-enhancer":
         return "Upgrade or reconcile existing install"
     return "Install or update scaffold"
@@ -89,13 +97,15 @@ def operation_label(plan: InstallPlan) -> str:
 def action_verb(plan: InstallPlan) -> str:
     if plan.operation == "refresh-generated":
         return "refresh"
+    if plan.operation == "manage-packs":
+        return "manage packs"
     if plan.operation == "upgrade-enhancer":
         return "upgrade"
     return "install"
 
 
 def requires_confirmation(plan: InstallPlan) -> bool:
-    return plan.operation != "refresh-generated" and bool(overwrite_paths(plan))
+    return plan.operation not in {"refresh-generated", "manage-packs"} and bool(overwrite_paths(plan))
 
 
 def progress_total(plan: InstallPlan) -> int:
@@ -120,6 +130,11 @@ def build_plan_preview(plan: InstallPlan) -> str:
     ]
     if plan.operation == "refresh-generated":
         lines.append("Refresh behavior: overwrite only enhancer-managed generated outputs.")
+    elif plan.operation == "manage-packs":
+        lines.append(
+            "Pack management behavior: update selected packs, the managed AGENTS section, "
+            "and generated pack outputs only."
+        )
     elif plan.operation == "upgrade-enhancer":
         lines.append(
             "Upgrade behavior: overwrite tracked managed outputs and source-aligned copies; "
@@ -235,6 +250,8 @@ def format_upgrade_sections(plan: InstallPlan) -> list[str]:
 def build_preview_follow_up(plan: InstallPlan) -> list[str]:
     if plan.operation == "upgrade-enhancer":
         return ["After upgrade:", *format_next_steps(plan, write=True)]
+    if plan.operation == "manage-packs":
+        return ["After pack management:", *format_next_steps(plan, write=True)]
     return format_after_install_preview(plan)
 
 
@@ -244,6 +261,8 @@ def build_completion_message(plan: InstallPlan) -> str:
         (
             "Codex Enhancer managed outputs were refreshed successfully."
             if plan.operation == "refresh-generated"
+            else "Codex Enhancer stack packs were updated successfully."
+            if plan.operation == "manage-packs"
             else "Codex Enhancer upgrade reconcile completed successfully."
             if plan.operation == "upgrade-enhancer"
             else "Codex Enhancer was installed successfully."
@@ -254,6 +273,8 @@ def build_completion_message(plan: InstallPlan) -> str:
         (
             "Stack packs from the target manifest:"
             if plan.operation in {"refresh-generated", "upgrade-enhancer"}
+            else "Selected stack packs now:"
+            if plan.operation == "manage-packs"
             else "Installed stack packs:"
         ),
     ]
@@ -438,11 +459,15 @@ class InstallerApp:
     def _is_refresh_operation(self) -> bool:
         return self._operation_value() == "refresh-generated"
 
+    def _is_manage_operation(self) -> bool:
+        return self._operation_value() == "manage-packs"
+
     def _is_upgrade_operation(self) -> bool:
         return self._operation_value() == "upgrade-enhancer"
 
     def _sync_operation_controls(self) -> None:
         is_refresh = self._is_refresh_operation()
+        is_manage = self._is_manage_operation()
         is_upgrade = self._is_upgrade_operation()
         if is_refresh:
             self.force_var.set(False)
@@ -452,6 +477,16 @@ class InstallerApp:
             self.pack_intro.configure(text=REFRESH_PACK_INTRO)
             self.review_button.configure(text="Review refresh plan")
             self.install_button.configure(text="Refresh generated outputs")
+            return
+
+        if is_manage:
+            self.force_var.set(False)
+            self.force_check.configure(state="disabled")
+            self.mode_combo.set("Existing repo")
+            self.mode_combo.configure(state="disabled")
+            self.pack_intro.configure(text=MANAGE_PACK_INTRO)
+            self.review_button.configure(text="Review pack changes")
+            self.install_button.configure(text="Apply pack changes")
             return
 
         if is_upgrade:
@@ -486,6 +521,11 @@ class InstallerApp:
                 "Inputs changed. Review the refresh plan again to read pack selection from the target manifest."
             )
             self.status_var.set("Inputs changed. Review the refresh plan again before running it.")
+        elif self._is_manage_operation():
+            self._show_pack_placeholder(
+                "Inputs changed. Review pack changes again to read pack selection from the target manifest."
+            )
+            self.status_var.set("Inputs changed. Review pack changes again before applying them.")
         elif self._is_upgrade_operation():
             self._show_pack_placeholder(
                 "Inputs changed. Review the upgrade plan again to read pack selection from the target manifest."
@@ -526,7 +566,11 @@ class InstallerApp:
 
         try:
             plan = self._build_plan(
-                use_recommended_packs=not (self._is_refresh_operation() or self._is_upgrade_operation())
+                use_recommended_packs=not (
+                    self._is_refresh_operation()
+                    or self._is_manage_operation()
+                    or self._is_upgrade_operation()
+                )
             )
         except ValueError as error:
             self.current_plan = None
@@ -536,6 +580,8 @@ class InstallerApp:
             self._refresh_install_button()
             if self._is_refresh_operation():
                 self._show_pack_placeholder("No valid refresh pack view is available yet.")
+            elif self._is_manage_operation():
+                self._show_pack_placeholder("No valid pack-management view is available yet.")
             elif self._is_upgrade_operation():
                 self._show_pack_placeholder("No valid upgrade pack view is available yet.")
             else:
@@ -562,6 +608,8 @@ class InstallerApp:
             self.confirm_overwrite_var.set(True)
             if self._is_refresh_operation():
                 self.status_var.set("Refresh plan looks ready.")
+            elif self._is_manage_operation():
+                self.status_var.set("Pack changes look ready.")
             elif self._is_upgrade_operation():
                 self.status_var.set("Upgrade plan looks ready.")
             else:
@@ -574,12 +622,20 @@ class InstallerApp:
         *,
         use_recommended_packs: bool = False,
         include_packs: tuple[str, ...] = (),
+        set_packs: tuple[str, ...] | None = None,
     ) -> InstallPlan:
         raw_target = self.target_var.get().strip()
         is_refresh = self._is_refresh_operation()
+        is_manage = self._is_manage_operation()
         is_upgrade = self._is_upgrade_operation()
         if is_upgrade:
             return build_upgrade_plan(Path(raw_target))
+        if is_manage:
+            return build_pack_management_plan(
+                Path(raw_target),
+                set_packs=set_packs,
+                require_changes=False,
+            )
         return build_install_plan(
             Path(raw_target),
             mode=self._mode_value(),
@@ -647,7 +703,11 @@ class InstallerApp:
         if not self.pack_vars:
             return
         try:
-            plan = self._build_plan(include_packs=self._selected_pack_names_from_ui())
+            selected_names = self._selected_pack_names_from_ui()
+            if self._is_manage_operation():
+                plan = self._build_plan(set_packs=selected_names)
+            else:
+                plan = self._build_plan(include_packs=selected_names)
         except ValueError as error:
             self.status_var.set(str(error))
             return
@@ -678,13 +738,25 @@ class InstallerApp:
             self.mode_combo.configure(state="disabled")
         else:
             self.mode_combo.configure(
-                state="disabled" if (self._is_refresh_operation() or self._is_upgrade_operation()) else "readonly"
+                state="disabled"
+                if (
+                    self._is_refresh_operation()
+                    or self._is_manage_operation()
+                    or self._is_upgrade_operation()
+                )
+                else "readonly"
             )
         if busy:
             self.force_check.configure(state="disabled")
         else:
             self.force_check.configure(
-                state="disabled" if (self._is_refresh_operation() or self._is_upgrade_operation()) else "normal"
+                state="disabled"
+                if (
+                    self._is_refresh_operation()
+                    or self._is_manage_operation()
+                    or self._is_upgrade_operation()
+                )
+                else "normal"
             )
         for child in self.pack_container.winfo_children():
             try:
@@ -717,6 +789,8 @@ class InstallerApp:
         self.progress.configure(value=0, maximum=total_steps)
         if plan.operation == "refresh-generated":
             self.status_var.set("Starting refresh...")
+        elif plan.operation == "manage-packs":
+            self.status_var.set("Starting pack management...")
         elif plan.operation == "upgrade-enhancer":
             self.status_var.set("Starting upgrade...")
         else:
@@ -741,6 +815,8 @@ class InstallerApp:
         self.progress.configure(value=total_steps, maximum=total_steps)
         if plan.operation == "refresh-generated":
             self.status_var.set("Refresh complete.")
+        elif plan.operation == "manage-packs":
+            self.status_var.set("Pack management complete.")
         elif plan.operation == "upgrade-enhancer":
             self.status_var.set("Upgrade complete.")
         else:

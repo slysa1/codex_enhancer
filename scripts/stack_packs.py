@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Load and detect optional V2 stack packs for Codex Enhancer."""
+"""Load, detect, and render optional stack packs for Codex Enhancer."""
 
 from __future__ import annotations
 
@@ -8,7 +8,12 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.enhancer_spec import ENHANCER_MANIFEST_SCHEMA_VERSION, ENHANCER_VERSION
+from scripts.enhancer_spec import (
+    ENHANCER_MANIFEST_SCHEMA_VERSION,
+    ENHANCER_VERSION,
+    MANAGED_SECTIONS,
+    SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS,
+)
 
 
 STACK_PACK_ROOT = Path(__file__).resolve().parents[1] / "scaffold/stack-packs"
@@ -70,11 +75,22 @@ class PackSelection:
 
 
 @dataclass(frozen=True)
+class ManifestPackEvidence:
+    name: str
+    evidence: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class EnhancerInstallState:
     enhancer_version: str | None
     selected_packs: tuple[str, ...]
     safe_to_regenerate: tuple[str, ...]
     adapt_manually: tuple[str, ...]
+    schema_version: int | None = None
+    lifecycle_state: str | None = None
+    pack_selection_mode: str | None = None
+    managed_sections: tuple[str, ...] = ()
+    pack_evidence: tuple[ManifestPackEvidence, ...] = ()
 
 
 def _required_str(data: dict[str, object], key: str) -> str:
@@ -396,6 +412,24 @@ def load_selected_packs_from_manifest(target: Path) -> tuple[str, ...]:
     return load_enhancer_install_state(target).selected_packs
 
 
+def _manifest_string_list(
+    target: Path,
+    manifest_path: Path,
+    owner: str,
+    value: object,
+) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip() for item in value
+    ):
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {manifest_path.as_posix()}: "
+            f"{owner} must be a list of strings."
+        )
+    return tuple(value)
+
+
 def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
     manifest_path = target.resolve() / TARGET_MANIFEST_PATH
     if not manifest_path.exists():
@@ -411,6 +445,22 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
             f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: {error}"
         ) from error
 
+    schema_version = manifest.get("schema_version")
+    if schema_version is not None and not isinstance(schema_version, int):
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+            "schema_version must be an integer when present."
+        )
+    if (
+        schema_version is not None
+        and schema_version not in SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS
+    ):
+        supported = ", ".join(str(item) for item in sorted(SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS))
+        raise ValueError(
+            f"Target {target.resolve()} has an unsupported {TARGET_MANIFEST_PATH.as_posix()} "
+            f"schema_version {schema_version}; supported versions are: {supported}."
+        )
+
     enhancer_version = manifest.get("enhancer_version")
     if enhancer_version is not None and (
         not isinstance(enhancer_version, str) or not enhancer_version.strip()
@@ -420,13 +470,48 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
             "enhancer_version must be a non-empty string when present."
         )
 
-    selected_packs = manifest.get("selected_packs", [])
-    if not isinstance(selected_packs, list) or any(
-        not isinstance(item, str) or not item.strip() for item in selected_packs
-    ):
+    selected_packs = _manifest_string_list(
+        target,
+        TARGET_MANIFEST_PATH,
+        "selected_packs",
+        manifest.get("selected_packs", []),
+    )
+
+    lifecycle_state: str | None = None
+    pack_selection_mode: str | None = None
+    managed_sections: tuple[str, ...] = ()
+    lifecycle = manifest.get("lifecycle", {})
+    if lifecycle == {}:
+        pass
+    elif not isinstance(lifecycle, dict):
         raise ValueError(
             f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
-            "selected_packs must be a list of strings."
+            "lifecycle must be a table when present."
+        )
+    else:
+        raw_state = lifecycle.get("state")
+        if raw_state is not None:
+            if not isinstance(raw_state, str) or not raw_state.strip():
+                raise ValueError(
+                    f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+                    "lifecycle.state must be a non-empty string when present."
+                )
+            lifecycle_state = raw_state
+
+        raw_pack_selection = lifecycle.get("pack_selection")
+        if raw_pack_selection is not None:
+            if not isinstance(raw_pack_selection, str) or not raw_pack_selection.strip():
+                raise ValueError(
+                    f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+                    "lifecycle.pack_selection must be a non-empty string when present."
+                )
+            pack_selection_mode = raw_pack_selection
+
+        managed_sections = _manifest_string_list(
+            target,
+            TARGET_MANIFEST_PATH,
+            "lifecycle.managed_sections",
+            lifecycle.get("managed_sections", []),
         )
 
     managed_outputs = manifest.get("managed_outputs", {})
@@ -439,30 +524,54 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
             "managed_outputs must be a table when present."
         )
     else:
-        raw_safe = managed_outputs.get("safe_to_regenerate", [])
-        if not isinstance(raw_safe, list) or any(
-            not isinstance(item, str) or not item.strip() for item in raw_safe
-        ):
-            raise ValueError(
-                f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
-                "managed_outputs.safe_to_regenerate must be a list of strings."
+        safe_to_regenerate = _manifest_string_list(
+            target,
+            TARGET_MANIFEST_PATH,
+            "managed_outputs.safe_to_regenerate",
+            managed_outputs.get("safe_to_regenerate", []),
+        )
+        adapt_manually = _manifest_string_list(
+            target,
+            TARGET_MANIFEST_PATH,
+            "managed_outputs.adapt_manually",
+            managed_outputs.get("adapt_manually", []),
+        )
+
+    pack_evidence: list[ManifestPackEvidence] = []
+    detected_packs = manifest.get("detected_packs", [])
+    if detected_packs == []:
+        pass
+    elif not isinstance(detected_packs, list) or any(not isinstance(item, dict) for item in detected_packs):
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+            "detected_packs must be an array of tables when present."
+        )
+    else:
+        for item in detected_packs:
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(
+                    f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+                    "each detected_packs entry must define a non-empty name."
+                )
+            evidence = _manifest_string_list(
+                target,
+                TARGET_MANIFEST_PATH,
+                f"detected_packs.{name}.evidence",
+                item.get("evidence", []),
             )
-        raw_manual = managed_outputs.get("adapt_manually", [])
-        if not isinstance(raw_manual, list) or any(
-            not isinstance(item, str) or not item.strip() for item in raw_manual
-        ):
-            raise ValueError(
-                f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
-                "managed_outputs.adapt_manually must be a list of strings."
-            )
-        safe_to_regenerate = tuple(raw_safe)
-        adapt_manually = tuple(raw_manual)
+            pack_evidence.append(ManifestPackEvidence(name=name, evidence=evidence))
 
     return EnhancerInstallState(
         enhancer_version=enhancer_version,
-        selected_packs=tuple(selected_packs),
+        selected_packs=selected_packs,
         safe_to_regenerate=safe_to_regenerate,
         adapt_manually=adapt_manually,
+        schema_version=schema_version,
+        lifecycle_state=lifecycle_state,
+        pack_selection_mode=pack_selection_mode,
+        managed_sections=managed_sections,
+        pack_evidence=tuple(pack_evidence),
     )
 
 
@@ -490,6 +599,81 @@ def resolve_manifest_pack_selection(
                 selection_source="manifest" if is_selected else "not-selected",
             )
         )
+    return tuple(selections)
+
+
+def resolve_managed_pack_selection(
+    detections: tuple[PackDetection, ...],
+    *,
+    current_selected_packs: tuple[str, ...],
+    add_packs: tuple[str, ...] = (),
+    remove_packs: tuple[str, ...] = (),
+    set_packs: tuple[str, ...] | None = None,
+) -> tuple[PackSelection, ...]:
+    available = available_pack_names(detections)
+    current_set = set(current_selected_packs)
+    add_set = set(add_packs)
+    remove_set = set(remove_packs)
+
+    unknown_current = sorted(current_set - available)
+    if unknown_current:
+        names = ", ".join(unknown_current)
+        raise ValueError(f"Unknown stack pack name(s) in target manifest: {names}")
+
+    if set_packs is not None and (add_set or remove_set):
+        raise ValueError("--set-pack cannot be combined with --add-pack or --remove-pack.")
+
+    if set_packs is not None:
+        set_pack_set = set(set_packs)
+        unknown = sorted(set_pack_set - available)
+        if unknown:
+            names = ", ".join(unknown)
+            raise ValueError(f"Unknown stack pack name(s): {names}")
+        final_set = set_pack_set
+    else:
+        overlap = add_set & remove_set
+        if overlap:
+            names = ", ".join(sorted(overlap))
+            raise ValueError(f"Conflicting stack-pack management for: {names}")
+
+        unknown = sorted((add_set | remove_set) - available)
+        if unknown:
+            names = ", ".join(unknown)
+            raise ValueError(f"Unknown stack pack name(s): {names}")
+        final_set = (current_set | add_set) - remove_set
+
+    selections: list[PackSelection] = []
+    for detection in detections:
+        name = detection.pack.name
+        selected = name in final_set
+
+        if set_packs is not None:
+            if selected:
+                selection_source = "manage-set"
+            elif name in current_set:
+                selection_source = "manage-set-remove"
+            else:
+                selection_source = "not-selected"
+        elif name in add_set:
+            selection_source = "manage-add"
+        elif name in remove_set:
+            selection_source = "manage-remove"
+        elif selected:
+            selection_source = "manifest"
+        else:
+            selection_source = "not-selected"
+
+        selections.append(
+            PackSelection(
+                pack=detection.pack,
+                detected=detection.detected,
+                recommended=detection.recommended,
+                reasons=detection.reasons,
+                selected=selected,
+                selection_source=selection_source,
+            )
+        )
+
     return tuple(selections)
 
 
@@ -651,6 +835,13 @@ def render_stack_pack_manifest(
         f'enhancer_version = "{ENHANCER_VERSION}"',
         f"selected_packs = [{', '.join(_toml_string(item) for item in selected)}]",
         "",
+        "[lifecycle]",
+        'state = "active"',
+        'pack_selection = "manifest"',
+        "managed_sections = ["
+        + ", ".join(_toml_string(section.identifier) for section in MANAGED_SECTIONS)
+        + "]",
+        "",
     ]
 
     for detection in detections:
@@ -662,6 +853,9 @@ def render_stack_pack_manifest(
                 f"recommended = {'true' if detection.recommended else 'false'}",
                 f"detected = {'true' if detection.detected else 'false'}",
                 f"reason = {_toml_string('; '.join(detection.reasons))}",
+                "evidence = ["
+                + ", ".join(_toml_string(reason) for reason in detection.reasons)
+                + "]",
                 "",
             ]
         )

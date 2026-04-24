@@ -13,17 +13,17 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [AGENTS.md](AGENTS.md): repo-wide operating map and default workflow.
 - [docs/ai/architecture.md](docs/ai/architecture.md): what belongs in the enhancer, what to defer, and when to add more structure.
 - [docs/ai/code-review.md](docs/ai/code-review.md): review and PR-prep checklist for docs, skills, scripts, and future workflow assets.
-- [docs/ai/v2-design.md](docs/ai/v2-design.md): concrete v2 design for optional stack packs, installer UX, and phased implementation.
+- [docs/ai/roadmap.md](docs/ai/roadmap.md): phased roadmap for stack packs, installer UX, and planned enhancer evolution.
 - [.codex/skills/](.codex/skills/): repo-local skills for repeated procedures. Read [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md) before editing or adding skills.
 - [install_enhancer.bat](install_enhancer.bat): Windows launcher that opens the GUI installer.
-- [scripts/install_enhancer.py](scripts/install_enhancer.py): bootstrap installer for new and existing repos.
-- [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py): GUI wrapper for previewing, confirming, and applying installs.
-- [scripts/stack_packs.py](scripts/stack_packs.py): loader and detection layer for optional v2 stack packs.
+- [scripts/install_enhancer.py](scripts/install_enhancer.py): bootstrap installer, pack manager, and refresh/reconcile planner for target repos.
+- [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py): GUI wrapper for previewing, confirming, and applying installs, pack changes, upgrades, and refreshes.
+- [scripts/stack_packs.py](scripts/stack_packs.py): loader, detection layer, and manifest renderer for optional stack packs.
 - [scripts/enhancer_spec.py](scripts/enhancer_spec.py): shared install and validation spec.
 - [scripts/enhancer_validator.py](scripts/enhancer_validator.py): reusable validation engine.
 - [scripts/check.py](scripts/check.py): deterministic validation for the enhancer source repo.
 - [scaffold/target-repo/](scaffold/target-repo/): install scaffold for files that should differ in target repos.
-- [scaffold/stack-packs/](scaffold/stack-packs/): file-based registry for optional v2 stack packs and their fragments.
+- [scaffold/stack-packs/](scaffold/stack-packs/): file-based registry for optional stack packs and their fragments.
 - [tests/](tests/): unit tests for the validator and installer.
 - [.github/workflows/validate.yml](.github/workflows/validate.yml): CI that mirrors the local validation commands.
 
@@ -41,6 +41,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - `python -m unittest discover -s tests -p "test_*.py" -v` - run the validator test suite.
 - `python scripts/check.py --verbose` - run the same checks with a per-file summary.
 - `python scripts/install_enhancer.py --target <path> --mode new` - preview an install into a target repo.
+- `python scripts/install_enhancer.py --target <path> --manage-packs --add-pack <name>` - preview a pack-selection change for an installed target.
 - `install_enhancer.bat` - open the Windows GUI installer.
 
 ## Engineering Rules
@@ -78,4 +79,4 @@ Do not use subagents for small doc edits, single-skill changes, or work blocked 
 ## More Detail
 - Architecture and scope rules: [docs/ai/architecture.md](docs/ai/architecture.md)
 - Review checklist: [docs/ai/code-review.md](docs/ai/code-review.md)
-- V2 design roadmap: [docs/ai/v2-design.md](docs/ai/v2-design.md)
+- Design roadmap: [docs/ai/roadmap.md](docs/ai/roadmap.md)

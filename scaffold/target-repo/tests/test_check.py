@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from scripts import check
-from scripts.enhancer_spec import ENHANCER_VERSION
+from scripts.enhancer_spec import ENHANCER_MANIFEST_SCHEMA_VERSION, ENHANCER_VERSION
 
 
 TEST_COMMAND = 'python -m unittest discover -s tests -p "test_*.py" -v'
@@ -36,8 +36,10 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         ## Selected Stack Packs
 
+        <!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs start -->
         - No stack packs are selected yet. Keep [docs/ai/stack-guidance.md](docs/ai/stack-guidance.md) and
           [.codex/enhancer/manifest.toml](.codex/enhancer/manifest.toml) aligned if pack selection changes later.
+        <!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->
         """,
         "docs/ai/architecture.md": """
         # Architecture
@@ -63,9 +65,14 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Keep skills narrow.
         """,
         ".codex/enhancer/manifest.toml": f"""
-        schema_version = 1
+        schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}
         enhancer_version = "{ENHANCER_VERSION}"
         selected_packs = []
+
+        [lifecycle]
+        state = "active"
+        pack_selection = "manifest"
+        managed_sections = ["AGENTS.md:selected-stack-packs"]
 
         [generated_files]
         stack_guidance = "docs/ai/stack-guidance.md"
@@ -229,9 +236,14 @@ class ValidateTests(unittest.TestCase):
                 root,
                 ".codex/enhancer/manifest.toml",
                 f"""
-                schema_version = 1
+                schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}
                 enhancer_version = "{ENHANCER_VERSION}"
                 selected_packs = ["python-service"]
+
+                [lifecycle]
+                state = "active"
+                pack_selection = "manifest"
+                managed_sections = ["AGENTS.md:selected-stack-packs"]
 
                 [generated_files]
                 stack_guidance = "docs/ai/stack-guidance.md"
@@ -259,9 +271,14 @@ class ValidateTests(unittest.TestCase):
                 root,
                 ".codex/enhancer/manifest.toml",
                 f"""
-                schema_version = 1
+                schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}
                 enhancer_version = "{ENHANCER_VERSION}"
                 selected_packs = ["python-service"]
+
+                [lifecycle]
+                state = "active"
+                pack_selection = "manifest"
+                managed_sections = ["AGENTS.md:selected-stack-packs"]
 
                 [generated_files]
                 stack_guidance = "docs/ai/stack-guidance.md"
@@ -302,9 +319,14 @@ class ValidateTests(unittest.TestCase):
                 root,
                 ".codex/enhancer/manifest.toml",
                 f"""
-                schema_version = 1
+                schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}
                 enhancer_version = "{ENHANCER_VERSION}"
                 selected_packs = []
+
+                [lifecycle]
+                state = "active"
+                pack_selection = "manifest"
+                managed_sections = ["AGENTS.md:selected-stack-packs"]
 
                 [generated_files]
                 stack_guidance = "docs/ai/stack-guidance.md"

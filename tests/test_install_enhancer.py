@@ -14,12 +14,18 @@ from scripts.install_enhancer import (
     apply_install_plan,
     build_install_plan,
     build_overwrite_confirmation_message,
+    build_pack_management_plan,
     build_upgrade_plan,
     format_next_steps,
     overwrite_paths,
 )
 from scripts.install_enhancer_gui import build_completion_message, build_plan_preview
-from scripts.enhancer_spec import ENHANCER_VERSION, GITIGNORE_LINES, TARGET_VALIDATION_PROFILE
+from scripts.enhancer_spec import (
+    ENHANCER_MANIFEST_SCHEMA_VERSION,
+    ENHANCER_VERSION,
+    GITIGNORE_LINES,
+    TARGET_VALIDATION_PROFILE,
+)
 from scripts.enhancer_validator import validate as validate_profile
 
 
@@ -106,6 +112,7 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn(f"Source enhancer version: `{ENHANCER_VERSION}`", output)
             self.assertIn(f"Target enhancer version: `{ENHANCER_VERSION}`", output)
+            self.assertIn(f"Target manifest schema: `{ENHANCER_MANIFEST_SCHEMA_VERSION}`", output)
             self.assertIn("Status: target install matches the current source version.", output)
             self.assertIn("Selected packs: `javascript-typescript-app`", output)
 
@@ -132,8 +139,38 @@ class InstallEnhancerTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             self.assertIn("Target enhancer version: `2`", output)
+            self.assertIn("Target manifest schema: `1`", output)
             self.assertIn("Status: target install is older than the current source version.", output)
             self.assertIn("Selected packs: `python-service`", output)
+
+    def test_inspect_install_reports_older_manifest_schema(self) -> None:
+        with repo_fixture("inspect_old_schema") as install_target:
+            write_file(
+                install_target,
+                ".codex/enhancer/manifest.toml",
+                """
+                schema_version = 1
+                enhancer_version = "%s"
+                selected_packs = []
+
+                [generated_files]
+                stack_guidance = "docs/ai/stack-guidance.md"
+
+                [managed_outputs]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+                adapt_manually = ["AGENTS.md"]
+                """ % ENHANCER_VERSION,
+            )
+
+            exit_code, output = run_installer(["--target", str(install_target), "--inspect-install"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(f"Target enhancer version: `{ENHANCER_VERSION}`", output)
+            self.assertIn("Target manifest schema: `1`", output)
+            self.assertIn(
+                "Status: target install uses an older manifest schema than the current source version.",
+                output,
+            )
 
     def test_inspect_install_rejects_write_and_force_flags(self) -> None:
         with repo_fixture("inspect_invalid") as install_target:
@@ -653,6 +690,129 @@ class InstallEnhancerTests(unittest.TestCase):
                 any("must define enhancer_version as a non-empty string" in error for error in errors)
             )
 
+    def test_target_validation_requires_current_manifest_schema(self) -> None:
+        with repo_fixture("install_manifest_schema") as target:
+            install_target = target / "repo"
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+
+            manifest_path = install_target / ".codex/enhancer/manifest.toml"
+            manifest_text = manifest_path.read_text(encoding="utf-8").replace(
+                f"schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}\n",
+                "schema_version = 1\n",
+            )
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any(
+                    f"must use schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}" in error
+                    for error in errors
+                )
+            )
+
+    def test_target_validation_requires_manifest_lifecycle(self) -> None:
+        with repo_fixture("install_manifest_lifecycle") as target:
+            install_target = target / "repo"
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+
+            manifest_path = install_target / ".codex/enhancer/manifest.toml"
+            manifest_text = manifest_path.read_text(encoding="utf-8").replace(
+                """[lifecycle]
+state = "active"
+pack_selection = "manifest"
+managed_sections = ["AGENTS.md:selected-stack-packs"]
+
+""",
+                "",
+            )
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(any("must set lifecycle.state" in error for error in errors))
+
+    def test_target_validation_requires_managed_section_marker_pair(self) -> None:
+        with repo_fixture("install_managed_section_missing") as target:
+            install_target = target / "repo"
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+
+            agents_path = install_target / "AGENTS.md"
+            agents_text = agents_path.read_text(encoding="utf-8").replace(
+                "<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs start -->\n",
+                "",
+            )
+            agents_path.write_text(agents_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any("must contain exactly one managed section marker pair" in error for error in errors)
+            )
+
+    def test_target_validation_requires_manifest_managed_section_id(self) -> None:
+        with repo_fixture("install_managed_section_manifest") as target:
+            install_target = target / "repo"
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+
+            manifest_path = install_target / ".codex/enhancer/manifest.toml"
+            manifest_text = manifest_path.read_text(encoding="utf-8").replace(
+                'managed_sections = ["AGENTS.md:selected-stack-packs"]',
+                "managed_sections = []",
+            )
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any("is missing managed section ids: AGENTS.md:selected-stack-packs" in error for error in errors)
+            )
+
+    def test_target_validation_rejects_reversed_managed_section_markers(self) -> None:
+        with repo_fixture("install_managed_section_reversed") as target:
+            install_target = target / "repo"
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+
+            agents_path = install_target / "AGENTS.md"
+            agents_text = agents_path.read_text(encoding="utf-8")
+            start = "<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs start -->"
+            end = "<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->"
+            agents_path.write_text(
+                agents_text.replace(start, "__TEMP_MARKER__").replace(end, start).replace("__TEMP_MARKER__", end),
+                encoding="utf-8",
+            )
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any("has reversed managed section markers" in error for error in errors)
+            )
+
     def test_existing_repo_writes_proposals_for_conflicts(self) -> None:
         with repo_fixture("install_existing") as install_target:
             write_file(
@@ -783,9 +943,23 @@ class InstallEnhancerTests(unittest.TestCase):
             stack_guidance = (install_target / "docs/ai/stack-guidance.md").read_text(encoding="utf-8")
 
             self.assertIn("Selected packs: `javascript-typescript-app`", agents)
+            self.assertIn(f"schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}", manifest)
             self.assertIn(f'enhancer_version = "{ENHANCER_VERSION}"', manifest)
+            self.assertIn("[lifecycle]", manifest)
+            self.assertIn('state = "active"', manifest)
+            self.assertIn('pack_selection = "manifest"', manifest)
+            self.assertIn('managed_sections = ["AGENTS.md:selected-stack-packs"]', manifest)
             self.assertIn("`javascript-typescript-app` (JavaScript / TypeScript app):", agents)
+            self.assertIn(
+                "<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs start -->",
+                agents,
+            )
+            self.assertIn(
+                "<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->",
+                agents,
+            )
             self.assertIn('selected_packs = ["javascript-typescript-app"]', manifest)
+            self.assertIn('evidence = ["found package.json", "matched tsconfig.json"]', manifest)
             self.assertIn(
                 'safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]',
                 manifest,
@@ -857,6 +1031,180 @@ class InstallEnhancerTests(unittest.TestCase):
             refreshed_guidance = guidance_path.read_text(encoding="utf-8")
             self.assertNotIn("# stale guidance", refreshed_guidance)
             self.assertIn("Pack id: `javascript-typescript-app`", refreshed_guidance)
+
+    def test_manage_packs_adds_pack_and_updates_managed_outputs(self) -> None:
+        with repo_fixture("manage_add") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--manage-packs", "--add-pack", "python-service"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Planned Codex Enhancer stack-pack management plan", output)
+            self.assertIn("python-service: added by --add-pack", output)
+            self.assertIn("- overwrite: AGENTS.md", output)
+            self.assertIn('Manifest preview selected_packs = ["javascript-typescript-app", "python-service"]', output)
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-packs",
+                    "--add-pack",
+                    "python-service",
+                    "--write",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Applying Codex Enhancer stack-pack management plan", output)
+
+            agents = (install_target / "AGENTS.md").read_text(encoding="utf-8")
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            stack_guidance = (install_target / "docs/ai/stack-guidance.md").read_text(encoding="utf-8")
+
+            self.assertIn("Selected packs: `javascript-typescript-app`, `python-service`", agents)
+            self.assertIn('selected_packs = ["javascript-typescript-app", "python-service"]', manifest)
+            self.assertIn("Pack id: `javascript-typescript-app`", stack_guidance)
+            self.assertIn("Pack id: `python-service`", stack_guidance)
+            self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
+
+    def test_manage_packs_removes_pack_without_touching_manual_agents_content(self) -> None:
+        with repo_fixture("manage_remove") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            agents_path = install_target / "AGENTS.md"
+            agents_path.write_text(
+                agents_path.read_text(encoding="utf-8") + "\nManual note outside markers.\n",
+                encoding="utf-8",
+            )
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-packs",
+                    "--remove-pack",
+                    "javascript-typescript-app",
+                    "--write",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            agents = agents_path.read_text(encoding="utf-8")
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            stack_guidance = (install_target / "docs/ai/stack-guidance.md").read_text(encoding="utf-8")
+
+            self.assertIn("No stack packs are selected yet.", agents)
+            self.assertIn("Manual note outside markers.", agents)
+            self.assertIn("selected_packs = []", manifest)
+            self.assertIn("No stack packs are selected yet.", stack_guidance)
+
+    def test_manage_packs_set_replaces_selected_pack_set(self) -> None:
+        with repo_fixture("manage_set") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+            write_file(install_target, "src/App.tsx", "export function App() { return <main />; }\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-packs",
+                    "--set-pack",
+                    "node-api-service",
+                    "--write",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("javascript-typescript-app: removed by --set-pack replacement", output)
+            self.assertIn("frontend-ui: removed by --set-pack replacement", output)
+            self.assertIn("node-api-service: selected by --set-pack", output)
+
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            agents = (install_target / "AGENTS.md").read_text(encoding="utf-8")
+
+            self.assertIn('selected_packs = ["node-api-service"]', manifest)
+            self.assertIn("Selected packs: `node-api-service`", agents)
+            self.assertNotIn("Selected packs: `javascript-typescript-app`", agents)
+
+    def test_manage_packs_rejects_invalid_flag_combinations(self) -> None:
+        with repo_fixture("manage_invalid") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--add-pack", "python-service"]
+            )
+            self.assertEqual(exit_code, 1)
+            self.assertIn("require --manage-packs", output)
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--manage-packs"]
+            )
+            self.assertEqual(exit_code, 1)
+            self.assertIn("--manage-packs requires --add-pack", output)
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-packs",
+                    "--add-pack",
+                    "python-service",
+                    "--set-pack",
+                    "python-service",
+                ]
+            )
+            self.assertEqual(exit_code, 1)
+            self.assertIn("--set-pack cannot be combined", output)
 
     def test_force_overwrite_updates_existing_agents(self) -> None:
         with repo_fixture("install_force") as install_target:
@@ -992,6 +1340,39 @@ class InstallEnhancerTests(unittest.TestCase):
                 "Review `AGENTS.md` and `docs/ai/stack-guidance.md` for selected packs: `javascript-typescript-app`.",
                 preview,
             )
+
+    def test_gui_pack_management_preview_and_completion_message(self) -> None:
+        with repo_fixture("install_preview_manage") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            plan = build_pack_management_plan(
+                install_target,
+                add_packs=("python-service",),
+            )
+            preview = build_plan_preview(plan)
+            message = build_completion_message(plan)
+
+            self.assertIn("Operation: Manage stack packs", preview)
+            self.assertIn("Pack management behavior:", preview)
+            self.assertIn("After pack management:", preview)
+            self.assertIn("Manifest selected packs: `javascript-typescript-app`, `python-service`", preview)
+            self.assertIn("Codex Enhancer stack packs were updated successfully.", message)
+            self.assertIn("Selected stack packs now:", message)
+            self.assertIn("- python-service", message)
 
     def test_gui_refresh_preview_uses_refresh_wording(self) -> None:
         with repo_fixture("install_preview_refresh") as install_target:

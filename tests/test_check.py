@@ -31,14 +31,14 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_gui.py`.
-        See [docs/ai/v2-design.md](docs/ai/v2-design.md) for the next planned evolution.
+        See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the next planned evolution.
         """,
         "AGENTS.md": f"""
         # Codex Enhancer
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         Use `install_enhancer.bat` for the Windows GUI installer.
-        See [docs/ai/v2-design.md](docs/ai/v2-design.md) for the v2 roadmap.
+        See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the enhancer roadmap.
 
         See [docs/ai/architecture.md](docs/ai/architecture.md),
         [docs/ai/code-review.md](docs/ai/code-review.md),
@@ -57,8 +57,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         """,
-        "docs/ai/v2-design.md": """
-        # V2 Design
+        "docs/ai/roadmap.md": """
+        # Codex Enhancer Roadmap
 
         Optional stack packs live here.
         """,
