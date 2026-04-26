@@ -13,6 +13,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [AGENTS.md](AGENTS.md): repo-wide operating map and default workflow.
 - [docs/ai/architecture.md](docs/ai/architecture.md): what belongs in the enhancer, what to defer, and when to add more structure.
 - [docs/ai/code-review.md](docs/ai/code-review.md): review and PR-prep checklist for docs, skills, scripts, and future workflow assets.
+- [docs/ai/migration-v3.md](docs/ai/migration-v3.md): upgrade and review notes for the v3 managed-section lifecycle.
 - [docs/ai/roadmap.md](docs/ai/roadmap.md): phased roadmap for stack packs, installer UX, and planned enhancer evolution.
 - [.codex/skills/](.codex/skills/): repo-local skills for repeated procedures. Read [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md) before editing or adding skills.
 - [install_enhancer.bat](install_enhancer.bat): Windows launcher that opens the GUI installer.
@@ -78,5 +79,6 @@ Do not use subagents for small doc edits, single-skill changes, or work blocked 
 
 ## More Detail
 - Architecture and scope rules: [docs/ai/architecture.md](docs/ai/architecture.md)
+- V3 migration notes: [docs/ai/migration-v3.md](docs/ai/migration-v3.md)
 - Review checklist: [docs/ai/code-review.md](docs/ai/code-review.md)
 - Design roadmap: [docs/ai/roadmap.md](docs/ai/roadmap.md)

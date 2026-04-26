@@ -29,6 +29,7 @@ from scripts.stack_packs import (
     EnhancerInstallState,
     PackDetection,
     PackSelection,
+    detect_package_manager,
     detect_stack_packs,
     format_detection_reason,
     load_enhancer_install_state,
@@ -177,6 +178,8 @@ def _version_key(version: str) -> tuple[tuple[int, int | str], ...]:
     key: list[tuple[int, int | str]] = []
     for part in version.split("."):
         key.append((0, int(part)) if part.isdigit() else (1, part))
+    while len(key) > 1 and key[-1] == (0, 0):
+        key.pop()
     return tuple(key)
 
 
@@ -312,6 +315,18 @@ def maybe_set_command(commands: dict[str, str], key: str, command: str) -> None:
     commands.setdefault(key, command)
 
 
+def package_manager_install_command(package_manager: str) -> str:
+    return f"{package_manager} install"
+
+
+def package_manager_script_command(package_manager: str, script_name: str) -> str:
+    if package_manager == "bun":
+        return f"bun run {script_name}"
+    if script_name == "test":
+        return f"{package_manager} test"
+    return f"{package_manager} run {script_name}"
+
+
 def discover_commands(target: Path) -> dict[str, str]:
     commands: dict[str, str] = {}
 
@@ -340,14 +355,31 @@ def discover_commands(target: Path) -> dict[str, str]:
             package_data = json.loads(package_json.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             package_data = {}
+        if not isinstance(package_data, dict):
+            package_data = {}
         scripts = package_data.get("scripts", {})
+        if not isinstance(scripts, dict):
+            scripts = {}
         if package_data:
-            maybe_set_command(commands, "install", "npm install")
+            package_manager = detect_package_manager(target).name
+            maybe_set_command(
+                commands,
+                "install",
+                package_manager_install_command(package_manager),
+            )
         for name in ("build", "lint", "dev", "check"):
             if name in scripts:
-                maybe_set_command(commands, name, f"npm run {name}")
+                maybe_set_command(
+                    commands,
+                    name,
+                    package_manager_script_command(package_manager, name),
+                )
         if "test" in scripts:
-            maybe_set_command(commands, "test", "npm test")
+            maybe_set_command(
+                commands,
+                "test",
+                package_manager_script_command(package_manager, "test"),
+            )
 
     pyproject = target / "pyproject.toml"
     if pyproject.exists():
@@ -418,6 +450,25 @@ def proposal_destination(destination: Path) -> Path:
     return PROPOSAL_ROOT / destination
 
 
+def unique_proposal_destination(target: Path, destination: Path) -> Path:
+    proposal_path = proposal_destination(destination)
+    if not (target / proposal_path).exists():
+        return proposal_path
+
+    parent = proposal_path.parent
+    stem = proposal_path.stem
+    suffix = proposal_path.suffix
+    for index in range(1, 1000):
+        candidate = parent / f"{stem}.{index}{suffix}"
+        if not (target / candidate).exists():
+            return candidate
+
+    raise ValueError(
+        f"Too many existing proposal files for {destination.as_posix()}; "
+        "review .codex/enhancer-proposals before retrying."
+    )
+
+
 def _plan_changed_write(
     target: Path,
     destination: Path,
@@ -434,7 +485,7 @@ def _plan_changed_write(
         if existing_action == "proposal":
             return PlannedWrite(
                 destination=destination,
-                write_path=proposal_destination(destination),
+                write_path=unique_proposal_destination(target, destination),
                 content=content,
                 source_label=source_label,
                 action="proposal",
@@ -493,7 +544,7 @@ def plan_template_writes(
                 action = "overwrite"
             else:
                 action = "proposal"
-                write_path = proposal_destination(asset.destination)
+                write_path = unique_proposal_destination(target, asset.destination)
         writes.append(
             PlannedWrite(
                 destination=asset.destination,
@@ -521,7 +572,7 @@ def plan_copy_writes(target: Path, force: bool) -> list[PlannedWrite]:
                 action = "overwrite"
             else:
                 action = "proposal"
-                write_path = proposal_destination(asset.destination)
+                write_path = unique_proposal_destination(target, asset.destination)
         writes.append(
             PlannedWrite(
                 destination=asset.destination,
@@ -563,7 +614,7 @@ def plan_generated_writes(
                 action = "overwrite"
             else:
                 action = "proposal"
-                write_path = proposal_destination(destination)
+                write_path = unique_proposal_destination(target, destination)
         writes.append(
             PlannedWrite(
                 destination=destination,
@@ -607,6 +658,20 @@ def replace_managed_section_content(
     return f"{before}\n{replacement.strip()}\n{after}"
 
 
+def normalize_managed_section_content(
+    text: str,
+    *,
+    start_marker: str,
+    end_marker: str,
+) -> str:
+    return replace_managed_section_content(
+        text,
+        start_marker=start_marker,
+        end_marker=end_marker,
+        replacement="__CODEX_ENHANCER_MANAGED_SECTION__",
+    )
+
+
 def render_managed_agents_summary_update(
     target: Path,
     pack_selections: tuple[PackSelection, ...],
@@ -624,6 +689,73 @@ def render_managed_agents_summary_update(
         end_marker=section.end_marker,
         replacement=render_agents_summary(pack_selections),
     )
+
+
+def plan_agents_upgrade_writes(
+    target: Path,
+    content: str,
+    source_label: str,
+    pack_selections: tuple[PackSelection, ...],
+) -> list[PlannedWrite]:
+    section = _selected_stack_packs_section()
+    destination = section.path
+    destination_path = target / destination
+    if not destination_path.exists():
+        planned = _plan_changed_write(
+            target,
+            destination,
+            content,
+            source_label,
+            existing_action="proposal",
+        )
+        return [] if planned is None else [planned]
+
+    writes: list[PlannedWrite] = []
+    try:
+        managed_content = render_managed_agents_summary_update(target, pack_selections)
+    except ValueError:
+        planned = _plan_changed_write(
+            target,
+            destination,
+            content,
+            source_label,
+            existing_action="proposal",
+        )
+        return [] if planned is None else [planned]
+
+    managed_update = _plan_changed_write(
+        target,
+        destination,
+        managed_content,
+        "managed AGENTS.md selected stack-pack section",
+        existing_action="overwrite",
+    )
+    if managed_update is not None:
+        writes.append(managed_update)
+
+    existing_content = destination_path.read_text(encoding="utf-8")
+    existing_shape = normalize_managed_section_content(
+        existing_content,
+        start_marker=section.start_marker,
+        end_marker=section.end_marker,
+    )
+    source_shape = normalize_managed_section_content(
+        content,
+        start_marker=section.start_marker,
+        end_marker=section.end_marker,
+    )
+    if existing_shape != source_shape:
+        proposal = _plan_changed_write(
+            target,
+            destination,
+            content,
+            source_label,
+            existing_action="proposal",
+        )
+        if proposal is not None:
+            writes.append(proposal)
+
+    return writes
 
 
 def build_upgrade_plan(target: Path) -> InstallPlan:
@@ -658,6 +790,16 @@ def build_upgrade_plan(target: Path) -> InstallPlan:
     for asset in INSTALL_TEMPLATE_ASSETS:
         template_path = SOURCE_ROOT / asset.template_path
         content = render_template(template_path.read_text(encoding="utf-8"), replacements)
+        if asset.destination == Path("AGENTS.md"):
+            writes.extend(
+                plan_agents_upgrade_writes(
+                    resolved_target,
+                    content,
+                    asset.template_path.as_posix(),
+                    pack_selections,
+                )
+            )
+            continue
         planned = _plan_changed_write(
             resolved_target,
             asset.destination,

@@ -1,0 +1,18 @@
+schema_version = 1
+name = "library-package"
+label = "Library package"
+description = "Rules for reusable package repositories with explicit published entrypoints or package metadata."
+version = "0.1.0"
+
+[discovery]
+all_files = ["package.json"]
+
+[ui]
+recommended_if_detected = true
+default_selected = false
+order = 40
+
+[render]
+agents_summary = "fragments/agents-summary.md"
+stack_guidance = "fragments/stack-guidance.md"
+review_notes = "fragments/review-notes.md"

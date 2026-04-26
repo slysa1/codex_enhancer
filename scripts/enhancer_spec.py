@@ -78,6 +78,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("install_enhancer.bat"),
         Path("docs/ai/architecture.md"),
         Path("docs/ai/code-review.md"),
+        Path("docs/ai/migration-v3.md"),
         Path("docs/ai/roadmap.md"),
         Path(".codex/skills/AGENTS.md"),
         Path(".codex/skills/plan-change/SKILL.md"),
@@ -119,6 +120,10 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("scaffold/stack-packs/node-api-service/fragments/agents-summary.md"),
         Path("scaffold/stack-packs/node-api-service/fragments/stack-guidance.md"),
         Path("scaffold/stack-packs/node-api-service/fragments/review-notes.md"),
+        Path("scaffold/stack-packs/library-package/pack.toml"),
+        Path("scaffold/stack-packs/library-package/fragments/agents-summary.md"),
+        Path("scaffold/stack-packs/library-package/fragments/stack-guidance.md"),
+        Path("scaffold/stack-packs/library-package/fragments/review-notes.md"),
     ),
     line_limits={
         Path("AGENTS.md"): 140,
@@ -132,6 +137,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             TEST_COMMAND,
             "install_enhancer.bat",
             "scripts/install_enhancer_gui.py",
+            "docs/ai/migration-v3.md",
             "docs/ai/roadmap.md",
         ),
         Path("AGENTS.md"): (
@@ -140,6 +146,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "install_enhancer.bat",
             "docs/ai/architecture.md",
             "docs/ai/code-review.md",
+            "docs/ai/migration-v3.md",
             "docs/ai/roadmap.md",
             ".codex/skills/",
             "tests/",
@@ -147,6 +154,13 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("docs/ai/code-review.md"): (
             CHECK_COMMAND,
             TEST_COMMAND,
+            "docs/ai/migration-v3.md",
+        ),
+        Path("docs/ai/migration-v3.md"): (
+            "--inspect-install",
+            "--upgrade-enhancer",
+            "--manage-packs",
+            "--refresh-generated",
         ),
         Path(".github/workflows/validate.yml"): (
             CHECK_COMMAND,

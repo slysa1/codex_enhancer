@@ -31,6 +31,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_gui.py`.
+        Read [docs/ai/migration-v3.md](docs/ai/migration-v3.md) before upgrading existing installs.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the next planned evolution.
         """,
         "AGENTS.md": f"""
@@ -42,6 +43,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         See [docs/ai/architecture.md](docs/ai/architecture.md),
         [docs/ai/code-review.md](docs/ai/code-review.md),
+        [docs/ai/migration-v3.md](docs/ai/migration-v3.md),
         [.codex/skills/](.codex/skills/), and [tests/](tests/).
         """,
         "install_enhancer.bat": """
@@ -56,6 +58,13 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         # Review
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
+        See [docs/ai/migration-v3.md](migration-v3.md).
+        """,
+        "docs/ai/migration-v3.md": """
+        # V3 Migration Notes
+
+        Use `--inspect-install`, `--upgrade-enhancer`, `--manage-packs`,
+        and `--refresh-generated`.
         """,
         "docs/ai/roadmap.md": """
         # Codex Enhancer Roadmap
@@ -315,6 +324,35 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scaffold/stack-packs/node-api-service/fragments/review-notes.md": """
         Node API review notes.
+        """,
+        "scaffold/stack-packs/library-package/pack.toml": """
+        schema_version = 1
+        name = "library-package"
+        label = "Library package"
+        description = "Library package rules."
+        version = "0.1.0"
+
+        [discovery]
+        all_files = ["package.json"]
+
+        [ui]
+        recommended_if_detected = true
+        default_selected = false
+        order = 40
+
+        [render]
+        agents_summary = "fragments/agents-summary.md"
+        stack_guidance = "fragments/stack-guidance.md"
+        review_notes = "fragments/review-notes.md"
+        """,
+        "scaffold/stack-packs/library-package/fragments/agents-summary.md": """
+        Library summary.
+        """,
+        "scaffold/stack-packs/library-package/fragments/stack-guidance.md": """
+        Library guidance.
+        """,
+        "scaffold/stack-packs/library-package/fragments/review-notes.md": """
+        Library review notes.
         """,
     }
 

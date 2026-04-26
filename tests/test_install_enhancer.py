@@ -16,8 +16,11 @@ from scripts.install_enhancer import (
     build_overwrite_confirmation_message,
     build_pack_management_plan,
     build_upgrade_plan,
+    discover_commands,
     format_next_steps,
+    inspect_install,
     overwrite_paths,
+    proposal_paths,
 )
 from scripts.install_enhancer_gui import build_completion_message, build_plan_preview
 from scripts.enhancer_spec import (
@@ -77,6 +80,7 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertIn("frontend-ui", output)
         self.assertIn("python-service", output)
         self.assertIn("node-api-service", output)
+        self.assertIn("library-package", output)
 
     def test_inspect_install_reports_repo_without_enhancer(self) -> None:
         with repo_fixture("inspect_missing") as install_target:
@@ -115,6 +119,24 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn(f"Target manifest schema: `{ENHANCER_MANIFEST_SCHEMA_VERSION}`", output)
             self.assertIn("Status: target install matches the current source version.", output)
             self.assertIn("Selected packs: `javascript-typescript-app`", output)
+
+    def test_inspect_install_treats_trailing_zero_versions_as_equivalent(self) -> None:
+        with repo_fixture("inspect_equivalent_version") as install_target:
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+            self.assertEqual(exit_code, 0)
+
+            manifest_path = install_target / ".codex/enhancer/manifest.toml"
+            manifest_text = manifest_path.read_text(encoding="utf-8").replace(
+                f'enhancer_version = "{ENHANCER_VERSION}"',
+                f'enhancer_version = "{ENHANCER_VERSION}.0"',
+            )
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+
+            inspection = inspect_install(install_target)
+
+            self.assertEqual(inspection.status, "current")
 
     def test_inspect_install_reports_older_target_version(self) -> None:
         with repo_fixture("inspect_outdated") as install_target:
@@ -378,6 +400,42 @@ class InstallEnhancerTests(unittest.TestCase):
                 (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8"),
             )
 
+    def test_upgrade_enhancer_refreshes_managed_agents_section_in_place(self) -> None:
+        with repo_fixture("upgrade_managed_agents_section") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            agents_path = install_target / "AGENTS.md"
+            agents_text = agents_path.read_text(encoding="utf-8")
+            agents_text = agents_text.replace("`javascript-typescript-app`", "`python-service`", 1)
+            agents_text += "\n## Local Notes\nKeep this human-owned note.\n"
+            agents_path.write_text(agents_text, encoding="utf-8")
+
+            plan = build_upgrade_plan(install_target)
+
+            self.assertIn(Path("AGENTS.md"), overwrite_paths(plan))
+            self.assertIn(Path(".codex/enhancer-proposals/AGENTS.md"), proposal_paths(plan))
+
+            apply_install_plan(plan)
+            refreshed_agents = agents_path.read_text(encoding="utf-8")
+
+            self.assertIn("`javascript-typescript-app`", refreshed_agents)
+            self.assertIn("Keep this human-owned note.", refreshed_agents)
+            self.assertTrue((install_target / ".codex/enhancer-proposals/AGENTS.md").exists())
+
     def test_upgrade_enhancer_plans_creates_for_partially_missing_install(self) -> None:
         with repo_fixture("upgrade_missing_files") as install_target:
             write_file(install_target, "package.json", '{"name": "demo"}\n')
@@ -435,6 +493,35 @@ class InstallEnhancerTests(unittest.TestCase):
                 "javascript-typescript-app: available as recommended but not selected",
                 output,
             )
+
+    def test_dry_run_surfaces_manifest_evidence_for_detected_stack_packs(self) -> None:
+        with repo_fixture("install_pack_evidence_preview") as install_target:
+            write_file(
+                install_target,
+                "package.json",
+                json.dumps(
+                    {
+                        "name": "demo",
+                        "packageManager": "pnpm@9.0.0",
+                        "scripts": {
+                            "build": "vite build",
+                            "test": "vitest run",
+                        },
+                        "devDependencies": {
+                            "typescript": "latest",
+                            "vite": "latest",
+                        },
+                    }
+                ),
+            )
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, output = run_installer(["--target", str(install_target), "--mode", "existing"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("package manager: pnpm from package.json packageManager", output)
+            self.assertIn("package.json scripts: build, test", output)
+            self.assertIn("package.json packages: typescript, vite", output)
 
     def test_use_recommended_packs_selects_detected_recommendations(self) -> None:
         with repo_fixture("install_recommended") as install_target:
@@ -515,6 +602,53 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("node-api-service: selected from recommended detection", output)
             self.assertIn(
                 'selected_packs = ["javascript-typescript-app", "node-api-service"]',
+                output,
+            )
+
+    def test_use_recommended_packs_selects_library_package_bundle(self) -> None:
+        with repo_fixture("install_recommended_library") as install_target:
+            write_file(
+                install_target,
+                "package.json",
+                json.dumps(
+                    {
+                        "name": "@scope/demo-library",
+                        "exports": "./dist/index.js",
+                        "types": "./dist/index.d.ts",
+                        "files": ["dist"],
+                        "scripts": {
+                            "build": "tsup src/index.ts",
+                            "test": "vitest run",
+                            "typecheck": "tsc --noEmit",
+                        },
+                        "devDependencies": {
+                            "typescript": "latest",
+                            "tsup": "latest",
+                        },
+                    }
+                ),
+            )
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(
+                "javascript-typescript-app: selected from recommended detection",
+                output,
+            )
+            self.assertIn("library-package: selected from recommended detection", output)
+            self.assertIn("package.json library fields: exports, types, files", output)
+            self.assertIn(
+                'selected_packs = ["javascript-typescript-app", "library-package"]',
                 output,
             )
 
@@ -813,6 +947,79 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
                 any("has reversed managed section markers" in error for error in errors)
             )
 
+    def test_target_validation_requires_selected_pack_state_to_match_detection_records(self) -> None:
+        with repo_fixture("install_pack_state_drift") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            manifest_path = install_target / ".codex/enhancer/manifest.toml"
+            manifest_text = manifest_path.read_text(encoding="utf-8").replace(
+                'name = "javascript-typescript-app"\n'
+                "selected = true\n",
+                'name = "javascript-typescript-app"\n'
+                "selected = false\n",
+            )
+            if manifest_text == manifest_path.read_text(encoding="utf-8"):
+                self.fail("manifest fixture mutation did not change the selected flag")
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any("selected_packs disagree with detected_packs selected flags" in error for error in errors)
+            )
+
+    def test_target_validation_checks_selected_pack_summary_inside_managed_section(self) -> None:
+        with repo_fixture("install_managed_section_drift") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            agents_path = install_target / "AGENTS.md"
+            agents_text = agents_path.read_text(encoding="utf-8")
+            start = "<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs start -->"
+            end = "<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->"
+            start_index = agents_text.index(start) + len(start)
+            end_index = agents_text.index(end)
+            agents_text = (
+                agents_text[:start_index]
+                + "\nSelected packs: `python-service`\n"
+                + agents_text[end_index:]
+            )
+            agents_text += "\nOutside the managed section: `javascript-typescript-app`.\n"
+            agents_path.write_text(agents_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any("managed selected-stack-packs section is missing" in error for error in errors)
+            )
+
     def test_existing_repo_writes_proposals_for_conflicts(self) -> None:
         with repo_fixture("install_existing") as install_target:
             write_file(
@@ -848,6 +1055,29 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
             self.assertTrue(
                 (install_target / ".codex/enhancer-proposals/scripts/check.py").exists()
             )
+
+    def test_existing_repo_uses_unique_proposal_paths_for_existing_review_work(self) -> None:
+        with repo_fixture("install_existing_proposal_collision") as install_target:
+            write_file(install_target, "AGENTS.md", "# Existing guidance\n")
+            write_file(
+                install_target,
+                ".codex/enhancer-proposals/AGENTS.md",
+                "# Existing proposal under review\n",
+            )
+
+            plan = build_install_plan(install_target, mode="existing", force=False)
+
+            self.assertIn(Path(".codex/enhancer-proposals/AGENTS.1.md"), proposal_paths(plan))
+
+            apply_install_plan(plan)
+
+            self.assertEqual(
+                "# Existing proposal under review\n",
+                (install_target / ".codex/enhancer-proposals/AGENTS.md").read_text(
+                    encoding="utf-8"
+                ),
+            )
+            self.assertTrue((install_target / ".codex/enhancer-proposals/AGENTS.1.md").exists())
 
     def test_dry_run_reports_conflict_severity_for_critical_and_standard_files(self) -> None:
         with repo_fixture("install_conflict_severity") as install_target:
@@ -1255,6 +1485,35 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
             self.assertIn("`lint`: `npm run lint`", agents)
             self.assertIn("`test`: `npm test`", agents)
             self.assertIn("`dev`: `npm run dev`", agents)
+
+    def test_package_json_commands_respect_package_manager_evidence(self) -> None:
+        cases = (
+            ("npm_lock", {}, ("package-lock.json",), "npm install", "npm run build", "npm test"),
+            ("pnpm_field", {"packageManager": "pnpm@9.0.0"}, (), "pnpm install", "pnpm run build", "pnpm test"),
+            ("yarn_lock", {}, ("yarn.lock",), "yarn install", "yarn run build", "yarn test"),
+            ("bun_lock", {}, ("bun.lockb",), "bun install", "bun run build", "bun run test"),
+        )
+
+        for prefix, package_extra, lockfiles, expected_install, expected_build, expected_test in cases:
+            with self.subTest(prefix=prefix):
+                with repo_fixture(prefix) as install_target:
+                    package_data = {
+                        "name": "demo-repo",
+                        "scripts": {
+                            "build": "vite build",
+                            "test": "vitest run",
+                        },
+                    }
+                    package_data.update(package_extra)
+                    write_file(install_target, "package.json", json.dumps(package_data))
+                    for lockfile in lockfiles:
+                        write_file(install_target, lockfile, "\n")
+
+                    commands = discover_commands(install_target)
+
+                    self.assertEqual(commands["install"], expected_install)
+                    self.assertEqual(commands["build"], expected_build)
+                    self.assertEqual(commands["test"], expected_test)
 
     def test_apply_install_plan_reports_progress(self) -> None:
         with repo_fixture("install_progress") as parent:

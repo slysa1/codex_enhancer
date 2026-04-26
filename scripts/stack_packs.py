@@ -18,6 +18,87 @@ from scripts.enhancer_spec import (
 
 STACK_PACK_ROOT = Path(__file__).resolve().parents[1] / "scaffold/stack-packs"
 TARGET_MANIFEST_PATH = Path(".codex/enhancer/manifest.toml")
+PACKAGE_MANAGER_LOCKFILES = (
+    (Path("pnpm-lock.yaml"), "pnpm"),
+    (Path("yarn.lock"), "yarn"),
+    (Path("bun.lockb"), "bun"),
+    (Path("bun.lock"), "bun"),
+    (Path("package-lock.json"), "npm"),
+    (Path("npm-shrinkwrap.json"), "npm"),
+)
+SUPPORTED_PACKAGE_MANAGERS = frozenset({"npm", "pnpm", "yarn", "bun"})
+PACKAGE_SCRIPT_HINTS_BY_PACK = {
+    "javascript-typescript-app": ("build", "lint", "test", "dev", "check", "typecheck"),
+    "frontend-ui": ("build", "dev", "preview", "test", "e2e"),
+    "library-package": ("build", "lint", "test", "typecheck", "prepublishOnly", "prepare"),
+    "node-api-service": ("start", "dev", "test", "build"),
+}
+PACKAGE_HINTS_BY_PACK = {
+    "javascript-typescript-app": (
+        "typescript",
+        "vite",
+        "next",
+        "react",
+        "eslint",
+        "vitest",
+        "jest",
+        "tsx",
+        "ts-node",
+        "webpack",
+        "rollup",
+        "esbuild",
+    ),
+    "frontend-ui": (
+        "react",
+        "@vitejs/plugin-react",
+        "vite",
+        "next",
+        "vue",
+        "svelte",
+        "astro",
+        "solid-js",
+        "@angular/core",
+    ),
+    "library-package": (
+        "typescript",
+        "tsup",
+        "rollup",
+        "vite",
+        "unbuild",
+        "microbundle",
+        "esbuild",
+        "changesets",
+        "@changesets/cli",
+    ),
+    "node-api-service": (
+        "express",
+        "fastify",
+        "koa",
+        "hono",
+        "@nestjs/core",
+        "zod",
+        "joi",
+        "swagger-ui-express",
+    ),
+}
+LIBRARY_PACKAGE_METADATA_FIELDS = ("exports", "main", "module", "types", "typings", "bin", "files")
+LIBRARY_APP_SIGNAL_GLOBS = (
+    "src/App.*",
+    "app/**",
+    "pages/**",
+    "src/server.*",
+    "src/routes/**/*",
+    "src/controllers/**/*",
+    "server/**/*",
+    "api/**/*",
+    "next.config.*",
+    "astro.config.*",
+    "svelte.config.*",
+    "openapi*.json",
+    "openapi*.yaml",
+    "openapi*.yml",
+)
+PYPROJECT_TOOL_HINTS = ("pytest", "ruff", "mypy", "black", "poetry", "hatch", "uv")
 
 
 @dataclass(frozen=True)
@@ -54,6 +135,13 @@ class StackPack:
     discovery: PackDiscovery
     ui: PackUi
     render: PackRender
+
+
+@dataclass(frozen=True)
+class PackageManagerSignal:
+    name: str
+    evidence: str
+    is_default: bool
 
 
 @dataclass(frozen=True)
@@ -223,6 +311,211 @@ def _format_path_list(paths: tuple[Path, ...]) -> str:
     return ", ".join(path.as_posix() for path in paths)
 
 
+def _read_json_object(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return raw
+
+
+def _read_toml_object(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError:
+        return {}
+    return raw
+
+
+def _package_manager_name(package_manager: str) -> str | None:
+    name = package_manager.split("@", 1)[0].strip().lower()
+    if name in SUPPORTED_PACKAGE_MANAGERS:
+        return name
+    return None
+
+
+def detect_package_manager(target: Path) -> PackageManagerSignal:
+    resolved_target = target.resolve()
+    package_data = _read_json_object(resolved_target / "package.json")
+    package_manager = package_data.get("packageManager")
+    if isinstance(package_manager, str):
+        manager = _package_manager_name(package_manager)
+        if manager is not None:
+            return PackageManagerSignal(
+                name=manager,
+                evidence=f"package manager: {manager} from package.json packageManager",
+                is_default=False,
+            )
+
+    for lockfile, manager in PACKAGE_MANAGER_LOCKFILES:
+        if (resolved_target / lockfile).exists():
+            return PackageManagerSignal(
+                name=manager,
+                evidence=f"package manager: {manager} from {lockfile.as_posix()}",
+                is_default=False,
+            )
+
+    return PackageManagerSignal(
+        name="npm",
+        evidence="package manager: npm default because no packageManager or lockfile was found",
+        is_default=True,
+    )
+
+
+def _package_scripts(package_data: dict[str, object], hints: tuple[str, ...]) -> tuple[str, ...]:
+    scripts = package_data.get("scripts", {})
+    if not isinstance(scripts, dict):
+        return ()
+    return tuple(name for name in hints if name in scripts)
+
+
+def _package_names(package_data: dict[str, object]) -> frozenset[str]:
+    names: set[str] = set()
+    for section_name in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+        section = package_data.get(section_name, {})
+        if not isinstance(section, dict):
+            continue
+        names.update(name for name in section if isinstance(name, str))
+    return frozenset(names)
+
+
+def _matching_package_names(
+    package_data: dict[str, object],
+    hints: tuple[str, ...],
+) -> tuple[str, ...]:
+    names = _package_names(package_data)
+    return tuple(name for name in hints if name in names)
+
+
+def _collect_package_manifest_evidence(pack: StackPack, target: Path) -> tuple[str, ...]:
+    if pack.name not in PACKAGE_SCRIPT_HINTS_BY_PACK and pack.name not in PACKAGE_HINTS_BY_PACK:
+        return ()
+
+    package_data = _read_json_object(target / "package.json")
+    if not package_data:
+        return ()
+
+    evidence: list[str] = []
+    package_manager = detect_package_manager(target)
+    if not package_manager.is_default:
+        evidence.append(package_manager.evidence)
+
+    scripts = _package_scripts(package_data, PACKAGE_SCRIPT_HINTS_BY_PACK.get(pack.name, ()))
+    if scripts:
+        evidence.append(f"package.json scripts: {', '.join(scripts)}")
+
+    packages = _matching_package_names(package_data, PACKAGE_HINTS_BY_PACK.get(pack.name, ()))
+    if packages:
+        evidence.append(f"package.json packages: {', '.join(packages)}")
+
+    return tuple(evidence)
+
+
+def _collect_pyproject_manifest_evidence(pack: StackPack, target: Path) -> tuple[str, ...]:
+    if pack.name != "python-service":
+        return ()
+
+    pyproject_data = _read_toml_object(target / "pyproject.toml")
+    if not pyproject_data:
+        return ()
+
+    evidence: list[str] = []
+    build_system = pyproject_data.get("build-system", {})
+    if isinstance(build_system, dict):
+        build_backend = build_system.get("build-backend")
+        if isinstance(build_backend, str) and build_backend.strip():
+            evidence.append(f"pyproject build backend: {build_backend.strip()}")
+
+    tool = pyproject_data.get("tool", {})
+    if isinstance(tool, dict):
+        tools = tuple(name for name in PYPROJECT_TOOL_HINTS if name in tool)
+        if tools:
+            evidence.append(f"pyproject tool tables: {', '.join(tools)}")
+
+    return tuple(evidence)
+
+
+def collect_manifest_evidence(pack: StackPack, target: Path) -> tuple[str, ...]:
+    evidence = [
+        *_collect_package_manifest_evidence(pack, target),
+        *_collect_pyproject_manifest_evidence(pack, target),
+    ]
+    return tuple(dict.fromkeys(evidence))
+
+
+def _has_package_metadata_value(value: object) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list | dict):
+        return bool(value)
+    return value is not None
+
+
+def _library_package_fields(package_data: dict[str, object]) -> tuple[str, ...]:
+    return tuple(
+        field
+        for field in LIBRARY_PACKAGE_METADATA_FIELDS
+        if _has_package_metadata_value(package_data.get(field))
+    )
+
+
+def _library_app_signal_matches(target: Path) -> tuple[Path, ...]:
+    return _existing_globs(target, LIBRARY_APP_SIGNAL_GLOBS)
+
+
+def _detect_library_package(pack: StackPack, target: Path) -> PackDetection:
+    package_data = _read_json_object(target / "package.json")
+    if not package_data:
+        return PackDetection(
+            pack=pack,
+            detected=False,
+            recommended=False,
+            reasons=("missing readable package.json library metadata",),
+        )
+
+    library_fields = _library_package_fields(package_data)
+    if not library_fields:
+        return PackDetection(
+            pack=pack,
+            detected=False,
+            recommended=False,
+            reasons=(
+                "missing library package metadata from package.json fields "
+                + ", ".join(LIBRARY_PACKAGE_METADATA_FIELDS),
+            ),
+        )
+
+    app_signal_matches = _library_app_signal_matches(target)
+    if app_signal_matches:
+        return PackDetection(
+            pack=pack,
+            detected=False,
+            recommended=False,
+            reasons=(
+                "app or service signals suppress library-package: "
+                + _format_path_list(app_signal_matches),
+            ),
+        )
+
+    reasons = [
+        "found package.json",
+        "package.json library fields: " + ", ".join(library_fields),
+        *collect_manifest_evidence(pack, target),
+    ]
+    return PackDetection(
+        pack=pack,
+        detected=True,
+        recommended=pack.ui.recommended_if_detected,
+        reasons=tuple(dict.fromkeys(reasons)),
+    )
+
+
 def detect_stack_pack(pack: StackPack, target: Path) -> PackDetection:
     resolved_target = target.resolve()
     excluded = tuple(path for path in pack.discovery.exclude_files if (resolved_target / path).exists())
@@ -262,6 +555,9 @@ def detect_stack_pack(pack: StackPack, target: Path) -> PackDetection:
     if pack.discovery.all_dirs:
         reasons.append(f"found directories {_format_path_list(pack.discovery.all_dirs)}")
 
+    if pack.name == "library-package":
+        return _detect_library_package(pack, resolved_target)
+
     any_file_matches = _existing_any_files(resolved_target, pack.discovery.any_files)
     any_glob_matches = _existing_globs(resolved_target, pack.discovery.any_globs)
 
@@ -283,6 +579,7 @@ def detect_stack_pack(pack: StackPack, target: Path) -> PackDetection:
         reasons.append(f"found {_format_path_list(any_file_matches)}")
     if any_glob_matches:
         reasons.append(f"matched {_format_path_list(any_glob_matches)}")
+    reasons.extend(collect_manifest_evidence(pack, resolved_target))
 
     return PackDetection(
         pack=pack,

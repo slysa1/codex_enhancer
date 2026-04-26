@@ -762,6 +762,12 @@ Main risk:
 - hidden heuristics create false confidence; every recommendation should map to visible, reviewable evidence text
 - package-manager evidence drifts from generated commands; command discovery should respect the target repo's lockfile or `packageManager` field instead of defaulting JavaScript repos to npm
 
+Implemented baseline:
+- stack-pack detection now enriches existing file/path reasons with readable `package.json`, package-manager, and `pyproject.toml` evidence
+- generated manifests and CLI/GUI previews surface the same evidence strings used by the detector
+- command discovery now respects `packageManager` plus npm, pnpm, yarn, and bun lockfiles before falling back to npm
+- the evidence layer remains deliberately narrow; no AST parser, pack metadata schema expansion, or framework-specific inference engine was added
+
 ### 3.0 Step 5: Ship `library-package` And Pack Interaction Rules
 Objective:
 - add the deferred `library-package` pack once the stronger evidence layer can justify it, and document the normal interaction patterns between existing and new overlapping packs
@@ -785,6 +791,11 @@ Validation:
 
 Main risk:
 - misclassifying apps as libraries and shipping the wrong guidance; keep the pack conservative and evidence-heavy
+
+Implemented baseline:
+- `library-package` ships as a conservative optional pack backed by explicit `package.json` library metadata
+- app and service signals suppress automatic `library-package` recommendations to avoid normal app misclassification
+- pack interaction guidance documents that `javascript-typescript-app` can compose with UI, API, or library packs while surface-specific packs remain independently justified
 
 ### 3.0 Step 6: Section-Aware Upgrade, Refresh, And Validation
 Objective:
@@ -814,6 +825,12 @@ Main risk:
 - proposal mode silently overwrites review work if deterministic proposal paths collide; existing proposal files should be treated as conflicts, uniquely named, or require an explicit overwrite choice
 - source-vs-target inspection becomes noisy if version comparison treats semantically equivalent dotted versions as newer or older
 
+Implemented baseline:
+- upgrade now refreshes the managed `AGENTS.md:selected-stack-packs` section in place when markers are valid, while still writing broader repo-owned scaffold drift as proposals
+- proposal paths are collision-safe; existing files under `.codex/enhancer-proposals/` are preserved and new proposals receive a numbered filename
+- source-vs-target inspection normalizes trailing zero version segments so `3.0` and `3.0.0` compare as equivalent
+- target validation now checks selected-pack state against `detected_packs` entries and verifies selected-pack summaries inside the managed `AGENTS.md` section, not merely anywhere in the file
+
 ### 3.0 Step 7: Docs, Migration Notes, And Release Alignment
 Objective:
 - align human-facing docs, review guidance, and CI expectations with the fuller `3.0` lifecycle so installed repos can actually use the new capabilities safely
@@ -837,6 +854,11 @@ Validation:
 
 Main risk:
 - operator docs lag the shipped lifecycle behavior and turn `3.0` into tribal knowledge instead of visible repo guidance
+
+Implemented baseline:
+- `docs/ai/migration-v3.md` now records the operator checklist for inspect, upgrade, manage-packs, refresh, proposal review, and validation
+- root docs point maintainers to the migration note instead of duplicating lifecycle instructions across every file
+- source validation treats the migration note as a required durable workflow document
 
 ### 3.0 Success Bar
 - an installed repo can change selected packs without reinstalling the enhancer from scratch

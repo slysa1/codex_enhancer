@@ -76,7 +76,7 @@ The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gu
 - open the product README automatically after completion
 
 If you prefer the CLI or want to script installs, use the commands below.
-CLI dry-runs now preview the same pack-aware "after install" guidance that the GUI shows before you rerun with `--write`.
+CLI dry-runs now preview the same pack-aware "after install" guidance that the GUI shows before you rerun with `--write`. Detected pack lines include the exact evidence the installer used, such as matched files, package-manager fields, lockfiles, relevant scripts, dependencies, and Python tool tables.
 
 List the currently available stack packs:
 
@@ -90,8 +90,9 @@ Current shipped packs:
 - `frontend-ui`
 - `python-service`
 - `node-api-service`
+- `library-package`
 
-The `library-package` pack is still intentionally deferred; the current detector has visible path evidence but does not yet use stronger content-level manifest evidence for library detection.
+Stack-pack detection now combines conservative file/path signals with narrow manifest evidence from `package.json`, `packageManager` or lockfiles, and `pyproject.toml`. The `library-package` pack is intentionally conservative: it requires explicit reusable-package metadata such as `exports`, `types`, `files`, or `bin`, and it backs away when obvious app or service entrypoints are present.
 
 Preview a new-repo install:
 
@@ -198,6 +199,11 @@ For stack-pack selection:
 
 The CLI and GUI now share the same pack-selection core. The GUI starts with recommended detected packs selected and lets you adjust that set before install. In manage-packs mode, it reads the target repo's existing `.codex/enhancer/manifest.toml`, lets you toggle the selected set, and updates only the managed `AGENTS.md` stack-pack section plus generated pack outputs. In upgrade and refresh mode, the GUI shows the current selected packs as read-only context and keeps that manifest selection fixed while it previews the reconcile or refresh.
 
+Pack interaction rules stay deliberately simple:
+- `javascript-typescript-app` can compose with `frontend-ui`, `node-api-service`, or `library-package` when the target repo shows evidence for both.
+- `frontend-ui` and `node-api-service` stay surface-specific and should only be selected together for repos that genuinely ship both UI and service code.
+- `library-package` should be selected for reusable package contract guidance, not for normal apps that merely happen to have `package.json`.
+
 What gets installed:
 
 ```text
@@ -222,7 +228,7 @@ Installed output ownership is also explicit:
 - safe to regenerate later: `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
 - usually adapted manually after install: the rest of the scaffolded workflow files, including `AGENTS.md`, docs, scripts, skills, tests, and CI
 
-Current installs write manifest schema `2`. The manifest records the enhancer version, selected packs, lifecycle state, pack-selection mode, managed-output ownership, and per-pack evidence. Schema `1` manifests remain readable for inspect and upgrade, but current target validation expects schema `2` after reconcile.
+Current installs write manifest schema `2`. The manifest records the enhancer version, selected packs, lifecycle state, pack-selection mode, managed-output ownership, and per-pack evidence. Evidence is intentionally human-readable and tied to visible files rather than hidden heuristics. Schema `1` manifests remain readable for inspect and upgrade, but current target validation expects schema `2` after reconcile. Version inspection normalizes trailing zero segments, so `3.0` and `3.0.0` compare as the same enhancer version.
 
 The target `AGENTS.md` selected-stack-pack summary is wrapped in visible managed-section comments. Keep those markers intact; they let pack management update that one enhancer-owned region without rewriting repo-owned guidance outside the markers.
 
@@ -253,7 +259,9 @@ Use `--upgrade-enhancer` when you want a reconcile preview for an existing insta
 
 Re-run the same command with `--write` when the grouped reconcile plan looks correct. Upgrade apply will:
 - overwrite managed generated outputs and source-aligned direct-copy files in place
+- refresh the managed selected-stack-pack section in `AGENTS.md` in place when the markers are valid
 - write repo-owned scaffold drift under `.codex/enhancer-proposals/` for manual review and merge
+- preserve existing proposal files by choosing a unique proposal filename when a proposed path already exists
 - preserve the installed pack selection from the target manifest
 - leave pack selection changes to `--manage-packs` instead of silently changing them during upgrade
 
@@ -365,11 +373,13 @@ What they do:
 It is a map, not a dump of every durable rule.
 
 ### `docs/ai/`
-[docs/ai/architecture.md](docs/ai/architecture.md) and [docs/ai/code-review.md](docs/ai/code-review.md) hold the durable detail that would otherwise bloat `AGENTS.md`.
+[docs/ai/architecture.md](docs/ai/architecture.md), [docs/ai/code-review.md](docs/ai/code-review.md), and [docs/ai/migration-v3.md](docs/ai/migration-v3.md) hold the durable detail that would otherwise bloat `AGENTS.md`.
 
 Use docs when guidance needs more explanation. Use `AGENTS.md` when guidance must be visible immediately.
 
 For the current planned evolution of the enhancer, see [docs/ai/roadmap.md](docs/ai/roadmap.md). It defines the shipped `2.x` stack-pack model plus the phased `3.0` roadmap for managed sections, pack lifecycle, and stronger evidence-backed recommendations.
+
+For upgrading existing installed repos, see [docs/ai/migration-v3.md](docs/ai/migration-v3.md). It gives the operator checklist for inspect, upgrade, pack management, refresh, proposal review, and validation.
 
 ### `.codex/skills/`
 [.codex/skills/](.codex/skills/) holds narrow, repeatable procedures. The subtree rules live in [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md).
@@ -379,8 +389,8 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 ### `scripts/install_enhancer.py`
 [scripts/install_enhancer.py](scripts/install_enhancer.py) is the bootstrap entrypoint. It:
 - scaffolds enhancer files into a target repo
-- discovers a small set of likely commands from common manifests
-- lists, detects, and resolves shipped stack packs during install planning
+- discovers a small set of likely commands from common manifests, respecting `packageManager` and common JavaScript lockfiles
+- lists, detects, and resolves shipped stack packs during install planning with visible evidence
 - supports recommended-pack selection plus explicit include/exclude overrides in the CLI
 - manages selected packs after install with manifest deltas and managed-section updates
 - renders a compact selected-pack summary into the target `AGENTS.md`
@@ -429,12 +439,12 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 [scaffold/stack-packs/](scaffold/stack-packs/) stores the file-based stack-pack registry. Each pack lives in its own directory with `pack.toml` plus small markdown fragments that the installer can detect and render into target guidance.
 
 ### `scripts/stack_packs.py`
-[scripts/stack_packs.py](scripts/stack_packs.py) loads stack-pack metadata, detects matching packs in a target repo, resolves selection state, and renders the target `AGENTS.md` summary, manifest, and stack-guidance outputs.
+[scripts/stack_packs.py](scripts/stack_packs.py) loads stack-pack metadata, detects matching packs in a target repo, collects narrow manifest evidence from `package.json`, package-manager signals, and `pyproject.toml`, resolves selection state, and renders the target `AGENTS.md` summary, manifest, and stack-guidance outputs.
 
 ### `tests/`
 [tests/test_check.py](tests/test_check.py) gives you regression coverage for the source-repo validator.
 [tests/test_install_enhancer.py](tests/test_install_enhancer.py) verifies dry-run behavior, actual installs, proposal mode, force overwrite on safe paths, and the installed target profile.
-[tests/test_stack_packs.py](tests/test_stack_packs.py) covers the pack registry, detection heuristics, selection rules, and generated pack-aware guidance.
+[tests/test_stack_packs.py](tests/test_stack_packs.py) covers the pack registry, detection heuristics, manifest evidence, selection rules, and generated pack-aware guidance.
 
 ### GitHub Actions
 [.github/workflows/validate.yml](.github/workflows/validate.yml) mirrors the same local commands. If local commands change, CI should change in the same patch.
@@ -462,6 +472,14 @@ If you change the canonical commands:
 4. Update [.github/workflows/validate.yml](.github/workflows/validate.yml).
 5. Update [scripts/enhancer_spec.py](scripts/enhancer_spec.py) if the shared rule changed.
 6. Update tests if the validator's expectations changed.
+
+### Review Or Upgrade A V3 Install
+When reviewing lifecycle behavior or upgrading an existing target repo:
+1. Read [docs/ai/migration-v3.md](docs/ai/migration-v3.md).
+2. Use `--inspect-install` before planning upgrade or reconcile work.
+3. Keep pack changes separate from upgrade by using `--manage-packs`.
+4. Review `.codex/enhancer-proposals/` before manually merging repo-owned scaffold drift.
+5. Run the target repo's enhancer validation commands after the upgrade.
 
 ### Add More Structure Later
 As the repo grows, the best next additions are usually:

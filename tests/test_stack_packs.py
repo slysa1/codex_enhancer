@@ -55,6 +55,7 @@ class StackPackTests(unittest.TestCase):
                 "frontend-ui",
                 "python-service",
                 "node-api-service",
+                "library-package",
             ),
         )
 
@@ -79,6 +80,40 @@ class StackPackTests(unittest.TestCase):
             self.assertTrue(detected["javascript-typescript-app"].recommended)
             self.assertIn("package.json", "; ".join(detected["javascript-typescript-app"].reasons))
 
+    def test_javascript_pack_records_manifest_evidence(self) -> None:
+        with repo_fixture("pack_js_evidence") as root:
+            write_file(
+                root,
+                "package.json",
+                """
+                {
+                  "name": "demo",
+                  "packageManager": "pnpm@9.0.0",
+                  "scripts": {
+                    "build": "vite build",
+                    "test": "vitest run",
+                    "dev": "vite"
+                  },
+                  "dependencies": {
+                    "react": "latest"
+                  },
+                  "devDependencies": {
+                    "typescript": "latest",
+                    "vite": "latest"
+                  }
+                }
+                """,
+            )
+            write_file(root, "tsconfig.json", "{}\n")
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+            reasons = detected["javascript-typescript-app"].reasons
+
+            self.assertIn("package manager: pnpm from package.json packageManager", reasons)
+            self.assertIn("package.json scripts: build, test, dev", reasons)
+            self.assertIn("package.json packages: typescript, vite, react", reasons)
+
     def test_detects_python_pack_from_pyproject(self) -> None:
         with repo_fixture("pack_python") as root:
             write_file(
@@ -97,6 +132,35 @@ class StackPackTests(unittest.TestCase):
             self.assertTrue(detected["python-service"].detected)
             self.assertTrue(detected["python-service"].recommended)
 
+    def test_python_pack_records_pyproject_evidence(self) -> None:
+        with repo_fixture("pack_python_evidence") as root:
+            write_file(
+                root,
+                "pyproject.toml",
+                """
+                [build-system]
+                requires = ["hatchling"]
+                build-backend = "hatchling.build"
+
+                [project]
+                name = "demo"
+                version = "0.1.0"
+
+                [tool.pytest.ini_options]
+                testpaths = ["tests"]
+
+                [tool.ruff]
+                line-length = 100
+                """,
+            )
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+            reasons = detected["python-service"].reasons
+
+            self.assertIn("pyproject build backend: hatchling.build", reasons)
+            self.assertIn("pyproject tool tables: pytest, ruff", reasons)
+
     def test_detects_frontend_ui_pack_from_component_source(self) -> None:
         with repo_fixture("pack_frontend") as root:
             write_file(root, "package.json", '{"name": "demo"}\n')
@@ -109,6 +173,40 @@ class StackPackTests(unittest.TestCase):
             self.assertTrue(detected["frontend-ui"].recommended)
             self.assertIn("src/App.tsx", "; ".join(detected["frontend-ui"].reasons))
 
+    def test_frontend_ui_pack_records_package_evidence(self) -> None:
+        with repo_fixture("pack_frontend_evidence") as root:
+            write_file(
+                root,
+                "package.json",
+                """
+                {
+                  "name": "demo",
+                  "packageManager": "bun@1.1.0",
+                  "scripts": {
+                    "build": "vite build",
+                    "dev": "vite",
+                    "preview": "vite preview"
+                  },
+                  "dependencies": {
+                    "react": "latest"
+                  },
+                  "devDependencies": {
+                    "@vitejs/plugin-react": "latest",
+                    "vite": "latest"
+                  }
+                }
+                """,
+            )
+            write_file(root, "src/App.tsx", "export function App() { return <main />; }\n")
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+            reasons = detected["frontend-ui"].reasons
+
+            self.assertIn("package manager: bun from package.json packageManager", reasons)
+            self.assertIn("package.json scripts: build, dev, preview", reasons)
+            self.assertIn("package.json packages: react, @vitejs/plugin-react, vite", reasons)
+
     def test_detects_node_api_pack_from_server_entrypoint(self) -> None:
         with repo_fixture("pack_node_api") as root:
             write_file(root, "package.json", '{"name": "demo"}\n')
@@ -120,6 +218,152 @@ class StackPackTests(unittest.TestCase):
             self.assertTrue(detected["node-api-service"].detected)
             self.assertTrue(detected["node-api-service"].recommended)
             self.assertIn("src/server.ts", "; ".join(detected["node-api-service"].reasons))
+
+    def test_node_api_pack_records_package_evidence(self) -> None:
+        with repo_fixture("pack_node_api_evidence") as root:
+            write_file(
+                root,
+                "package.json",
+                """
+                {
+                  "name": "demo",
+                  "scripts": {
+                    "start": "node dist/server.js",
+                    "dev": "tsx src/server.ts",
+                    "test": "vitest run"
+                  },
+                  "dependencies": {
+                    "express": "latest",
+                    "zod": "latest"
+                  }
+                }
+                """,
+            )
+            write_file(root, "yarn.lock", "# yarn lock\n")
+            write_file(root, "src/server.ts", "export const server = {};\n")
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+            reasons = detected["node-api-service"].reasons
+
+            self.assertIn("package manager: yarn from yarn.lock", reasons)
+            self.assertIn("package.json scripts: start, dev, test", reasons)
+            self.assertIn("package.json packages: express, zod", reasons)
+
+    def test_detects_library_package_from_explicit_package_metadata(self) -> None:
+        with repo_fixture("pack_library") as root:
+            write_file(
+                root,
+                "package.json",
+                """
+                {
+                  "name": "@scope/demo-library",
+                  "packageManager": "pnpm@9.0.0",
+                  "exports": {
+                    ".": {
+                      "types": "./dist/index.d.ts",
+                      "import": "./dist/index.js"
+                    }
+                  },
+                  "types": "./dist/index.d.ts",
+                  "files": ["dist"],
+                  "scripts": {
+                    "build": "tsup src/index.ts",
+                    "test": "vitest run",
+                    "typecheck": "tsc --noEmit"
+                  },
+                  "devDependencies": {
+                    "typescript": "latest",
+                    "tsup": "latest"
+                  }
+                }
+                """,
+            )
+            write_file(root, "tsconfig.json", "{}\n")
+            write_file(root, "src/index.ts", "export const value = 1;\n")
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+            reasons = detected["library-package"].reasons
+
+            self.assertTrue(detected["library-package"].detected)
+            self.assertTrue(detected["library-package"].recommended)
+            self.assertIn("package.json library fields: exports, types, files", reasons)
+            self.assertIn("package manager: pnpm from package.json packageManager", reasons)
+            self.assertIn("package.json scripts: build, test, typecheck", reasons)
+            self.assertIn("package.json packages: typescript, tsup", reasons)
+
+    def test_library_package_is_not_detected_for_normal_app_manifest(self) -> None:
+        with repo_fixture("pack_library_app") as root:
+            write_file(
+                root,
+                "package.json",
+                """
+                {
+                  "name": "demo-app",
+                  "scripts": {
+                    "build": "vite build",
+                    "dev": "vite"
+                  },
+                  "dependencies": {
+                    "react": "latest"
+                  }
+                }
+                """,
+            )
+            write_file(root, "tsconfig.json", "{}\n")
+            write_file(root, "src/App.tsx", "export function App() { return <main />; }\n")
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+
+            self.assertFalse(detected["library-package"].detected)
+            self.assertIn(
+                "missing library package metadata",
+                "; ".join(detected["library-package"].reasons),
+            )
+
+    def test_library_package_is_suppressed_by_service_entrypoints(self) -> None:
+        with repo_fixture("pack_library_service_signal") as root:
+            write_file(
+                root,
+                "package.json",
+                """
+                {
+                  "name": "demo-service",
+                  "main": "./dist/server.js",
+                  "types": "./dist/server.d.ts",
+                  "scripts": {
+                    "build": "tsc",
+                    "start": "node dist/server.js"
+                  }
+                }
+                """,
+            )
+            write_file(root, "src/server.ts", "export const server = {};\n")
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+
+            self.assertFalse(detected["library-package"].detected)
+            self.assertIn(
+                "app or service signals suppress library-package",
+                "; ".join(detected["library-package"].reasons),
+            )
+
+    def test_manifest_evidence_tolerates_invalid_package_json(self) -> None:
+        with repo_fixture("pack_invalid_package_json") as root:
+            write_file(root, "package.json", "{not json\n")
+            write_file(root, "tsconfig.json", "{}\n")
+
+            detections = detect_stack_packs(root)
+            detected = {item.pack.name: item for item in detections}
+
+            self.assertTrue(detected["javascript-typescript-app"].detected)
+            self.assertNotIn(
+                "package.json scripts:",
+                "; ".join(detected["javascript-typescript-app"].reasons),
+            )
 
     def test_render_pack_fragment_includes_pack_label(self) -> None:
         pack = next(pack for pack in load_stack_packs() if pack.name == "python-service")
@@ -161,6 +405,69 @@ class StackPackTests(unittest.TestCase):
                 manifest,
             )
             self.assertIn('adapt_manually = ["AGENTS.md"]', manifest)
+
+    def test_render_stack_pack_manifest_records_manifest_evidence(self) -> None:
+        with repo_fixture("pack_manifest_evidence") as root:
+            write_file(
+                root,
+                "package.json",
+                """
+                {
+                  "name": "demo",
+                  "packageManager": "pnpm@9.0.0",
+                  "scripts": {
+                    "build": "vite build"
+                  },
+                  "devDependencies": {
+                    "typescript": "latest",
+                    "vite": "latest"
+                  }
+                }
+                """,
+            )
+            write_file(root, "tsconfig.json", "{}\n")
+
+            detections = detect_stack_packs(root)
+            manifest = render_stack_pack_manifest(
+                detections,
+                selected_packs=("javascript-typescript-app",),
+            )
+
+            self.assertIn("package manager: pnpm from package.json packageManager", manifest)
+            self.assertIn("package.json scripts: build", manifest)
+            self.assertIn("package.json packages: typescript, vite", manifest)
+
+    def test_render_agents_summary_supports_library_package_with_javascript_pack(self) -> None:
+        with repo_fixture("pack_agents_summary_library") as root:
+            write_file(
+                root,
+                "package.json",
+                """
+                {
+                  "name": "@scope/demo-library",
+                  "exports": "./dist/index.js",
+                  "types": "./dist/index.d.ts",
+                  "files": ["dist"],
+                  "scripts": {
+                    "build": "tsup src/index.ts",
+                    "test": "vitest run"
+                  },
+                  "devDependencies": {
+                    "typescript": "latest",
+                    "tsup": "latest"
+                  }
+                }
+                """,
+            )
+            write_file(root, "tsconfig.json", "{}\n")
+
+            detections = detect_stack_packs(root)
+            selections = resolve_stack_pack_selection(detections, use_recommended_packs=True)
+            summary = render_agents_summary(selections)
+
+            self.assertIn("Selected packs: `javascript-typescript-app`, `library-package`", summary)
+            self.assertIn("`library-package` (Library package):", summary)
+            self.assertIn("Treat exported entrypoints, generated types, and package metadata", summary)
 
     def test_render_agents_summary_compacts_selected_pack_guidance(self) -> None:
         with repo_fixture("pack_agents_summary") as root:
