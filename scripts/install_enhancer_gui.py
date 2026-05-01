@@ -38,6 +38,7 @@ from scripts.install_enhancer import (
     format_conflict_severity_lines,
     format_next_steps,
     format_output_ownership_lines,
+    format_pack_decision_hint,
     overwrite_paths,
 )
 from scripts.stack_packs import PackSelection, selected_pack_names
@@ -58,21 +59,41 @@ MODE_CHOICES = (
 )
 
 INSTALL_PACK_INTRO = (
-    "Review the detected stack packs after scanning the target repo. Recommended packs "
-    "start selected, and you can toggle them before installation."
+    "Stack packs add extra Codex guidance for common repo shapes. After scanning, recommended "
+    "packs start selected; read each pack's enable/adds/skip guidance before installing."
 )
 REFRESH_PACK_INTRO = (
     "Refresh reads selected packs from the target repo's existing enhancer manifest. "
-    "Use install mode if you need to change pack selection or update scaffold files."
+    "The selected packs are read-only here; use manage-packs mode if you need to change them."
 )
 MANAGE_PACK_INTRO = (
     "Pack management reads the target repo's existing enhancer manifest, lets you change "
-    "the selected set, and updates only the managed AGENTS section plus generated pack outputs."
+    "the selected set, and updates only the managed AGENTS section plus generated pack outputs. "
+    "Enable a pack only when its guidance matches real code in the repo."
 )
 UPGRADE_PACK_INTRO = (
     "Upgrade keeps the selected packs from the target repo's existing enhancer manifest. "
     "It reconciles tracked enhancer files against the current source and writes repo-owned drift as proposals."
 )
+WINDOW_MIN_WIDTH = 760
+WINDOW_MIN_HEIGHT = 620
+WINDOW_MAX_WIDTH = 1120
+WINDOW_MAX_HEIGHT = 980
+WINDOW_SCREEN_MARGIN = 120
+PACK_VIEWPORT_HEIGHT = 240
+PACK_TEXT_WRAP = 680
+
+
+def compute_window_geometry(screen_width: int, screen_height: int) -> tuple[int, int, int, int]:
+    """Return a stable starting geometry that stays inside the current screen."""
+
+    width = min(WINDOW_MAX_WIDTH, max(WINDOW_MIN_WIDTH, screen_width - WINDOW_SCREEN_MARGIN))
+    height = min(WINDOW_MAX_HEIGHT, max(WINDOW_MIN_HEIGHT, screen_height - WINDOW_SCREEN_MARGIN))
+    width = min(width, screen_width)
+    height = min(height, screen_height)
+    x = max((screen_width - width) // 2, 0)
+    y = max((screen_height - height) // 2, 0)
+    return width, height, x, y
 
 
 def open_product_readme() -> None:
@@ -202,6 +223,8 @@ def format_pack_entries(selections: tuple[PackSelection, ...]) -> list[str]:
         entries.append(
             f"- {selection.pack.label} (`{selection.pack.name}`): {state}, {recommended} ({reason})"
         )
+        if selection.selected or selection.recommended or selection.detected:
+            entries.append(f"  {format_pack_decision_hint(selection.pack)}")
     if selected_names:
         entries.append("- Manifest selected packs: " + ", ".join(f"`{name}`" for name in selected_names))
     else:
@@ -297,7 +320,6 @@ class InstallerApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(WINDOW_TITLE)
-        self.root.minsize(760, 620)
 
         self.target_var = tk.StringVar()
         self.operation_var = tk.StringVar(value="install")
@@ -312,9 +334,19 @@ class InstallerApp:
         self.pack_summary_labels: list[ttk.Label] = []
 
         self._build_layout()
+        self._configure_window_geometry()
         self._wire_events()
         self._sync_operation_controls()
         self._refresh_install_button()
+
+    def _configure_window_geometry(self) -> None:
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        min_width = min(WINDOW_MIN_WIDTH, screen_width)
+        min_height = min(WINDOW_MIN_HEIGHT, screen_height)
+        self.root.minsize(min_width, min_height)
+        width, height, x, y = compute_window_geometry(screen_width, screen_height)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
 
     def _build_layout(self) -> None:
         self.root.columnconfigure(0, weight=1)
@@ -323,7 +355,11 @@ class InstallerApp:
         frame = ttk.Frame(self.root, padding=16)
         frame.grid(sticky="nsew")
         frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(4, weight=1)
+        frame.rowconfigure(5, weight=1)
+
+        style = ttk.Style(self.root)
+        style.configure("InstallerTitle.TLabel", font=("Segoe UI", 16, "bold"))
+        frame_background = style.lookup("TFrame", "background") or self.root.cget("background")
 
         ttk.Label(frame, text=WINDOW_TITLE, style="InstallerTitle.TLabel").grid(
             row=0, column=0, sticky="w"
@@ -384,9 +420,38 @@ class InstallerApp:
         )
         self.pack_intro.grid(row=0, column=0, sticky="w")
 
-        self.pack_container = ttk.Frame(pack_frame)
-        self.pack_container.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        self.pack_viewport = ttk.Frame(pack_frame, height=PACK_VIEWPORT_HEIGHT)
+        self.pack_viewport.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        self.pack_viewport.columnconfigure(0, weight=1)
+        self.pack_viewport.rowconfigure(0, weight=1)
+        self.pack_viewport.grid_propagate(False)
+
+        self.pack_canvas = tk.Canvas(
+            self.pack_viewport,
+            borderwidth=0,
+            highlightthickness=0,
+            height=PACK_VIEWPORT_HEIGHT,
+            background=frame_background,
+        )
+        self.pack_canvas.grid(row=0, column=0, sticky="nsew")
+
+        self.pack_scrollbar = ttk.Scrollbar(
+            self.pack_viewport,
+            orient="vertical",
+            command=self.pack_canvas.yview,
+        )
+        self.pack_scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+        self.pack_canvas.configure(yscrollcommand=self.pack_scrollbar.set)
+
+        self.pack_container = ttk.Frame(self.pack_canvas)
         self.pack_container.columnconfigure(0, weight=1)
+        self.pack_canvas_window = self.pack_canvas.create_window(
+            (0, 0),
+            window=self.pack_container,
+            anchor="nw",
+        )
+        self.pack_canvas.bind("<Configure>", self._on_pack_canvas_configure)
+        self.pack_container.bind("<Configure>", self._on_pack_container_configure)
         self._show_pack_placeholder("No pack scan yet. Click 'Review install plan' to detect stack packs.")
 
         action_frame = ttk.Frame(frame)
@@ -429,10 +494,39 @@ class InstallerApp:
         self.progress = ttk.Progressbar(status_frame, mode="determinate", maximum=1, value=0)
         self.progress.grid(row=1, column=0, sticky="ew", pady=(10, 0))
 
-        style = ttk.Style(self.root)
-        style.configure("InstallerTitle.TLabel", font=("Segoe UI", 16, "bold"))
-
         self.target_entry.focus_set()
+
+    def _on_pack_canvas_configure(self, event: tk.Event) -> None:
+        self.pack_canvas.itemconfigure(self.pack_canvas_window, width=event.width)
+        self._refresh_pack_scroll_region()
+
+    def _on_pack_container_configure(self, _event: tk.Event | None = None) -> None:
+        self._refresh_pack_scroll_region()
+
+    def _refresh_pack_scroll_region(self) -> None:
+        scroll_region = self.pack_canvas.bbox("all")
+        if scroll_region is None:
+            self.pack_canvas.configure(scrollregion=(0, 0, 0, 0))
+            return
+        self.pack_canvas.configure(scrollregion=scroll_region)
+
+    def _reset_pack_scroll(self) -> None:
+        self.pack_canvas.update_idletasks()
+        self._refresh_pack_scroll_region()
+        self.pack_canvas.yview_moveto(0)
+
+    def _bind_pack_scroll_widget(self, widget: tk.Widget) -> None:
+        widget.bind("<MouseWheel>", self._on_pack_mousewheel, add="+")
+        widget.bind("<Button-4>", self._on_pack_mousewheel, add="+")
+        widget.bind("<Button-5>", self._on_pack_mousewheel, add="+")
+
+    def _on_pack_mousewheel(self, event: tk.Event) -> str:
+        if getattr(event, "delta", 0):
+            direction = -1 if event.delta > 0 else 1
+        else:
+            direction = -1 if getattr(event, "num", 0) == 4 else 1
+        self.pack_canvas.yview_scroll(direction, "units")
+        return "break"
 
     def _wire_events(self) -> None:
         self.target_var.trace_add("write", self._on_inputs_changed)
@@ -653,9 +747,11 @@ class InstallerApp:
 
     def _show_pack_placeholder(self, message: str) -> None:
         self._clear_pack_controls()
-        label = ttk.Label(self.pack_container, text=message, wraplength=700)
+        label = ttk.Label(self.pack_container, text=message, wraplength=PACK_TEXT_WRAP)
         label.grid(row=0, column=0, sticky="w")
+        self._bind_pack_scroll_widget(label)
         self.pack_summary_labels = [label]
+        self._reset_pack_scroll()
 
     def _populate_pack_controls(self, plan: InstallPlan, *, interactive: bool) -> None:
         self._clear_pack_controls()
@@ -673,6 +769,7 @@ class InstallerApp:
                     state="normal",
                 )
                 checkbox.grid(row=row_index * 2, column=0, sticky="w")
+                self._bind_pack_scroll_widget(checkbox)
             else:
                 label = ttk.Label(
                     self.pack_container,
@@ -680,24 +777,40 @@ class InstallerApp:
                         f"{selection.pack.label} ({selection.pack.name})"
                         f" {'[selected]' if selection.selected else '[not selected]'}"
                     ),
-                    wraplength=680,
+                    wraplength=PACK_TEXT_WRAP,
                 )
                 label.grid(row=row_index * 2, column=0, sticky="w")
+                self._bind_pack_scroll_widget(label)
 
             reason = "; ".join(selection.reasons)
             if interactive:
-                summary_text = f"{'Recommended' if selection.recommended else 'Optional'}: {reason}"
+                summary_text = (
+                    f"{'Recommended' if selection.recommended else 'Optional'}: {reason}\n"
+                    f"What it does: {selection.pack.description}\n"
+                    f"Enable when: {'; '.join(selection.pack.guidance.use_when)}\n"
+                    f"Adds: {'; '.join(selection.pack.guidance.adds)}\n"
+                    f"Skip when: {'; '.join(selection.pack.guidance.skip_when)}"
+                )
             elif selection.selected:
-                summary_text = f"Selected from target manifest: {reason}"
+                summary_text = (
+                    f"Selected from target manifest: {reason}\n"
+                    f"What it does: {selection.pack.description}\n"
+                    f"Adds: {'; '.join(selection.pack.guidance.adds)}"
+                )
             else:
-                summary_text = f"Not selected in target manifest: {reason}"
+                summary_text = (
+                    f"Not selected in target manifest: {reason}\n"
+                    f"Skip when: {'; '.join(selection.pack.guidance.skip_when)}"
+                )
             summary = ttk.Label(
                 self.pack_container,
                 text=summary_text,
-                wraplength=680,
+                wraplength=PACK_TEXT_WRAP,
             )
             summary.grid(row=row_index * 2 + 1, column=0, sticky="w", padx=(24, 0), pady=(0, 8))
+            self._bind_pack_scroll_widget(summary)
             self.pack_summary_labels.append(summary)
+        self._reset_pack_scroll()
 
     def _on_pack_toggle(self, *_args: object) -> None:
         if not self.pack_vars:

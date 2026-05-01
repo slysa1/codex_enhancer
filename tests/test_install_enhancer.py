@@ -22,7 +22,13 @@ from scripts.install_enhancer import (
     overwrite_paths,
     proposal_paths,
 )
-from scripts.install_enhancer_gui import build_completion_message, build_plan_preview
+from scripts.install_enhancer_gui import (
+    PACK_VIEWPORT_HEIGHT,
+    WINDOW_MAX_HEIGHT,
+    build_completion_message,
+    build_plan_preview,
+    compute_window_geometry,
+)
 from scripts.enhancer_spec import (
     ENHANCER_MANIFEST_SCHEMA_VERSION,
     ENHANCER_VERSION,
@@ -60,6 +66,25 @@ def run_installer(arguments: list[str]) -> tuple[int, str]:
 
 
 class InstallEnhancerTests(unittest.TestCase):
+    def test_compute_window_geometry_stays_within_large_screen_bounds(self) -> None:
+        width, height, x, y = compute_window_geometry(2560, 1440)
+
+        self.assertLessEqual(width, 2560)
+        self.assertLessEqual(height, 1440)
+        self.assertLessEqual(height, WINDOW_MAX_HEIGHT)
+        self.assertGreaterEqual(x, 0)
+        self.assertGreaterEqual(y, 0)
+
+    def test_compute_window_geometry_shrinks_to_small_screen_bounds(self) -> None:
+        width, height, x, y = compute_window_geometry(800, 600)
+
+        self.assertLessEqual(width, 800)
+        self.assertLessEqual(height, 600)
+        self.assertGreater(PACK_VIEWPORT_HEIGHT, 0)
+        self.assertLess(PACK_VIEWPORT_HEIGHT, height)
+        self.assertGreaterEqual(x, 0)
+        self.assertGreaterEqual(y, 0)
+
     def test_file_target_is_rejected(self) -> None:
         with repo_fixture("install_file_target") as parent:
             target_file = parent / "not_a_repo.txt"
@@ -78,6 +103,9 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertIn("monorepo-workspace", output)
         self.assertIn("javascript-typescript-app", output)
         self.assertIn("frontend-ui", output)
+        self.assertIn("Enable when:", output)
+        self.assertIn("Adds:", output)
+        self.assertIn("Skip when:", output)
         self.assertIn("python-service", output)
         self.assertIn("node-api-service", output)
         self.assertIn("library-package", output)
@@ -1594,6 +1622,9 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
                 "JavaScript / TypeScript app (`javascript-typescript-app`): selected",
                 preview,
             )
+            self.assertIn("enable when:", preview)
+            self.assertIn("adds:", preview)
+            self.assertIn("skip when:", preview)
             self.assertIn("Manifest selected packs: `javascript-typescript-app`", preview)
             self.assertIn(
                 "Review `AGENTS.md` and `docs/ai/stack-guidance.md` for selected packs: `javascript-typescript-app`.",

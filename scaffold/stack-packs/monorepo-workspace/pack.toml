@@ -12,6 +12,20 @@ recommended_if_detected = true
 default_selected = false
 order = 10
 
+[guidance]
+use_when = [
+  "The repo has multiple apps or packages coordinated from one root by pnpm, Turborepo, Nx, Rush, or Lerna.",
+  "Changes often need scoped workspace checks plus a root-level sanity check.",
+]
+adds = [
+  "Prompts Codex to identify the affected package or app before editing.",
+  "Encourages workspace-aware install, build, test, and review discipline.",
+]
+skip_when = [
+  "The repo is a single app or package without real workspace orchestration.",
+  "The repo only has folders named packages or apps but no shared workspace tooling.",
+]
+
 [render]
 agents_summary = "fragments/agents-summary.md"
 stack_guidance = "fragments/stack-guidance.md"

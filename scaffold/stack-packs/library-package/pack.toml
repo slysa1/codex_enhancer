@@ -12,6 +12,20 @@ recommended_if_detected = true
 default_selected = false
 order = 40
 
+[guidance]
+use_when = [
+  "The repo publishes a reusable package with explicit exports, main/module/types, bin, files, or similar package metadata.",
+  "Changes can affect public entrypoints, type declarations, package contents, or downstream consumers.",
+]
+adds = [
+  "Package-contract review prompts for exported APIs, types, metadata, release notes, and compatibility.",
+  "Guidance to validate build artifacts and published surface, not just internal tests.",
+]
+skip_when = [
+  "The repo is an app or service that merely uses package.json for tooling.",
+  "Library-like files are internal-only and not part of a supported published contract.",
+]
+
 [render]
 agents_summary = "fragments/agents-summary.md"
 stack_guidance = "fragments/stack-guidance.md"

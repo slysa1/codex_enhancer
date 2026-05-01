@@ -29,6 +29,7 @@ from scripts.stack_packs import (
     EnhancerInstallState,
     PackDetection,
     PackSelection,
+    StackPack,
     detect_package_manager,
     detect_stack_packs,
     format_detection_reason,
@@ -1129,6 +1130,8 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
 
     for selection in plan.pack_selections:
         lines.append(f"- {selection.pack.name}: {describe_pack_selection(selection)}")
+        if selection.selected or selection.recommended or selection.detected:
+            lines.append(f"  {format_pack_decision_hint(selection.pack)}")
     selected_names = selected_pack_names(plan.pack_selections)
     if selected_names:
         rendered_names = ", ".join(f'"{name}"' for name in selected_names)
@@ -1378,6 +1381,33 @@ def describe_pack_selection(selection: PackSelection) -> str:
     return f"not detected ({reason})"
 
 
+def _first_guidance_item(items: tuple[str, ...]) -> str:
+    if not items:
+        return "No guidance recorded."
+    return items[0]
+
+
+def format_pack_decision_hint(pack: StackPack) -> str:
+    return (
+        f"enable when: {_first_guidance_item(pack.guidance.use_when)}; "
+        f"adds: {_first_guidance_item(pack.guidance.adds)}; "
+        f"skip when: {_first_guidance_item(pack.guidance.skip_when)}"
+    )
+
+
+def format_pack_guidance_block(pack: StackPack, *, indent: str = "  ") -> list[str]:
+    lines = [
+        f"{indent}What it does: {pack.description}",
+        f"{indent}Enable when:",
+    ]
+    lines.extend(f"{indent}- {item}" for item in pack.guidance.use_when)
+    lines.append(f"{indent}Adds:")
+    lines.extend(f"{indent}- {item}" for item in pack.guidance.adds)
+    lines.append(f"{indent}Skip when:")
+    lines.extend(f"{indent}- {item}" for item in pack.guidance.skip_when)
+    return lines
+
+
 def format_pack_catalog(target: Path | None = None) -> str:
     packs = load_stack_packs()
     detections_by_name: dict[str, PackDetection] = {}
@@ -1390,7 +1420,7 @@ def format_pack_catalog(target: Path | None = None) -> str:
     lines = ["Available stack packs:"]
     for pack in packs:
         lines.append(f"- {pack.name}: {pack.label}")
-        lines.append(f"  {pack.description}")
+        lines.extend(format_pack_guidance_block(pack, indent="  "))
         if target is not None:
             detection = detections_by_name[pack.name]
             status = "recommended" if detection.recommended else "detected" if detection.detected else "not detected"

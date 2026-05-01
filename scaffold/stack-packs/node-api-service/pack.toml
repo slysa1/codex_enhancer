@@ -23,6 +23,20 @@ recommended_if_detected = true
 default_selected = false
 order = 35
 
+[guidance]
+use_when = [
+  "The repo exposes Node.js or TypeScript API routes, server entrypoints, controllers, or OpenAPI contracts.",
+  "Changes can affect request/response behavior, validation, auth, errors, or client-facing contracts.",
+]
+adds = [
+  "API review prompts for routing, validation, auth boundaries, status codes, and error shapes.",
+  "Guidance to keep contracts, generated clients, fixtures, and integration tests aligned.",
+]
+skip_when = [
+  "The repo is frontend-only and api folders are mocks, examples, or framework stubs.",
+  "The package is a reusable library rather than a running API service.",
+]
+
 [render]
 agents_summary = "fragments/agents-summary.md"
 stack_guidance = "fragments/stack-guidance.md"

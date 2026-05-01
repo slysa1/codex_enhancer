@@ -58,6 +58,10 @@ class StackPackTests(unittest.TestCase):
                 "library-package",
             ),
         )
+        for pack in packs:
+            self.assertTrue(pack.guidance.use_when)
+            self.assertTrue(pack.guidance.adds)
+            self.assertTrue(pack.guidance.skip_when)
 
     def test_detects_monorepo_pack_from_workspace_file(self) -> None:
         with repo_fixture("pack_monorepo") as root:

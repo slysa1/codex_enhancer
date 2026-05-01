@@ -13,6 +13,20 @@ recommended_if_detected = true
 default_selected = false
 order = 20
 
+[guidance]
+use_when = [
+  "The repo has package.json plus real JavaScript or TypeScript source, scripts, or toolchain config.",
+  "Codex should preserve the detected package manager and use package scripts as the canonical commands.",
+]
+adds = [
+  "Package-manager and lockfile discipline for install and validation commands.",
+  "Guidance to prefer existing scripts for build, lint, test, typecheck, and dev workflows.",
+]
+skip_when = [
+  "package.json exists only for incidental docs, assets, or formatting helpers.",
+  "JavaScript is not part of the primary development workflow for the repo.",
+]
+
 [render]
 agents_summary = "fragments/agents-summary.md"
 stack_guidance = "fragments/stack-guidance.md"

@@ -94,6 +94,27 @@ Current shipped packs:
 
 Stack-pack detection now combines conservative file/path signals with narrow manifest evidence from `package.json`, `packageManager` or lockfiles, and `pyproject.toml`. The `library-package` pack is intentionally conservative: it requires explicit reusable-package metadata such as `exports`, `types`, `files`, or `bin`, and it backs away when obvious app or service entrypoints are present.
 
+### Choosing Stack Packs
+
+Stack packs are optional guidance bundles. They do not install dependencies or change application code. They add stack-specific Codex instructions to the installed `AGENTS.md` managed section and `docs/ai/stack-guidance.md` so Codex plans, edits, validates, and reviews work with the right repo assumptions.
+
+Use recommended packs as a starting point, not a commandment. Enable a pack when it describes real maintained code in the target repo. Skip it when the detection evidence is incidental, generated, or only an example.
+
+| Pack | Enable when | What it adds | Usually skip when |
+| --- | --- | --- | --- |
+| `monorepo-workspace` | The repo coordinates multiple apps or packages from one root with pnpm workspaces, Turborepo, Nx, Rush, or Lerna. | Workspace-aware planning, affected-package checks, and root-vs-package validation discipline. | The repo is a single app or package without shared workspace tooling. |
+| `javascript-typescript-app` | `package.json` represents real JS/TS source, scripts, package-manager state, or toolchain config. | Package-manager and lockfile discipline plus build/lint/test/typecheck script guidance. | `package.json` exists only for docs, assets, examples, or incidental formatting helpers. |
+| `frontend-ui` | The repo ships browser-facing routes, screens, components, or design-system UI. | UI review prompts for state, layout, accessibility, responsive behavior, and visual checks. | The repo is backend-only, CLI-only, or contains frontend files only as fixtures/examples. |
+| `python-service` | The repo has Python application, service, package, or toolchain entrypoints backed by `pyproject.toml`, requirements, or setup metadata. | Python environment discovery and review prompts for config, entrypoints, fixtures, and regression tests. | Python is only present in enhancer scaffold files or one-off maintenance scripts. |
+| `node-api-service` | The repo exposes Node.js or TypeScript API routes, controllers, server entrypoints, or OpenAPI contracts. | API review prompts for routing, auth, validation, status codes, error shapes, contracts, and integration tests. | The repo is frontend-only, or API-looking files are mocks, examples, or framework stubs. |
+| `library-package` | The repo publishes a reusable package with explicit `exports`, `main`, `module`, `types`, `bin`, `files`, or similar package metadata. | Published-contract review guidance for entrypoints, types, metadata, package contents, compatibility, and release notes. | The repo is an app or service that merely uses `package.json` for tooling. |
+
+Common combinations:
+- Use `javascript-typescript-app` with `frontend-ui` for React, Vue, Svelte, Astro, Vite, or Next.js apps.
+- Use `javascript-typescript-app` with `node-api-service` for Node or TypeScript backends.
+- Use `monorepo-workspace` together with the surface packs that match the actual packages inside the workspace.
+- Use `library-package` only when published package behavior matters to downstream consumers.
+
 Preview a new-repo install:
 
 ```bash

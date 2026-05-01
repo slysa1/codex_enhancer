@@ -118,6 +118,13 @@ class PackUi:
 
 
 @dataclass(frozen=True)
+class PackGuidance:
+    use_when: tuple[str, ...]
+    adds: tuple[str, ...]
+    skip_when: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PackRender:
     agents_summary: Path
     stack_guidance: Path
@@ -134,6 +141,7 @@ class StackPack:
     version: str
     discovery: PackDiscovery
     ui: PackUi
+    guidance: PackGuidance
     render: PackRender
 
 
@@ -206,6 +214,15 @@ def _tuple_of_globs(data: dict[str, object], key: str) -> tuple[str, ...]:
     return tuple(raw)
 
 
+def _tuple_of_strings(data: dict[str, object], key: str) -> tuple[str, ...]:
+    raw = data.get(key, [])
+    if raw == []:
+        return ()
+    if not isinstance(raw, list) or any(not isinstance(item, str) or not item.strip() for item in raw):
+        raise ValueError(f"Expected {key!r} to be a list of strings.")
+    return tuple(raw)
+
+
 def _required_section(data: dict[str, object], key: str) -> dict[str, object]:
     value = data.get(key)
     if not isinstance(value, dict):
@@ -222,6 +239,7 @@ def load_stack_pack(pack_dir: Path) -> StackPack:
 
     discovery = _required_section(raw, "discovery")
     ui = _required_section(raw, "ui")
+    guidance = _required_section(raw, "guidance")
     render = _required_section(raw, "render")
 
     pack = StackPack(
@@ -243,6 +261,11 @@ def load_stack_pack(pack_dir: Path) -> StackPack:
             default_selected=bool(ui.get("default_selected", False)),
             order=int(ui.get("order", 100)),
         ),
+        guidance=PackGuidance(
+            use_when=_tuple_of_strings(guidance, "use_when"),
+            adds=_tuple_of_strings(guidance, "adds"),
+            skip_when=_tuple_of_strings(guidance, "skip_when"),
+        ),
         render=PackRender(
             agents_summary=Path(_required_str(render, "agents_summary")),
             stack_guidance=Path(_required_str(render, "stack_guidance")),
@@ -263,6 +286,10 @@ def _validate_pack(pack: StackPack) -> None:
         or pack.discovery.all_dirs
     ):
         raise ValueError(f"Stack pack {pack.name} must define at least one discovery signal.")
+    if not pack.guidance.use_when or not pack.guidance.adds or not pack.guidance.skip_when:
+        raise ValueError(
+            f"Stack pack {pack.name} must define guidance.use_when, guidance.adds, and guidance.skip_when."
+        )
     for fragment_path in (
         pack.render.agents_summary,
         pack.render.stack_guidance,
