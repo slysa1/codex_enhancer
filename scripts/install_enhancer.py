@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -23,7 +24,22 @@ from scripts.enhancer_spec import (
     INSTALL_COPY_ASSETS,
     INSTALL_TEMPLATE_ASSETS,
     MANAGED_SECTIONS,
+    OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS,
+    SPEC_KIT_BRIDGE_TEMPLATE_PATH,
     TEST_COMMAND,
+)
+from scripts.spec_kit_bridge import (
+    SPEC_KIT_BRIDGE_SKILLS,
+    SpecKitBridgeConfig,
+    SpecKitDetection,
+    detect_spec_kit,
+    render_spec_kit_bridge_doc_command_surface,
+    render_spec_kit_bridge_doc_skills,
+    render_spec_kit_bridge_doc_status,
+    render_spec_kit_bridge_doc_workflow,
+    render_spec_kit_bridge_summary,
+    render_spec_kit_detection_lines,
+    resolve_spec_kit_bridge,
 )
 from scripts.stack_packs import (
     EnhancerInstallState,
@@ -76,6 +92,14 @@ class GitignorePlan:
 
 
 @dataclass(frozen=True)
+class ExternalStep:
+    argv: tuple[str, ...]
+    cwd: Path
+    label: str
+    source_label: str
+
+
+@dataclass(frozen=True)
 class InstallPlan:
     target: Path
     operation: str
@@ -86,6 +110,9 @@ class InstallPlan:
     pack_detections: tuple[PackDetection, ...]
     pack_selections: tuple[PackSelection, ...]
     manifest_preview: str
+    spec_kit_bridge: SpecKitBridgeConfig | None = None
+    spec_kit_detection: SpecKitDetection | None = None
+    external_steps: tuple[ExternalStep, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,6 +123,8 @@ class InstallInspection:
     target_version: str | None
     status: str
     install_state: EnhancerInstallState | None
+    spec_kit_bridge: SpecKitBridgeConfig | None = None
+    spec_kit_detection: SpecKitDetection | None = None
 
 
 @dataclass(frozen=True)
@@ -129,11 +158,13 @@ CRITICAL_CONFLICT_PATHS = frozenset(
 
 GENERATED_OUTPUT_DESTINATIONS = (
     Path("docs/ai/stack-guidance.md"),
+    Path("docs/ai/spec-kit-bridge.md"),
     Path(".codex/enhancer/manifest.toml"),
 )
 SELECTED_STACK_PACKS_SECTION_ID = "AGENTS.md:selected-stack-packs"
+SPEC_KIT_BRIDGE_SECTION_ID = "AGENTS.md:spec-kit-bridge"
 
-INSTALL_MANAGED_DESTINATIONS = (
+BASE_INSTALL_MANAGED_DESTINATIONS = (
     tuple(asset.destination for asset in INSTALL_TEMPLATE_ASSETS)
     + tuple(asset.destination for asset in INSTALL_COPY_ASSETS)
     + GENERATED_OUTPUT_DESTINATIONS
@@ -146,6 +177,14 @@ SOURCE_ALIGNED_UPGRADE_DESTINATIONS = frozenset(
         Path(".codex/skills/review-prep/SKILL.md"),
     }
 )
+
+
+def install_managed_destinations(spec_kit_bridge: SpecKitBridgeConfig | None) -> tuple[Path, ...]:
+    if spec_kit_bridge is None or not spec_kit_bridge.enabled:
+        return BASE_INSTALL_MANAGED_DESTINATIONS
+    return BASE_INSTALL_MANAGED_DESTINATIONS + tuple(
+        asset.destination for asset in OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS
+    )
 
 
 def infer_mode(target: Path) -> str:
@@ -191,6 +230,7 @@ def inspect_install(target: Path) -> InstallInspection:
     if not resolved_target.is_dir():
         raise ValueError(f"Target {resolved_target} exists but is not a directory.")
 
+    spec_kit_detection = detect_spec_kit(resolved_target)
     manifest_path = resolved_target / ".codex/enhancer/manifest.toml"
     if not manifest_path.exists():
         return InstallInspection(
@@ -200,6 +240,8 @@ def inspect_install(target: Path) -> InstallInspection:
             target_version=None,
             status="not-installed",
             install_state=None,
+            spec_kit_bridge=None,
+            spec_kit_detection=spec_kit_detection,
         )
 
     install_state = load_enhancer_install_state(resolved_target)
@@ -222,6 +264,8 @@ def inspect_install(target: Path) -> InstallInspection:
         target_version=target_version,
         status=status,
         install_state=install_state,
+        spec_kit_bridge=install_state.spec_kit_bridge,
+        spec_kit_detection=spec_kit_detection,
     )
 
 
@@ -231,12 +275,51 @@ def _format_string_list(values: tuple[str, ...]) -> str:
     return ", ".join(f"`{value}`" for value in values)
 
 
+def _format_spec_kit_lines(
+    bridge: SpecKitBridgeConfig | None,
+    detection: SpecKitDetection | None,
+    *,
+    always_include: bool,
+) -> list[str]:
+    if bridge is None and detection is None:
+        return []
+    detection_lines = (
+        render_spec_kit_detection_lines(detection)
+        if detection is not None
+        else ["- Official Spec Kit not detected."]
+    )
+    bridge_lines = (
+        render_spec_kit_bridge_summary(bridge, detection).splitlines()
+        if bridge is not None
+        else []
+    )
+    if (
+        not always_include
+        and not bridge_lines
+        and detection_lines == ["- Official Spec Kit not detected."]
+    ):
+        return []
+    lines = ["", "Spec Kit bridge:"]
+    if bridge_lines:
+        lines.extend(bridge_lines)
+    lines.extend(detection_lines)
+    lines.append("")
+    return lines
+
+
 def format_install_inspection(inspection: InstallInspection) -> str:
     lines = [
         f"Codex Enhancer install inspection for {inspection.target}",
         f"- Source enhancer version: `{inspection.source_version}`",
         f"- Target manifest: `{inspection.manifest_path.relative_to(inspection.target).as_posix()}`",
     ]
+    lines.extend(
+        _format_spec_kit_lines(
+            inspection.spec_kit_bridge,
+            inspection.spec_kit_detection,
+            always_include=True,
+        )
+    )
 
     if inspection.status == "not-installed":
         lines.extend(
@@ -258,6 +341,9 @@ def format_install_inspection(inspection: InstallInspection) -> str:
     lines.append(f"- Selected packs: {_format_string_list(state.selected_packs)}")
     lines.append(f"- Safe to regenerate: {_format_string_list(state.safe_to_regenerate)}")
     lines.append(f"- Adapt manually: {_format_string_list(state.adapt_manually)}")
+    if inspection.spec_kit_bridge is not None:
+        lines.append(f"- Spec Kit bridge mode: `{inspection.spec_kit_bridge.mode}`")
+        lines.append(f"- Spec Kit bridge state: `{inspection.spec_kit_bridge.state}`")
     if state.lifecycle_state or state.pack_selection_mode or state.managed_sections:
         lines.append(f"- Lifecycle state: `{state.lifecycle_state or 'unknown'}`")
         lines.append(f"- Pack selection mode: `{state.pack_selection_mode or 'unknown'}`")
@@ -511,6 +597,8 @@ def _plan_changed_write(
 def build_replacements(
     target: Path,
     pack_selections: tuple[PackSelection, ...],
+    spec_kit_bridge: SpecKitBridgeConfig,
+    spec_kit_detection: SpecKitDetection,
     *,
     ignore_existing_guidance: tuple[Path, ...] = (),
 ) -> dict[str, str]:
@@ -523,18 +611,76 @@ def build_replacements(
             discover_existing_guidance(target, ignore_paths=ignore_existing_guidance)
         ),
         "PACK_AGENTS_SUMMARY": render_agents_summary(pack_selections),
+        "SPEC_KIT_BRIDGE_SUMMARY": render_spec_kit_bridge_summary(
+            spec_kit_bridge,
+            spec_kit_detection,
+        ),
+        "SPEC_KIT_BRIDGE_STATUS": render_spec_kit_bridge_doc_status(
+            spec_kit_bridge,
+            spec_kit_detection,
+        ),
+        "SPEC_KIT_COMMAND_SURFACE_GUIDE": render_spec_kit_bridge_doc_command_surface(
+            spec_kit_bridge
+        ),
+        "SPEC_KIT_WORKFLOW_GUIDE": render_spec_kit_bridge_doc_workflow(spec_kit_bridge),
+        "SPEC_KIT_SKILL_GUIDE": render_spec_kit_bridge_doc_skills(spec_kit_bridge),
     }
+
+
+def resolve_target_spec_kit_bridge(
+    target: Path,
+    *,
+    detection: SpecKitDetection,
+    install_state: EnhancerInstallState | None = None,
+    mode: str | None = None,
+    script_type: str = "auto",
+    command_surface: str = "auto",
+    version: str | None = None,
+    executable: str | None = None,
+) -> SpecKitBridgeConfig:
+    existing_bridge = install_state.spec_kit_bridge if install_state is not None else None
+    resolved_mode = mode or (existing_bridge.mode if existing_bridge is not None else "auto")
+    resolved_script = (
+        script_type
+        if script_type != "auto"
+        else existing_bridge.script_type
+        if existing_bridge is not None and existing_bridge.script_type is not None
+        else "auto"
+    )
+    resolved_surface = (
+        command_surface
+        if command_surface != "auto"
+        else existing_bridge.command_surface
+        if existing_bridge is not None and existing_bridge.command_surface is not None
+        else "auto"
+    )
+    resolved_version = version or (
+        existing_bridge.cli_version if existing_bridge is not None else None
+    )
+    return resolve_spec_kit_bridge(
+        target,
+        mode=resolved_mode,
+        script_type=resolved_script,
+        command_surface=resolved_surface,
+        version=resolved_version,
+        executable=executable,
+        detection=detection,
+        existing_bridge=existing_bridge,
+    )
 
 
 def plan_template_writes(
     target: Path,
     force: bool,
-    pack_selections: tuple[PackSelection, ...],
+    replacements: dict[str, str],
+    spec_kit_bridge: SpecKitBridgeConfig,
 ) -> list[PlannedWrite]:
-    replacements = build_replacements(target, pack_selections)
     writes: list[PlannedWrite] = []
+    template_assets = INSTALL_TEMPLATE_ASSETS + (
+        OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS if spec_kit_bridge.enabled else ()
+    )
 
-    for asset in INSTALL_TEMPLATE_ASSETS:
+    for asset in template_assets:
         template_path = SOURCE_ROOT / asset.template_path
         content = render_template(template_path.read_text(encoding="utf-8"), replacements)
         destination = target / asset.destination
@@ -557,6 +703,11 @@ def plan_template_writes(
         )
 
     return writes
+
+
+def render_generated_spec_kit_bridge_doc(replacements: dict[str, str]) -> str:
+    template_path = SOURCE_ROOT / SPEC_KIT_BRIDGE_TEMPLATE_PATH
+    return render_template(template_path.read_text(encoding="utf-8"), replacements)
 
 
 def plan_copy_writes(target: Path, force: bool) -> list[PlannedWrite]:
@@ -590,6 +741,7 @@ def plan_copy_writes(target: Path, force: bool) -> list[PlannedWrite]:
 def plan_generated_writes(
     target: Path,
     force: bool,
+    replacements: dict[str, str],
     pack_selections: tuple[PackSelection, ...],
     manifest_preview: str,
 ) -> list[PlannedWrite]:
@@ -601,6 +753,11 @@ def plan_generated_writes(
         ),
         (
             GENERATED_OUTPUT_DESTINATIONS[1],
+            render_generated_spec_kit_bridge_doc(replacements),
+            "generated Spec Kit bridge guide",
+        ),
+        (
+            GENERATED_OUTPUT_DESTINATIONS[2],
             manifest_preview,
             "generated stack-pack manifest",
         ),
@@ -628,11 +785,11 @@ def plan_generated_writes(
     return writes
 
 
-def _selected_stack_packs_section():
+def _managed_section(identifier: str):
     for section in MANAGED_SECTIONS:
-        if section.identifier == SELECTED_STACK_PACKS_SECTION_ID:
+        if section.identifier == identifier:
             return section
-    raise ValueError(f"Missing managed section spec: {SELECTED_STACK_PACKS_SECTION_ID}")
+    raise ValueError(f"Missing managed section spec: {identifier}")
 
 
 def replace_managed_section_content(
@@ -646,50 +803,63 @@ def replace_managed_section_content(
     end_count = text.count(end_marker)
     if start_count != 1 or end_count != 1:
         raise ValueError(
-            "AGENTS.md must contain exactly one selected stack-pack managed section marker pair."
+            "AGENTS.md must contain exactly one enhancer-managed section marker pair."
         )
 
     start_index = text.index(start_marker)
     end_index = text.index(end_marker)
     if start_index > end_index:
-        raise ValueError("AGENTS.md has reversed selected stack-pack managed section markers.")
+        raise ValueError("AGENTS.md has reversed enhancer-managed section markers.")
 
     before = text[: start_index + len(start_marker)]
     after = text[end_index:]
     return f"{before}\n{replacement.strip()}\n{after}"
 
 
-def normalize_managed_section_content(
+def normalize_managed_sections(
     text: str,
-    *,
-    start_marker: str,
-    end_marker: str,
+    section_ids: tuple[str, ...] = (
+        SELECTED_STACK_PACKS_SECTION_ID,
+        SPEC_KIT_BRIDGE_SECTION_ID,
+    ),
 ) -> str:
-    return replace_managed_section_content(
-        text,
-        start_marker=start_marker,
-        end_marker=end_marker,
-        replacement="__CODEX_ENHANCER_MANAGED_SECTION__",
-    )
+    normalized = text
+    for section_id in section_ids:
+        section = _managed_section(section_id)
+        normalized = replace_managed_section_content(
+            normalized,
+            start_marker=section.start_marker,
+            end_marker=section.end_marker,
+            replacement="__CODEX_ENHANCER_MANAGED_SECTION__",
+        )
+    return normalized
 
 
-def render_managed_agents_summary_update(
+def render_managed_agents_update(
     target: Path,
-    pack_selections: tuple[PackSelection, ...],
+    *,
+    section_replacements: dict[str, str],
 ) -> str:
-    section = _selected_stack_packs_section()
-    agents_path = target / section.path
+    if not section_replacements:
+        raise ValueError("At least one AGENTS.md managed section replacement is required.")
+
+    first_section = _managed_section(next(iter(section_replacements)))
+    agents_path = target / first_section.path
     if not agents_path.exists():
         raise ValueError(
             "Target AGENTS.md is missing; run --upgrade-enhancer before managing packs."
         )
 
-    return replace_managed_section_content(
-        agents_path.read_text(encoding="utf-8"),
-        start_marker=section.start_marker,
-        end_marker=section.end_marker,
-        replacement=render_agents_summary(pack_selections),
-    )
+    rendered = agents_path.read_text(encoding="utf-8")
+    for section_id, replacement in section_replacements.items():
+        section = _managed_section(section_id)
+        rendered = replace_managed_section_content(
+            rendered,
+            start_marker=section.start_marker,
+            end_marker=section.end_marker,
+            replacement=replacement,
+        )
+    return rendered
 
 
 def plan_agents_upgrade_writes(
@@ -697,8 +867,10 @@ def plan_agents_upgrade_writes(
     content: str,
     source_label: str,
     pack_selections: tuple[PackSelection, ...],
+    spec_kit_bridge: SpecKitBridgeConfig,
+    spec_kit_detection: SpecKitDetection,
 ) -> list[PlannedWrite]:
-    section = _selected_stack_packs_section()
+    section = _managed_section(SELECTED_STACK_PACKS_SECTION_ID)
     destination = section.path
     destination_path = target / destination
     if not destination_path.exists():
@@ -713,7 +885,16 @@ def plan_agents_upgrade_writes(
 
     writes: list[PlannedWrite] = []
     try:
-        managed_content = render_managed_agents_summary_update(target, pack_selections)
+        managed_content = render_managed_agents_update(
+            target,
+            section_replacements={
+                SELECTED_STACK_PACKS_SECTION_ID: render_agents_summary(pack_selections),
+                SPEC_KIT_BRIDGE_SECTION_ID: render_spec_kit_bridge_summary(
+                    spec_kit_bridge,
+                    spec_kit_detection,
+                ),
+            },
+        )
     except ValueError:
         planned = _plan_changed_write(
             target,
@@ -735,16 +916,8 @@ def plan_agents_upgrade_writes(
         writes.append(managed_update)
 
     existing_content = destination_path.read_text(encoding="utf-8")
-    existing_shape = normalize_managed_section_content(
-        existing_content,
-        start_marker=section.start_marker,
-        end_marker=section.end_marker,
-    )
-    source_shape = normalize_managed_section_content(
-        content,
-        start_marker=section.start_marker,
-        end_marker=section.end_marker,
-    )
+    existing_shape = normalize_managed_sections(existing_content)
+    source_shape = normalize_managed_sections(content)
     if existing_shape != source_shape:
         proposal = _plan_changed_write(
             target,
@@ -759,7 +932,15 @@ def plan_agents_upgrade_writes(
     return writes
 
 
-def build_upgrade_plan(target: Path) -> InstallPlan:
+def build_upgrade_plan(
+    target: Path,
+    *,
+    spec_kit_mode: str | None = None,
+    spec_kit_script: str = "auto",
+    spec_kit_command_surface: str = "auto",
+    spec_kit_version: str | None = None,
+    spec_kit_executable: str | None = None,
+) -> InstallPlan:
     inspection = inspect_install(target)
     if inspection.status == "not-installed":
         raise ValueError(
@@ -767,9 +948,20 @@ def build_upgrade_plan(target: Path) -> InstallPlan:
         )
 
     resolved_target = inspection.target
-    ownership = summarize_output_ownership(INSTALL_MANAGED_DESTINATIONS)
+    spec_kit_detection = inspection.spec_kit_detection or detect_spec_kit(resolved_target)
     pack_detections = detect_stack_packs(resolved_target)
     install_state = inspection.install_state or EnhancerInstallState(None, (), (), ())
+    spec_kit_bridge = resolve_target_spec_kit_bridge(
+        resolved_target,
+        detection=spec_kit_detection,
+        install_state=install_state,
+        mode=spec_kit_mode,
+        script_type=spec_kit_script,
+        command_surface=spec_kit_command_surface,
+        version=spec_kit_version,
+        executable=spec_kit_executable,
+    )
+    ownership = summarize_output_ownership(install_managed_destinations(spec_kit_bridge))
     pack_selections = resolve_manifest_pack_selection(
         pack_detections,
         selected_packs=install_state.selected_packs,
@@ -779,16 +971,22 @@ def build_upgrade_plan(target: Path) -> InstallPlan:
         selected_packs=selected_pack_names(pack_selections),
         safe_to_regenerate=ownership.safe_to_regenerate,
         adapt_manually=ownership.adapt_manually,
+        spec_kit_bridge=spec_kit_bridge,
     )
 
     writes: list[PlannedWrite] = []
     replacements = build_replacements(
         resolved_target,
         pack_selections,
+        spec_kit_bridge,
+        spec_kit_detection,
         ignore_existing_guidance=(Path("AGENTS.md"),),
     )
 
-    for asset in INSTALL_TEMPLATE_ASSETS:
+    template_assets = INSTALL_TEMPLATE_ASSETS + (
+        OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS if spec_kit_bridge.enabled else ()
+    )
+    for asset in template_assets:
         template_path = SOURCE_ROOT / asset.template_path
         content = render_template(template_path.read_text(encoding="utf-8"), replacements)
         if asset.destination == Path("AGENTS.md"):
@@ -798,6 +996,8 @@ def build_upgrade_plan(target: Path) -> InstallPlan:
                     content,
                     asset.template_path.as_posix(),
                     pack_selections,
+                    spec_kit_bridge,
+                    spec_kit_detection,
                 )
             )
             continue
@@ -831,6 +1031,7 @@ def build_upgrade_plan(target: Path) -> InstallPlan:
     for planned in plan_generated_writes(
         resolved_target,
         force=True,
+        replacements=replacements,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
     ):
@@ -846,6 +1047,20 @@ def build_upgrade_plan(target: Path) -> InstallPlan:
 
     gitignore = compute_gitignore_update(resolved_target)
     gitignore_plan = gitignore if gitignore.missing_lines else None
+    external_steps = (
+        tuple(
+            [
+                ExternalStep(
+                    argv=spec_kit_bridge.bootstrap_command,
+                    cwd=resolved_target,
+                    label="Bootstrap official Spec Kit",
+                    source_label="official Spec Kit bootstrap",
+                )
+            ]
+        )
+        if spec_kit_bridge.bootstrap_command
+        else ()
+    )
 
     return InstallPlan(
         target=resolved_target,
@@ -857,6 +1072,9 @@ def build_upgrade_plan(target: Path) -> InstallPlan:
         pack_detections=pack_detections,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
+        spec_kit_bridge=spec_kit_bridge,
+        spec_kit_detection=spec_kit_detection,
+        external_steps=external_steps,
     )
 
 
@@ -881,9 +1099,15 @@ def build_pack_management_plan(
         raise ValueError("--manage-packs requires --add-pack, --remove-pack, or --set-pack.")
 
     resolved_target = inspection.target
-    ownership = summarize_output_ownership(INSTALL_MANAGED_DESTINATIONS)
+    spec_kit_detection = inspection.spec_kit_detection or detect_spec_kit(resolved_target)
     pack_detections = detect_stack_packs(resolved_target)
     install_state = inspection.install_state or EnhancerInstallState(None, (), (), ())
+    spec_kit_bridge = resolve_target_spec_kit_bridge(
+        resolved_target,
+        detection=spec_kit_detection,
+        install_state=install_state,
+    )
+    ownership = summarize_output_ownership(install_managed_destinations(spec_kit_bridge))
     pack_selections = resolve_managed_pack_selection(
         pack_detections,
         current_selected_packs=install_state.selected_packs,
@@ -896,13 +1120,26 @@ def build_pack_management_plan(
         selected_packs=selected_pack_names(pack_selections),
         safe_to_regenerate=ownership.safe_to_regenerate,
         adapt_manually=ownership.adapt_manually,
+        spec_kit_bridge=spec_kit_bridge,
+    )
+    replacements = build_replacements(
+        resolved_target,
+        pack_selections,
+        spec_kit_bridge,
+        spec_kit_detection,
+        ignore_existing_guidance=(Path("AGENTS.md"),),
     )
 
     writes: list[PlannedWrite] = []
     agents_update = _plan_changed_write(
         resolved_target,
         Path("AGENTS.md"),
-        render_managed_agents_summary_update(resolved_target, pack_selections),
+        render_managed_agents_update(
+            resolved_target,
+            section_replacements={
+                SELECTED_STACK_PACKS_SECTION_ID: render_agents_summary(pack_selections),
+            },
+        ),
         "managed AGENTS.md selected stack-pack section",
         existing_action="overwrite",
     )
@@ -912,6 +1149,7 @@ def build_pack_management_plan(
     for planned in plan_generated_writes(
         resolved_target,
         force=True,
+        replacements=replacements,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
     ):
@@ -935,6 +1173,8 @@ def build_pack_management_plan(
         pack_detections=pack_detections,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
+        spec_kit_bridge=spec_kit_bridge,
+        spec_kit_detection=spec_kit_detection,
     )
 
 
@@ -975,12 +1215,17 @@ def build_install_plan(
     use_recommended_packs: bool = False,
     include_packs: tuple[str, ...] = (),
     exclude_packs: tuple[str, ...] = (),
+    spec_kit_mode: str | None = None,
+    spec_kit_script: str = "auto",
+    spec_kit_command_surface: str = "auto",
+    spec_kit_version: str | None = None,
+    spec_kit_executable: str | None = None,
 ) -> InstallPlan:
     resolved_target = target.resolve()
     validate_mode(resolved_target, mode)
     effective_mode = infer_mode(resolved_target) if mode == "auto" else mode
+    spec_kit_detection = detect_spec_kit(resolved_target)
     pack_detections = detect_stack_packs(resolved_target)
-    ownership = summarize_output_ownership(INSTALL_MANAGED_DESTINATIONS)
 
     if refresh_generated:
         if effective_mode != "existing":
@@ -988,21 +1233,37 @@ def build_install_plan(
                 "--refresh-generated only works on an existing repo with an installed enhancer manifest."
             )
 
+        install_state = load_enhancer_install_state(resolved_target)
+        spec_kit_bridge = resolve_target_spec_kit_bridge(
+            resolved_target,
+            detection=spec_kit_detection,
+            install_state=install_state,
+        )
+        ownership = summarize_output_ownership(install_managed_destinations(spec_kit_bridge))
         selected_names = load_selected_packs_from_manifest(resolved_target)
         pack_selections = resolve_manifest_pack_selection(
             pack_detections,
             selected_packs=selected_names,
+        )
+        replacements = build_replacements(
+            resolved_target,
+            pack_selections,
+            spec_kit_bridge,
+            spec_kit_detection,
+            ignore_existing_guidance=(Path("AGENTS.md"),),
         )
         manifest_preview = render_stack_pack_manifest(
             pack_detections,
             selected_packs=selected_pack_names(pack_selections),
             safe_to_regenerate=ownership.safe_to_regenerate,
             adapt_manually=ownership.adapt_manually,
+            spec_kit_bridge=spec_kit_bridge,
         )
         writes = tuple(
             plan_generated_writes(
                 resolved_target,
                 force=True,
+                replacements=replacements,
                 pack_selections=pack_selections,
                 manifest_preview=manifest_preview,
             )
@@ -1017,30 +1278,69 @@ def build_install_plan(
             pack_detections=pack_detections,
             pack_selections=pack_selections,
             manifest_preview=manifest_preview,
+            spec_kit_bridge=spec_kit_bridge,
+            spec_kit_detection=spec_kit_detection,
         )
 
     gitignore = compute_gitignore_update(resolved_target)
+    spec_kit_bridge = resolve_target_spec_kit_bridge(
+        resolved_target,
+        detection=spec_kit_detection,
+        mode=spec_kit_mode,
+        script_type=spec_kit_script,
+        command_surface=spec_kit_command_surface,
+        version=spec_kit_version,
+        executable=spec_kit_executable,
+    )
+    ownership = summarize_output_ownership(install_managed_destinations(spec_kit_bridge))
     pack_selections = resolve_stack_pack_selection(
         pack_detections,
         use_recommended_packs=use_recommended_packs,
         include_packs=include_packs,
         exclude_packs=exclude_packs,
     )
+    replacements = build_replacements(
+        resolved_target,
+        pack_selections,
+        spec_kit_bridge,
+        spec_kit_detection,
+    )
     manifest_preview = render_stack_pack_manifest(
         pack_detections,
         selected_packs=selected_pack_names(pack_selections),
         safe_to_regenerate=ownership.safe_to_regenerate,
         adapt_manually=ownership.adapt_manually,
+        spec_kit_bridge=spec_kit_bridge,
     )
     writes = tuple(
-        plan_template_writes(resolved_target, force=force, pack_selections=pack_selections)
+        plan_template_writes(
+            resolved_target,
+            force=force,
+            replacements=replacements,
+            spec_kit_bridge=spec_kit_bridge,
+        )
         + plan_copy_writes(resolved_target, force=force)
         + plan_generated_writes(
             resolved_target,
             force=force,
+            replacements=replacements,
             pack_selections=pack_selections,
             manifest_preview=manifest_preview,
         )
+    )
+    external_steps = (
+        tuple(
+            [
+                ExternalStep(
+                    argv=spec_kit_bridge.bootstrap_command,
+                    cwd=resolved_target,
+                    label="Bootstrap official Spec Kit",
+                    source_label="official Spec Kit bootstrap",
+                )
+            ]
+        )
+        if spec_kit_bridge.bootstrap_command
+        else ()
     )
     return InstallPlan(
         target=resolved_target,
@@ -1052,6 +1352,9 @@ def build_install_plan(
         pack_detections=pack_detections,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
+        spec_kit_bridge=spec_kit_bridge,
+        spec_kit_detection=spec_kit_detection,
+        external_steps=external_steps,
     )
 
 
@@ -1076,6 +1379,18 @@ def format_plan_header(plan: InstallPlan, write: bool) -> str:
 def format_plan_lines(plan: InstallPlan) -> list[str]:
     lines: list[str] = []
     lines.extend(format_pack_lines(plan))
+    spec_kit_lines = _format_spec_kit_lines(
+        plan.spec_kit_bridge,
+        plan.spec_kit_detection,
+        always_include=False,
+    )
+    if spec_kit_lines:
+        lines.extend(spec_kit_lines)
+    if plan.external_steps:
+        lines.append("External steps:")
+        for step in plan.external_steps:
+            lines.append("- run: " + " ".join(step.argv))
+        lines.append("")
     ownership_lines = format_output_ownership_lines(plan)
     if ownership_lines:
         lines.extend(ownership_lines)
@@ -1141,11 +1456,11 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
     if plan.operation == "upgrade-enhancer":
         lines.append("- Upgrade reconcile keeps the installed pack selection and compares tracked enhancer files against the current source.")
     elif plan.operation == "manage-packs":
-        lines.append("- Pack management updates the selected target manifest packs, managed AGENTS section, and generated pack guidance.")
+        lines.append("- Pack management updates the selected target manifest packs, managed AGENTS section, and generated bridge or pack guidance.")
     elif plan.operation == "refresh-generated":
-        lines.append("- Stack guidance and the pack manifest will be regenerated from the existing target manifest.")
+        lines.append("- Stack guidance, the Spec Kit bridge guide, and the pack manifest will be regenerated from the existing target manifest.")
     else:
-        lines.append("- Stack guidance and the pack manifest will be generated during install.")
+        lines.append("- Stack guidance, the Spec Kit bridge guide, and the pack manifest will be generated during install.")
     lines.append("")
     return lines
 
@@ -1452,13 +1767,17 @@ def format_plan_report(plan: InstallPlan, write: bool) -> str:
 
 def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
     proposals = [item for item in plan.writes if item.action == "proposal"]
+    bridge_enabled = plan.spec_kit_bridge is not None and plan.spec_kit_bridge.enabled
     if plan.operation == "upgrade-enhancer":
         if not write:
-            return [
+            lines = [
                 "Next step:",
                 "- Re-run this command with `--upgrade-enhancer --write` when the grouped reconcile plan looks correct.",
                 "- If you only need managed outputs today, use `--refresh-generated --write` instead of a full reconcile.",
             ]
+            if plan.external_steps:
+                lines.append("- Official Spec Kit bootstrap will run before enhancer writes during apply.")
+            return lines
 
         lines = ["Next steps:"]
         if not plan.writes and plan.gitignore is None:
@@ -1474,6 +1793,8 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
             lines.append("- Repo-owned scaffold files were already aligned, so only tracked managed outputs and source-aligned copies were updated in place.")
         if plan.gitignore is not None and plan.gitignore.missing_lines:
             lines.append("- Review merged `.gitignore` entries if the target repo uses different ignore conventions.")
+        if bridge_enabled:
+            lines.append("- Review `docs/ai/spec-kit-bridge.md` and any installed bridge skills before feature work.")
         lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
         lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
         return lines
@@ -1486,10 +1807,13 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
             if plan.operation == "manage-packs"
             else "preview"
         )
-        return [
+        lines = [
             "Next step:",
             f"- Re-run this command with --write when the {action} looks correct.",
         ]
+        if plan.external_steps:
+            lines.append("- Official Spec Kit bootstrap will run before enhancer files are written.")
+        return lines
 
     lines = ["Next steps:"]
     if plan.operation == "manage-packs":
@@ -1502,13 +1826,14 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
             )
         else:
             lines.append("- Review the updated managed stack-pack section in `AGENTS.md`; no packs are selected now.")
-        lines.append("- Review the regenerated `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`.")
+        lines.append("- Review the regenerated `docs/ai/stack-guidance.md`, `docs/ai/spec-kit-bridge.md`, and `.codex/enhancer/manifest.toml`.")
         lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
         lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
         return lines
 
     if plan.operation == "refresh-generated":
         lines.extend(render_refresh_follow_up_lines(plan.pack_selections))
+        lines.append("- Review the refreshed `docs/ai/spec-kit-bridge.md` if this repo uses the Spec Kit bridge.")
         lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
         lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
         return lines
@@ -1525,6 +1850,8 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
             "- Use the `adapt-enhancer` skill to replace any inherited generic sections with repo-specific guidance."
         )
     lines.extend(render_install_follow_up_lines(plan.pack_selections))
+    if bridge_enabled:
+        lines.append("- Review `docs/ai/spec-kit-bridge.md` and the bridge skills before using Spec Kit-driven feature branches.")
     lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
     lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
     return lines
@@ -1549,8 +1876,26 @@ def proposal_paths(plan: InstallPlan) -> tuple[Path, ...]:
     return tuple(item.write_path for item in plan.writes if item.action == "proposal")
 
 
+def run_external_step(step: ExternalStep) -> None:
+    completed = subprocess.run(
+        step.argv,
+        cwd=step.cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        return
+
+    output_parts = [part.strip() for part in (completed.stdout, completed.stderr) if part.strip()]
+    details = "\n".join(output_parts)
+    if details:
+        raise RuntimeError(f"{step.label} failed.\n{details}")
+    raise RuntimeError(f"{step.label} failed with exit code {completed.returncode}.")
+
+
 def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | None = None) -> None:
-    total_steps = len(plan.writes) + (1 if plan.gitignore is not None else 0)
+    total_steps = len(plan.external_steps) + len(plan.writes) + (1 if plan.gitignore is not None else 0)
     current_step = 0
 
     if progress_callback:
@@ -1569,6 +1914,12 @@ def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | 
         )
 
     plan.target.mkdir(parents=True, exist_ok=True)
+    for external_step in plan.external_steps:
+        run_external_step(external_step)
+        current_step += 1
+        if progress_callback:
+            progress_callback(current_step, total_steps, external_step.label)
+
     for planned_write in plan.writes:
         write_text_file(plan.target / planned_write.write_path, planned_write.content)
         current_step += 1
@@ -1673,6 +2024,31 @@ def main(argv: list[str]) -> int:
         default=[],
         help="replace the installed stack-pack selection with this exact pack set; repeatable and requires --manage-packs",
     )
+    parser.add_argument(
+        "--spec-kit-mode",
+        choices=("off", "auto", "attach", "bootstrap"),
+        help="set the Spec Kit bridge mode for install or upgrade flows",
+    )
+    parser.add_argument(
+        "--spec-kit-script",
+        choices=("auto", "ps", "sh"),
+        default="auto",
+        help="override the script flavor used for Spec Kit bridge planning",
+    )
+    parser.add_argument(
+        "--spec-kit-command-surface",
+        choices=("auto", "dollar", "slash"),
+        default="auto",
+        help="override the preferred Spec Kit command surface shown in bridge guidance",
+    )
+    parser.add_argument(
+        "--spec-kit-version",
+        help="pin the official Spec Kit version or ref to bootstrap",
+    )
+    parser.add_argument(
+        "--spec-kit-exe",
+        help="path to a local `specify`-compatible executable to use instead of uvx for bootstrap",
+    )
     args = parser.parse_args(argv)
 
     if args.list_packs and args.target is None:
@@ -1707,6 +2083,11 @@ def main(argv: list[str]) -> int:
         or args.add_pack
         or args.remove_pack
         or args.set_pack
+        or args.spec_kit_mode
+        or args.spec_kit_script != "auto"
+        or args.spec_kit_command_surface != "auto"
+        or args.spec_kit_version
+        or args.spec_kit_exe
     ):
         print("--inspect-install only inspects the target repo and cannot be combined with write, refresh, force, or pack-selection flags.")
         return 1
@@ -1739,7 +2120,14 @@ def main(argv: list[str]) -> int:
             print("--upgrade-enhancer only works with --mode existing or --mode auto.")
             return 1
         try:
-            plan = build_upgrade_plan(target)
+            plan = build_upgrade_plan(
+                target,
+                spec_kit_mode=args.spec_kit_mode,
+                spec_kit_script=args.spec_kit_script,
+                spec_kit_command_surface=args.spec_kit_command_surface,
+                spec_kit_version=args.spec_kit_version,
+                spec_kit_executable=args.spec_kit_exe,
+            )
         except ValueError as error:
             print(str(error))
             return 1
@@ -1758,8 +2146,13 @@ def main(argv: list[str]) -> int:
         or args.use_recommended_packs
         or args.pack
         or args.no_pack
+        or args.spec_kit_mode
+        or args.spec_kit_script != "auto"
+        or args.spec_kit_command_surface != "auto"
+        or args.spec_kit_version
+        or args.spec_kit_exe
     ):
-        print("--manage-packs updates installed pack selection and cannot be combined with install, refresh, force, or install-time pack-selection flags.")
+        print("--manage-packs updates installed pack selection and cannot be combined with install-time Spec Kit or pack-selection flags.")
         return 1
 
     if args.manage_packs:
@@ -1797,10 +2190,15 @@ def main(argv: list[str]) -> int:
         or args.add_pack
         or args.remove_pack
         or args.set_pack
+        or args.spec_kit_mode
+        or args.spec_kit_script != "auto"
+        or args.spec_kit_command_surface != "auto"
+        or args.spec_kit_version
+        or args.spec_kit_exe
     ):
         print(
-            "--refresh-generated uses the target repo's existing manifest selection; "
-            "do not combine it with pack-selection flags."
+            "--refresh-generated uses the target repo's existing manifest selection and bridge state; "
+            "do not combine it with pack-selection or Spec Kit override flags."
         )
         return 1
 
@@ -1813,6 +2211,11 @@ def main(argv: list[str]) -> int:
             use_recommended_packs=args.use_recommended_packs,
             include_packs=tuple(args.pack),
             exclude_packs=tuple(args.no_pack),
+            spec_kit_mode=args.spec_kit_mode,
+            spec_kit_script=args.spec_kit_script,
+            spec_kit_command_surface=args.spec_kit_command_surface,
+            spec_kit_version=args.spec_kit_version,
+            spec_kit_executable=args.spec_kit_exe,
         )
     except ValueError as error:
         print(str(error))

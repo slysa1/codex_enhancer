@@ -11,9 +11,10 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 6. If a script changed, verify it is deterministic and dependency-light.
 7. If repo commands changed, confirm [.github/workflows/validate.yml](../../.github/workflows/validate.yml) changed with them.
 8. If stack packs are selected, confirm [AGENTS.md](../../AGENTS.md), [docs/ai/stack-guidance.md](./stack-guidance.md), and [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml) still match.
-9. Confirm installer-managed outputs are still treated as such: `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml` can be regenerated together, while the rest of the scaffold should usually be reviewed as manual repo-owned edits.
+9. Confirm installer-managed outputs are still treated as such: `docs/ai/stack-guidance.md`, `docs/ai/spec-kit-bridge.md`, and `.codex/enhancer/manifest.toml` can be regenerated together, while the rest of the scaffold should usually be reviewed as manual repo-owned edits.
 10. Confirm the manifest schema, lifecycle metadata, and pack evidence still look intentional before merging enhancer lifecycle changes.
 11. Confirm visible managed-section markers in `AGENTS.md` still wrap only the selected stack-pack summary.
+12. If official Spec Kit is present or bridge guidance changed, confirm [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), the managed Spec Kit bridge summary in [AGENTS.md](../../AGENTS.md), and the ownership boundary for `.specify/` or `specs/` still match.
 
 ## Review Priorities
 1. Wrong or stale instructions
@@ -36,3 +37,4 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 - If this repo still contains inherited enhancer guidance, call out what still needs adaptation.
 - If stack-pack selection changed, call out both the managed root `AGENTS.md` summary and the deeper `docs/ai/stack-guidance.md` update.
 - If installer-managed ownership changed, call out which outputs remain safe to regenerate and which files still expect manual adaptation.
+- If the repo also uses official Spec Kit, call out what the enhancer owns versus what remains official Spec Kit state.

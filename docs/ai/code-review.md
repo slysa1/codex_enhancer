@@ -15,7 +15,8 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 10. If output ownership rules changed, verify previews and the target manifest still distinguish safe-to-regenerate outputs from scaffold files that should usually be adapted manually.
 11. If the GUI installer changed, verify the overwrite preview, pack-selection controls, confirmation gate, progress updates, and README handoff still match the installer core.
 12. If lifecycle, upgrade, refresh, managed-section, or proposal behavior changed, confirm [docs/ai/migration-v3.md](./migration-v3.md) explains the operator-facing impact.
-13. If roadmap or stack-pack design changed, confirm the phased roadmap in [roadmap.md](./roadmap.md) still matches the intended architecture.
+13. If the Spec Kit bridge changed, verify [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), the target scaffold bridge doc, bridge skills, manifest section ids, and visible `AGENTS.md` markers changed together.
+14. If roadmap or stack-pack design changed, confirm the phased roadmap in [roadmap.md](./roadmap.md) still matches the intended architecture.
 
 ## Review Priorities
 1. Wrong or stale instructions
@@ -39,6 +40,7 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 - If a change adds future-facing guidance, say what event should trigger the next update.
 - If a change affects the installer, call out proposal-mode behavior, overwrite semantics, selected-pack defaults, generated target outputs, and any GUI-only behavior.
 - If stack-pack selection changed, call out both the managed root `AGENTS.md` summary and the deeper `docs/ai/stack-guidance.md` update.
-- If output ownership changed, call out which files are now considered safe to regenerate versus usually adapted manually.
+- If output ownership changed, call out which files are now considered safe to regenerate versus usually adapted manually, especially `docs/ai/spec-kit-bridge.md` and `.codex/enhancer/manifest.toml`.
 - If migration behavior changed, call out the exact inspect, upgrade, manage-packs, refresh, and validation commands reviewers should use.
+- If the Spec Kit bridge changed, call out what the enhancer owns versus what remains official Spec Kit state.
 - Prefer one coherent patch over speculative scaffolding.

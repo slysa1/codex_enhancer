@@ -6,12 +6,13 @@ This file explains how the Codex workflow layer should stay minimal inside {{REP
 ## Current Layers
 1. [AGENTS.md](../../AGENTS.md): the short repo-wide operating map plus a concise summary of any selected stack packs.
 2. [docs/ai/](../ai/): durable detail that would bloat `AGENTS.md` if kept inline.
-3. [docs/ai/stack-guidance.md](./stack-guidance.md): selected stack-pack guidance from the enhancer install and safe to regenerate later.
-4. [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml): record of detected and selected stack packs, lifecycle state, visible pack evidence, and managed-output ownership; also safe to regenerate later.
-5. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
-6. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for this workflow layer.
-7. [tests/](../../tests/): regression protection for the validator.
-8. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
+3. [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md): enhancer-managed bridge guidance for repos that also use official GitHub Spec Kit; safe to regenerate later.
+4. [docs/ai/stack-guidance.md](./stack-guidance.md): selected stack-pack guidance from the enhancer install and safe to regenerate later.
+5. [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml): record of detected and selected stack packs, lifecycle state, visible pack evidence, managed-output ownership, and Spec Kit bridge state; also safe to regenerate later.
+6. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
+7. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for this workflow layer.
+8. [tests/](../../tests/): regression protection for the validator.
+9. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
 
 ## What To Keep
 - rules that Codex should see immediately
@@ -26,10 +27,11 @@ This file explains how the Codex workflow layer should stay minimal inside {{REP
 - checks that enforce a shape this repo does not actually want
 
 ## Managed Output Rule
-- Treat [docs/ai/stack-guidance.md](./stack-guidance.md) and [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml) as installer-managed outputs that are safe to regenerate later.
+- Treat [docs/ai/stack-guidance.md](./stack-guidance.md), [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), and [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml) as installer-managed outputs that are safe to regenerate later.
 - Treat [AGENTS.md](../../AGENTS.md) and the rest of the scaffolded workflow files as repo-owned starting points that should usually be adapted by hand.
 - Keep the manifest schema and lifecycle metadata intact when editing by hand; use the enhancer upgrade or refresh flow if schema drift appears.
-- Keep the visible managed-section markers around the selected stack-pack summary in [AGENTS.md](../../AGENTS.md); only the content inside those markers is enhancer-owned and safe for pack-management updates.
+- Keep the visible managed-section markers around the selected stack-pack summary and the Spec Kit bridge summary in [AGENTS.md](../../AGENTS.md); only the content inside those markers is enhancer-owned and safe for future managed updates.
+- Treat official Spec Kit files such as `.specify/`, `specs/`, `.github/prompts/`, and `.github/agents/` as separately owned unless the repo deliberately opts into a deeper bridge workflow later.
 
 ## Extension Rules
 - Prefer updating [AGENTS.md](../../AGENTS.md) or an existing doc before adding a new file.

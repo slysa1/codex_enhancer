@@ -14,6 +14,7 @@ from scripts.enhancer_spec import (
     MANAGED_SECTIONS,
     SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS,
 )
+from scripts.spec_kit_bridge import SpecKitBridgeConfig, SpecKitPaths
 
 
 STACK_PACK_ROOT = Path(__file__).resolve().parents[1] / "scaffold/stack-packs"
@@ -187,6 +188,7 @@ class EnhancerInstallState:
     pack_selection_mode: str | None = None
     managed_sections: tuple[str, ...] = ()
     pack_evidence: tuple[ManifestPackEvidence, ...] = ()
+    spec_kit_bridge: SpecKitBridgeConfig | None = None
 
 
 def _required_str(data: dict[str, object], key: str) -> str:
@@ -754,6 +756,22 @@ def _manifest_string_list(
     return tuple(value)
 
 
+def _manifest_optional_string(
+    target: Path,
+    manifest_path: Path,
+    owner: str,
+    value: object,
+) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {manifest_path.as_posix()}: "
+            f"{owner} must be a non-empty string when present."
+        )
+    return value
+
+
 def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
     manifest_path = target.resolve() / TARGET_MANIFEST_PATH
     if not manifest_path.exists():
@@ -886,6 +904,152 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
             )
             pack_evidence.append(ManifestPackEvidence(name=name, evidence=evidence))
 
+    spec_kit_bridge: SpecKitBridgeConfig | None = None
+    integrations = manifest.get("integrations", {})
+    if integrations == {}:
+        pass
+    elif not isinstance(integrations, dict):
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+            "integrations must be a table when present."
+        )
+    else:
+        raw_spec_kit = integrations.get("spec_kit")
+        if raw_spec_kit is None:
+            pass
+        elif not isinstance(raw_spec_kit, dict):
+            raise ValueError(
+                f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+                "integrations.spec_kit must be a table when present."
+            )
+        else:
+            raw_paths = raw_spec_kit.get("paths", {})
+            if raw_paths == {}:
+                paths = SpecKitPaths()
+            elif not isinstance(raw_paths, dict):
+                raise ValueError(
+                    f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+                    "integrations.spec_kit.paths must be a table when present."
+                )
+            else:
+                paths = SpecKitPaths(
+                    specify_root=_manifest_optional_string(
+                        target,
+                        TARGET_MANIFEST_PATH,
+                        "integrations.spec_kit.paths.specify_root",
+                        raw_paths.get("specify_root"),
+                    ),
+                    specs_root=_manifest_optional_string(
+                        target,
+                        TARGET_MANIFEST_PATH,
+                        "integrations.spec_kit.paths.specs_root",
+                        raw_paths.get("specs_root"),
+                    ),
+                    prompts_root=_manifest_optional_string(
+                        target,
+                        TARGET_MANIFEST_PATH,
+                        "integrations.spec_kit.paths.prompts_root",
+                        raw_paths.get("prompts_root"),
+                    ),
+                    agents_root=_manifest_optional_string(
+                        target,
+                        TARGET_MANIFEST_PATH,
+                        "integrations.spec_kit.paths.agents_root",
+                        raw_paths.get("agents_root"),
+                    ),
+                    codex_skills_root=_manifest_optional_string(
+                        target,
+                        TARGET_MANIFEST_PATH,
+                        "integrations.spec_kit.paths.codex_skills_root",
+                        raw_paths.get("codex_skills_root"),
+                    ),
+                    context_file=_manifest_optional_string(
+                        target,
+                        TARGET_MANIFEST_PATH,
+                        "integrations.spec_kit.paths.context_file",
+                        raw_paths.get("context_file"),
+                    ),
+                    constitution=_manifest_optional_string(
+                        target,
+                        TARGET_MANIFEST_PATH,
+                        "integrations.spec_kit.paths.constitution",
+                        raw_paths.get("constitution"),
+                    ),
+                )
+
+            spec_kit_bridge = SpecKitBridgeConfig(
+                mode=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.mode",
+                    raw_spec_kit.get("mode"),
+                )
+                or "off",
+                state=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.state",
+                    raw_spec_kit.get("state"),
+                )
+                or "absent",
+                origin=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.origin",
+                    raw_spec_kit.get("origin"),
+                ),
+                integration_key=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.integration_key",
+                    raw_spec_kit.get("integration_key"),
+                ),
+                managed_by=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.managed_by",
+                    raw_spec_kit.get("managed_by"),
+                )
+                or "spec-kit",
+                script_type=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.script_type",
+                    raw_spec_kit.get("script_type"),
+                ),
+                command_surface=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.command_surface",
+                    raw_spec_kit.get("command_surface"),
+                ),
+                command_label=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.command_label",
+                    raw_spec_kit.get("command_label"),
+                ),
+                cli_version=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.cli_version",
+                    raw_spec_kit.get("cli_version"),
+                ),
+                available_commands=_manifest_string_list(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.available_commands",
+                    raw_spec_kit.get("available_commands", []),
+                ),
+                evidence=_manifest_string_list(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.spec_kit.detection_evidence",
+                    raw_spec_kit.get("detection_evidence", []),
+                ),
+                paths=paths,
+            )
+
     return EnhancerInstallState(
         enhancer_version=enhancer_version,
         selected_packs=selected_packs,
@@ -896,6 +1060,7 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
         pack_selection_mode=pack_selection_mode,
         managed_sections=managed_sections,
         pack_evidence=tuple(pack_evidence),
+        spec_kit_bridge=spec_kit_bridge,
     )
 
 
@@ -1151,6 +1316,7 @@ def render_stack_pack_manifest(
     *,
     safe_to_regenerate: tuple[Path, ...] = (),
     adapt_manually: tuple[Path, ...] = (),
+    spec_kit_bridge: SpecKitBridgeConfig | None = None,
 ) -> str:
     selected = tuple(selected_packs)
     selected_set = set(selected)
@@ -1188,6 +1354,7 @@ def render_stack_pack_manifest(
         [
             "[generated_files]",
             'stack_guidance = "docs/ai/stack-guidance.md"',
+            'spec_kit_bridge = "docs/ai/spec-kit-bridge.md"',
             "",
             "[managed_outputs]",
             "safe_to_regenerate = ["
@@ -1198,4 +1365,54 @@ def render_stack_pack_manifest(
             + "]",
         ]
     )
+
+    if spec_kit_bridge is not None:
+        lines.extend(
+            [
+                "",
+                "[integrations.spec_kit]",
+                f"mode = {_toml_string(spec_kit_bridge.mode)}",
+                f"state = {_toml_string(spec_kit_bridge.state)}",
+                f"managed_by = {_toml_string(spec_kit_bridge.managed_by)}",
+            ]
+        )
+        if spec_kit_bridge.origin is not None:
+            lines.append(f"origin = {_toml_string(spec_kit_bridge.origin)}")
+        if spec_kit_bridge.integration_key is not None:
+            lines.append(f"integration_key = {_toml_string(spec_kit_bridge.integration_key)}")
+        if spec_kit_bridge.script_type is not None:
+            lines.append(f"script_type = {_toml_string(spec_kit_bridge.script_type)}")
+        if spec_kit_bridge.command_surface is not None:
+            lines.append(f"command_surface = {_toml_string(spec_kit_bridge.command_surface)}")
+        if spec_kit_bridge.command_label is not None:
+            lines.append(f"command_label = {_toml_string(spec_kit_bridge.command_label)}")
+        if spec_kit_bridge.cli_version is not None:
+            lines.append(f"cli_version = {_toml_string(spec_kit_bridge.cli_version)}")
+        lines.append(
+            "available_commands = ["
+            + ", ".join(_toml_string(command) for command in spec_kit_bridge.available_commands)
+            + "]"
+        )
+        lines.append(
+            "detection_evidence = ["
+            + ", ".join(_toml_string(item) for item in spec_kit_bridge.evidence)
+            + "]"
+        )
+        lines.extend(["", "[integrations.spec_kit.paths]"])
+        if spec_kit_bridge.paths.specify_root is not None:
+            lines.append(f"specify_root = {_toml_string(spec_kit_bridge.paths.specify_root)}")
+        if spec_kit_bridge.paths.specs_root is not None:
+            lines.append(f"specs_root = {_toml_string(spec_kit_bridge.paths.specs_root)}")
+        if spec_kit_bridge.paths.prompts_root is not None:
+            lines.append(f"prompts_root = {_toml_string(spec_kit_bridge.paths.prompts_root)}")
+        if spec_kit_bridge.paths.agents_root is not None:
+            lines.append(f"agents_root = {_toml_string(spec_kit_bridge.paths.agents_root)}")
+        if spec_kit_bridge.paths.codex_skills_root is not None:
+            lines.append(
+                f"codex_skills_root = {_toml_string(spec_kit_bridge.paths.codex_skills_root)}"
+            )
+        if spec_kit_bridge.paths.context_file is not None:
+            lines.append(f"context_file = {_toml_string(spec_kit_bridge.paths.context_file)}")
+        if spec_kit_bridge.paths.constitution is not None:
+            lines.append(f"constitution = {_toml_string(spec_kit_bridge.paths.constitution)}")
     return "\n".join(lines) + "\n"

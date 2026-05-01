@@ -39,6 +39,10 @@ from scripts.enhancer_validator import validate as validate_profile
 
 
 TEMP_ROOT = Path(__file__).resolve().parent / "_tmp"
+MANAGED_SECTION_LIST = (
+    'managed_sections = ["AGENTS.md:selected-stack-packs", '
+    '"AGENTS.md:spec-kit-bridge"]'
+)
 
 
 def write_file(root: Path, relative_path: str, content: str) -> None:
@@ -221,6 +225,136 @@ class InstallEnhancerTests(unittest.TestCase):
                 "Status: target install uses an older manifest schema than the current source version.",
                 output,
             )
+
+    def test_inspect_install_reports_detected_spec_kit_surface(self) -> None:
+        with repo_fixture("inspect_spec_kit") as install_target:
+            write_file(
+                install_target,
+                ".specify/integration.json",
+                '{\n  "integration": "copilot",\n  "version": "0.8.3"\n}\n',
+            )
+            write_file(
+                install_target,
+                ".specify/init-options.json",
+                '{\n  "integration": "copilot",\n  "ai": "copilot",\n  "script": "ps",\n  "speckit_version": "0.8.3"\n}\n',
+            )
+            write_file(install_target, ".github/prompts/speckit.plan.prompt.md", "# Plan\n")
+            write_file(install_target, ".github/agents/speckit.tasks.agent.md", "# Tasks\n")
+
+            exit_code, output = run_installer(["--target", str(install_target), "--inspect-install"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Spec Kit bridge:", output)
+            self.assertIn("Official Spec Kit detected.", output)
+            self.assertIn("Integration: `copilot`", output)
+            self.assertIn("Likely command surface: .github/prompts and .github/agents.", output)
+
+    def test_install_attach_mode_requires_existing_spec_kit(self) -> None:
+        with repo_fixture("install_attach_missing") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--spec-kit-mode",
+                    "attach",
+                ]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("requires an existing official Spec Kit install", output)
+
+    def test_install_attach_mode_adds_bridge_skills_and_manifest_state(self) -> None:
+        with repo_fixture("install_attach") as install_target:
+            write_file(
+                install_target,
+                ".specify/integration.json",
+                '{\n  "integration": "codex",\n  "version": "0.8.3"\n}\n',
+            )
+            write_file(
+                install_target,
+                ".specify/init-options.json",
+                '{\n  "integration": "codex",\n  "script": "ps",\n  "speckit_version": "0.8.3"\n}\n',
+            )
+            write_file(install_target, ".agents/skills/speckit-plan/SKILL.md", "# Plan\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--spec-kit-mode",
+                    "attach",
+                    "--write",
+                    "--force",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            agents = (install_target / "AGENTS.md").read_text(encoding="utf-8")
+
+            self.assertIn('mode = "attach"', manifest)
+            self.assertIn('state = "attached"', manifest)
+            self.assertIn('integration_key = "codex"', manifest)
+            self.assertIn("Spec Kit bridge is attached to an existing official install.", agents)
+            self.assertTrue((install_target / ".codex/skills/spec-implement-bridge/SKILL.md").exists())
+            self.assertTrue((install_target / ".codex/skills/spec-sync-check/SKILL.md").exists())
+            self.assertTrue((install_target / ".codex/skills/spec-review-bridge/SKILL.md").exists())
+
+    def test_install_bootstrap_mode_plans_external_step(self) -> None:
+        with repo_fixture("install_bootstrap") as install_target:
+            plan = build_install_plan(
+                install_target,
+                mode="new",
+                spec_kit_mode="bootstrap",
+                spec_kit_script="ps",
+                spec_kit_version="v0.8.3",
+            )
+
+            self.assertEqual(len(plan.external_steps), 1)
+            self.assertIn("uvx", plan.external_steps[0].argv[0])
+            self.assertIn("bootstrap", plan.spec_kit_bridge.mode)
+            self.assertIn("docs/ai/spec-kit-bridge.md", plan.manifest_preview)
+
+    def test_install_bootstrap_mode_write_runs_external_step(self) -> None:
+        with repo_fixture("install_bootstrap_write") as parent:
+            install_target = parent / "repo"
+            fake_specify = parent / "fake-specify.cmd"
+            fake_specify.write_text(
+                "@echo off\r\n"
+                "mkdir .specify\\memory >nul 2>nul\r\n"
+                "mkdir specs >nul 2>nul\r\n"
+                "mkdir .agents\\skills\\speckit-plan >nul 2>nul\r\n"
+                "echo # Constitution> .specify\\memory\\constitution.md\r\n"
+                "echo # Plan> .agents\\skills\\speckit-plan\\SKILL.md\r\n",
+                encoding="utf-8",
+            )
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "new",
+                    "--spec-kit-mode",
+                    "bootstrap",
+                    "--spec-kit-script",
+                    "ps",
+                    "--spec-kit-exe",
+                    str(fake_specify),
+                    "--write",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue((install_target / ".specify/memory/constitution.md").exists())
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            self.assertIn('mode = "bootstrap"', manifest)
+            self.assertIn('state = "bootstrapped"', manifest)
 
     def test_inspect_install_rejects_write_and_force_flags(self) -> None:
         with repo_fixture("inspect_invalid") as install_target:
@@ -504,7 +638,7 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Planned Codex Enhancer install", output)
             self.assertIn("Output ownership:", output)
             self.assertIn(
-                "Safe to regenerate later: `docs/ai/stack-guidance.md`, `.codex/enhancer/manifest.toml`",
+                "Safe to regenerate later: `docs/ai/stack-guidance.md`, `docs/ai/spec-kit-bridge.md`, `.codex/enhancer/manifest.toml`",
                 output,
             )
 
@@ -713,7 +847,7 @@ class InstallEnhancerTests(unittest.TestCase):
             )
 
             self.assertEqual(exit_code, 1)
-            self.assertIn("do not combine it with pack-selection flags", output)
+            self.assertIn("do not combine it with pack-selection or Spec Kit override flags", output)
 
     def test_explicit_pack_selects_undetected_pack(self) -> None:
         with repo_fixture("install_explicit_pack") as install_target:
@@ -893,7 +1027,7 @@ class InstallEnhancerTests(unittest.TestCase):
                 """[lifecycle]
 state = "active"
 pack_selection = "manifest"
-managed_sections = ["AGENTS.md:selected-stack-packs"]
+managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge"]
 
 """,
                 "",
@@ -939,7 +1073,7 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
 
             manifest_path = install_target / ".codex/enhancer/manifest.toml"
             manifest_text = manifest_path.read_text(encoding="utf-8").replace(
-                'managed_sections = ["AGENTS.md:selected-stack-packs"]',
+                MANAGED_SECTION_LIST,
                 "managed_sections = []",
             )
             manifest_path.write_text(manifest_text, encoding="utf-8")
@@ -947,7 +1081,11 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
             errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
 
             self.assertTrue(
-                any("is missing managed section ids: AGENTS.md:selected-stack-packs" in error for error in errors)
+                any(
+                    "is missing managed section ids: AGENTS.md:selected-stack-packs, AGENTS.md:spec-kit-bridge"
+                    in error
+                    for error in errors
+                )
             )
 
     def test_target_validation_rejects_reversed_managed_section_markers(self) -> None:
@@ -973,6 +1111,33 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
 
             self.assertTrue(
                 any("has reversed managed section markers" in error for error in errors)
+            )
+
+    def test_target_validation_requires_spec_kit_bridge_marker_pair(self) -> None:
+        with repo_fixture("install_spec_kit_bridge_missing") as target:
+            install_target = target / "repo"
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+
+            agents_path = install_target / "AGENTS.md"
+            agents_text = agents_path.read_text(encoding="utf-8").replace(
+                "<!-- codex-enhancer:managed-section AGENTS.md:spec-kit-bridge start -->\n",
+                "",
+            )
+            agents_path.write_text(agents_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any(
+                    "must contain exactly one managed section marker pair" in error
+                    and "AGENTS.md:spec-kit-bridge" in error
+                    for error in errors
+                )
             )
 
     def test_target_validation_requires_selected_pack_state_to_match_detection_records(self) -> None:
@@ -1206,7 +1371,7 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
             self.assertIn("[lifecycle]", manifest)
             self.assertIn('state = "active"', manifest)
             self.assertIn('pack_selection = "manifest"', manifest)
-            self.assertIn('managed_sections = ["AGENTS.md:selected-stack-packs"]', manifest)
+            self.assertIn(MANAGED_SECTION_LIST, manifest)
             self.assertIn("`javascript-typescript-app` (JavaScript / TypeScript app):", agents)
             self.assertIn(
                 "<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs start -->",
@@ -1216,12 +1381,23 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
                 "<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->",
                 agents,
             )
+            self.assertIn(
+                "<!-- codex-enhancer:managed-section AGENTS.md:spec-kit-bridge start -->",
+                agents,
+            )
+            self.assertIn(
+                "<!-- codex-enhancer:managed-section AGENTS.md:spec-kit-bridge end -->",
+                agents,
+            )
             self.assertIn('selected_packs = ["javascript-typescript-app"]', manifest)
             self.assertIn('evidence = ["found package.json", "matched tsconfig.json"]', manifest)
             self.assertIn(
-                'safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]',
+                'safe_to_regenerate = ["docs/ai/stack-guidance.md", "docs/ai/spec-kit-bridge.md", ".codex/enhancer/manifest.toml"]',
                 manifest,
             )
+            self.assertIn('spec_kit_bridge = "docs/ai/spec-kit-bridge.md"', manifest)
+            self.assertIn('[integrations.spec_kit]', manifest)
+            self.assertIn('mode = "off"', manifest)
             self.assertIn('adapt_manually = ["AGENTS.md"', manifest)
             self.assertIn("Pack id: `javascript-typescript-app`", stack_guidance)
             self.assertIn("### Review Notes", stack_guidance)
@@ -1241,10 +1417,11 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
             self.assertIn("Planned Codex Enhancer generated-output refresh", output)
             self.assertIn("After refresh:", output)
             self.assertIn(
-                "Stack guidance and the pack manifest will be regenerated from the existing target manifest.",
+                "Stack guidance, the Spec Kit bridge guide, and the pack manifest will be regenerated from the existing target manifest.",
                 output,
             )
             self.assertIn("- overwrite: docs/ai/stack-guidance.md", output)
+            self.assertIn("- overwrite: docs/ai/spec-kit-bridge.md", output)
             self.assertIn("- overwrite: .codex/enhancer/manifest.toml", output)
             self.assertIn("Manual scaffold files stay untouched during refresh.", output)
             self.assertNotIn("- overwrite: AGENTS.md", output)
@@ -1630,6 +1807,28 @@ managed_sections = ["AGENTS.md:selected-stack-packs"]
                 "Review `AGENTS.md` and `docs/ai/stack-guidance.md` for selected packs: `javascript-typescript-app`.",
                 preview,
             )
+
+    def test_gui_plan_preview_reports_detected_spec_kit_surface(self) -> None:
+        with repo_fixture("install_preview_spec_kit") as install_target:
+            write_file(
+                install_target,
+                ".specify/integration.json",
+                '{\n  "integration": "copilot",\n  "version": "0.8.3"\n}\n',
+            )
+            write_file(
+                install_target,
+                ".specify/init-options.json",
+                '{\n  "integration": "copilot",\n  "ai": "copilot",\n  "script": "ps",\n  "speckit_version": "0.8.3"\n}\n',
+            )
+            write_file(install_target, ".github/prompts/speckit.plan.prompt.md", "# Plan\n")
+
+            plan = build_install_plan(install_target, mode="existing")
+            preview = build_plan_preview(plan)
+
+            self.assertIn("Spec Kit bridge:", preview)
+            self.assertIn("Official Spec Kit detected.", preview)
+            self.assertIn("Integration: `copilot`", preview)
+            self.assertIn("Likely command surface: .github/prompts and .github/agents.", preview)
 
     def test_gui_pack_management_preview_and_completion_message(self) -> None:
         with repo_fixture("install_preview_manage") as install_target:

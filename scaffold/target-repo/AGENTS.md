@@ -12,6 +12,7 @@ This repository uses a Codex-native workflow layer so Codex can understand the r
 - [AGENTS.md](AGENTS.md): repo-wide operating map and default workflow.
 - [docs/ai/architecture.md](docs/ai/architecture.md): what should stay minimal and what should be moved into deeper docs or skills.
 - [docs/ai/code-review.md](docs/ai/code-review.md): review and PR-prep checklist for workflow assets and future repo rules.
+- [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md): how this repo should coexist with official GitHub Spec Kit if the team uses it.
 - [docs/ai/stack-guidance.md](docs/ai/stack-guidance.md): optional stack-pack guidance selected during enhancer install.
 - [.codex/skills/](.codex/skills/): repo-local skills for repeated procedures. Read [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md) before editing or adding skills.
 - [.codex/enhancer/manifest.toml](.codex/enhancer/manifest.toml): record of detected and selected enhancer stack packs.
@@ -30,6 +31,11 @@ This repository uses a Codex-native workflow layer so Codex can understand the r
 {{PACK_AGENTS_SUMMARY}}
 <!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->
 
+## Spec Kit Bridge
+<!-- codex-enhancer:managed-section AGENTS.md:spec-kit-bridge start -->
+{{SPEC_KIT_BRIDGE_SUMMARY}}
+<!-- codex-enhancer:managed-section AGENTS.md:spec-kit-bridge end -->
+
 ## Default Workflow
 1. Inspect the relevant files before editing anything.
 2. For non-trivial workflow changes, use the `plan-change` skill in [.codex/skills/plan-change/](.codex/skills/plan-change/).
@@ -47,6 +53,7 @@ This repository uses a Codex-native workflow layer so Codex can understand the r
 - Add scripts only when they provide deterministic validation or remove repeated manual steps.
 - Keep local commands and CI in sync. If one changes, update the other in the same patch.
 - Delete inherited enhancer assets that do not solve a real problem in this repository.
+- Treat official Spec Kit files such as `.specify/`, `specs/`, `.github/prompts/`, and `.github/agents/` as separately owned unless this repo explicitly chooses a deeper bridge later.
 
 ## Review Expectations
 - Explain why each workflow file exists and why a simpler alternative was not enough.

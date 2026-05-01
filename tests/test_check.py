@@ -40,6 +40,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         Use `install_enhancer.bat` for the Windows GUI installer.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the enhancer roadmap.
+        See [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md) for the optional Spec Kit bridge.
 
         See [docs/ai/architecture.md](docs/ai/architecture.md),
         [docs/ai/code-review.md](docs/ai/code-review.md),
@@ -59,6 +60,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         See [docs/ai/migration-v3.md](migration-v3.md).
+        See [docs/ai/spec-kit-bridge.md](spec-kit-bridge.md).
         """,
         "docs/ai/migration-v3.md": """
         # V3 Migration Notes
@@ -70,6 +72,11 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         # Codex Enhancer Roadmap
 
         Optional stack packs live here.
+        """,
+        "docs/ai/spec-kit-bridge.md": """
+        # Spec Kit Bridge
+
+        Treat official Spec Kit files as separately owned.
         """,
         ".codex/skills/AGENTS.md": """
         # Skills
@@ -116,6 +123,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "scripts/enhancer_spec.py": """
         # placeholder enhancer spec for fixture
         """,
+        "scripts/spec_kit_bridge.py": """
+        # placeholder Spec Kit bridge helper for fixture
+        """,
         "scripts/enhancer_validator.py": """
         # placeholder validator for fixture
         """,
@@ -133,6 +143,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "tests/test_install_enhancer.py": """
         # placeholder installer test file for fixture
+        """,
+        "tests/test_spec_kit_bridge.py": """
+        # placeholder Spec Kit bridge test file for fixture
         """,
         "tests/test_stack_packs.py": """
         # placeholder stack pack test file for fixture
@@ -158,6 +171,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "scaffold/target-repo/docs/ai/code-review.md": """
         # Review template
         """,
+        "scaffold/target-repo/docs/ai/spec-kit-bridge.md": """
+        # Spec Kit Bridge template
+        """,
         "scaffold/target-repo/.codex/skills/adapt-enhancer/SKILL.md": """
         ---
         name: adapt-enhancer
@@ -168,6 +184,33 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         ## Do not use
         - Do not use once adaptation is complete.
+        """,
+        "scaffold/target-repo/.codex/skills/spec-implement-bridge/SKILL.md": """
+        ---
+        name: spec-implement-bridge
+        description: Implement code from existing Spec Kit feature artifacts. Use when a repo already has spec and plan artifacts for the active feature.
+        ---
+
+        ## Do not use
+        - Do not use before official Spec Kit artifacts exist.
+        """,
+        "scaffold/target-repo/.codex/skills/spec-sync-check/SKILL.md": """
+        ---
+        name: spec-sync-check
+        description: Compare changed code against existing Spec Kit artifacts. Use when code changed and you need to check for drift against spec or task artifacts.
+        ---
+
+        ## Do not use
+        - Do not use when no Spec Kit feature artifacts exist.
+        """,
+        "scaffold/target-repo/.codex/skills/spec-review-bridge/SKILL.md": """
+        ---
+        name: spec-review-bridge
+        description: Prepare review notes for Spec Kit-driven work. Use when a branch was implemented from Spec Kit artifacts and the handoff should summarize remaining drift.
+        ---
+
+        ## Do not use
+        - Do not use when the change was not driven by Spec Kit artifacts.
         """,
         "scaffold/target-repo/scripts/check.py": """
         # template check wrapper

@@ -6,17 +6,18 @@ This repository contains the enhancer itself, not an application stack. The work
 ## Current Layers
 1. [README.md](../../README.md): human-facing overview and quick start.
 2. [AGENTS.md](../../AGENTS.md): short entrypoint for repo purpose, workflow, commands, and definition of done.
-3. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, [v3 migration notes](./migration-v3.md), and the phased [design roadmap](./roadmap.md).
+3. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, [v3 migration notes](./migration-v3.md), the phased [design roadmap](./roadmap.md), and the [Spec Kit bridge contract](./spec-kit-bridge.md).
 4. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
 5. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, pack management, upgrade/reconcile, and guided install or managed-output refresh flow.
 6. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus pack management, upgrade/reconcile, and safe generated-output refreshes.
 7. [scripts/stack_packs.py](../../scripts/stack_packs.py) and [scaffold/stack-packs/](../../scaffold/stack-packs/): file-based registry, loader, manifest-evidence collector, and renderer for optional stack packs.
-8. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
-9. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.
-10. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for the enhancer source repo.
-11. [scaffold/target-repo/](../../scaffold/target-repo/): target-repo files that should not be copied verbatim from the source repo.
-12. [tests/](../../tests/): regression protection for the validator, installer core, GUI-facing helpers, and stack-pack loader.
-13. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
+8. [scripts/spec_kit_bridge.py](../../scripts/spec_kit_bridge.py): bridge-aware detection, bridge-mode resolution, and summary helpers for optional official Spec Kit installs.
+9. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
+10. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.
+11. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for the enhancer source repo.
+12. [scaffold/target-repo/](../../scaffold/target-repo/): target-repo files that should not be copied verbatim from the source repo.
+13. [tests/](../../tests/): regression protection for the validator, installer core, GUI-facing helpers, stack-pack loader, and Spec Kit bridge detector.
+14. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
 
 ## Decision Guide
 
@@ -35,6 +36,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - Stack-specific helper scripts once real install, build, lint, or test commands exist
 - Additional skills only after repeated use proves they remove real prompt repetition
 - Optional stack packs only if they stay file-based, visible, evidence-backed, and conservative as described in [roadmap.md](./roadmap.md)
+- An optional Spec Kit bridge only if it stays repo-local, keeps ownership boundaries explicit, and complements official Spec Kit instead of vendoring or replacing it
 
 ### Niche Later
 - Domain-specific playbooks for migrations, incidents, releases, or API contracts
@@ -61,6 +63,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - If a scaffold file gains or loses an enhancer-managed section marker, update the manifest renderer and validator expectations in the same patch.
 - If pack management changes, keep CLI flags, GUI mode labels, manifest rendering, managed-section behavior, README guidance, and tests aligned in the same patch.
 - If pack evidence or package-manager detection changes, keep stack-pack reasons, generated manifests, command discovery, README guidance, and tests aligned in the same patch.
+- If the Spec Kit bridge changes, keep [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), target scaffold docs, bridge skills, managed-section markers, manifest state, and validator expectations aligned in the same patch.
 - Keep overlapping stack packs composable but conservative. For example, `library-package` may compose with `javascript-typescript-app`, but it should not be inferred for ordinary frontend or API applications without reusable-package metadata.
 
 ## When To Add More Structure

@@ -15,11 +15,13 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [docs/ai/code-review.md](docs/ai/code-review.md): review and PR-prep checklist for docs, skills, scripts, and future workflow assets.
 - [docs/ai/migration-v3.md](docs/ai/migration-v3.md): upgrade and review notes for the v3 managed-section lifecycle.
 - [docs/ai/roadmap.md](docs/ai/roadmap.md): phased roadmap for stack packs, installer UX, and planned enhancer evolution.
+- [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md): ownership rules and phased plan for optional GitHub Spec Kit integration.
 - [.codex/skills/](.codex/skills/): repo-local skills for repeated procedures. Read [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md) before editing or adding skills.
 - [install_enhancer.bat](install_enhancer.bat): Windows launcher that opens the GUI installer.
 - [scripts/install_enhancer.py](scripts/install_enhancer.py): bootstrap installer, pack manager, and refresh/reconcile planner for target repos.
 - [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py): GUI wrapper for previewing, confirming, and applying installs, pack changes, upgrades, and refreshes.
 - [scripts/stack_packs.py](scripts/stack_packs.py): loader, detection layer, and manifest renderer for optional stack packs.
+- [scripts/spec_kit_bridge.py](scripts/spec_kit_bridge.py): detection, bridge-mode resolution, and rendering helpers for optional official Spec Kit integration surfaces.
 - [scripts/enhancer_spec.py](scripts/enhancer_spec.py): shared install and validation spec.
 - [scripts/enhancer_validator.py](scripts/enhancer_validator.py): reusable validation engine.
 - [scripts/check.py](scripts/check.py): deterministic validation for the enhancer source repo.
@@ -53,6 +55,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - Add scripts only when they provide deterministic validation or remove repeated manual steps.
 - Keep the shared spec, source validator, installer, scaffold, and tests aligned in the same patch.
 - Keep local commands and CI in sync. If one changes, update the other in the same patch.
+- Treat official Spec Kit files as separately owned. The enhancer may detect, document, and bridge `.specify/`, `specs/`, `.github/prompts/`, or `.github/agents/`, but it should not rewrite them.
 - Add evals or regression fixtures only after the repo has stable code paths or recurring bug classes.
 - Add MCP only when the repo needs a real external system that cannot be handled by normal local tools.
 - Do not add wrappers around nonexistent build, lint, or test commands.
@@ -82,3 +85,4 @@ Do not use subagents for small doc edits, single-skill changes, or work blocked 
 - V3 migration notes: [docs/ai/migration-v3.md](docs/ai/migration-v3.md)
 - Review checklist: [docs/ai/code-review.md](docs/ai/code-review.md)
 - Design roadmap: [docs/ai/roadmap.md](docs/ai/roadmap.md)
+- Spec Kit bridge contract: [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md)

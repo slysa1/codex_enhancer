@@ -30,7 +30,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Run `python scripts/check.py` and `{TEST_COMMAND}`.
 
         See [docs/ai/architecture.md](docs/ai/architecture.md),
-        [docs/ai/code-review.md](docs/ai/code-review.md), [docs/ai/stack-guidance.md](docs/ai/stack-guidance.md),
+        [docs/ai/code-review.md](docs/ai/code-review.md), [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md),
+        [docs/ai/stack-guidance.md](docs/ai/stack-guidance.md),
         [.codex/enhancer/manifest.toml](.codex/enhancer/manifest.toml), [.codex/skills/](.codex/skills/),
         [tests/](tests/), and `adapt-enhancer`.
 
@@ -40,19 +41,34 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         - No stack packs are selected yet. Keep [docs/ai/stack-guidance.md](docs/ai/stack-guidance.md) and
           [.codex/enhancer/manifest.toml](.codex/enhancer/manifest.toml) aligned if pack selection changes later.
         <!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->
+
+        ## Spec Kit Bridge
+
+        <!-- codex-enhancer:managed-section AGENTS.md:spec-kit-bridge start -->
+        - Spec Kit bridge is off until this repo adopts official Spec Kit.
+        - If `.specify/` or `specs/` appear, review [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md).
+        <!-- codex-enhancer:managed-section AGENTS.md:spec-kit-bridge end -->
         """,
         "docs/ai/architecture.md": """
         # Architecture
 
-        Keep the workflow layer minimal and see [stack guidance](stack-guidance.md)
-        plus [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml).
+        Keep the workflow layer minimal and see [Spec Kit bridge](spec-kit-bridge.md),
+        [stack guidance](stack-guidance.md), plus
+        [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml).
         """,
         "docs/ai/code-review.md": f"""
         # Review
 
         Run `python scripts/check.py` and `{TEST_COMMAND}`.
-        Check [stack guidance](stack-guidance.md) and
+        Check [Spec Kit bridge](spec-kit-bridge.md), [stack guidance](stack-guidance.md), and
         [.codex/enhancer/manifest.toml](../../.codex/enhancer/manifest.toml).
+        """,
+        "docs/ai/spec-kit-bridge.md": """
+        # Spec Kit Bridge
+
+        Bridge mode: `off`.
+        Bridge state: `absent`.
+        Treat official Spec Kit files as separately owned.
         """,
         "docs/ai/stack-guidance.md": """
         # Stack Guidance
@@ -72,14 +88,24 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         [lifecycle]
         state = "active"
         pack_selection = "manifest"
-        managed_sections = ["AGENTS.md:selected-stack-packs"]
+        managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge"]
 
         [generated_files]
         stack_guidance = "docs/ai/stack-guidance.md"
+        spec_kit_bridge = "docs/ai/spec-kit-bridge.md"
 
         [managed_outputs]
-        safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+        safe_to_regenerate = ["docs/ai/stack-guidance.md", "docs/ai/spec-kit-bridge.md", ".codex/enhancer/manifest.toml"]
         adapt_manually = ["AGENTS.md", "docs/ai/architecture.md", "docs/ai/code-review.md"]
+
+        [integrations.spec_kit]
+        mode = "off"
+        state = "absent"
+        managed_by = "spec-kit"
+        available_commands = []
+        detection_evidence = []
+
+        [integrations.spec_kit.paths]
         """,
         ".codex/skills/plan-change/SKILL.md": """
         ---
@@ -243,14 +269,24 @@ class ValidateTests(unittest.TestCase):
                 [lifecycle]
                 state = "active"
                 pack_selection = "manifest"
-                managed_sections = ["AGENTS.md:selected-stack-packs"]
+                managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge"]
 
                 [generated_files]
                 stack_guidance = "docs/ai/stack-guidance.md"
+                spec_kit_bridge = "docs/ai/spec-kit-bridge.md"
 
                 [managed_outputs]
-                safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md", "docs/ai/spec-kit-bridge.md", ".codex/enhancer/manifest.toml"]
                 adapt_manually = ["AGENTS.md", "docs/ai/architecture.md", "docs/ai/code-review.md"]
+
+                [integrations.spec_kit]
+                mode = "off"
+                state = "absent"
+                managed_by = "spec-kit"
+                available_commands = []
+                detection_evidence = []
+
+                [integrations.spec_kit.paths]
                 """,
             )
 
@@ -278,14 +314,24 @@ class ValidateTests(unittest.TestCase):
                 [lifecycle]
                 state = "active"
                 pack_selection = "manifest"
-                managed_sections = ["AGENTS.md:selected-stack-packs"]
+                managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge"]
 
                 [generated_files]
                 stack_guidance = "docs/ai/stack-guidance.md"
+                spec_kit_bridge = "docs/ai/spec-kit-bridge.md"
 
                 [managed_outputs]
-                safe_to_regenerate = ["docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"]
+                safe_to_regenerate = ["docs/ai/stack-guidance.md", "docs/ai/spec-kit-bridge.md", ".codex/enhancer/manifest.toml"]
                 adapt_manually = ["AGENTS.md", "docs/ai/architecture.md", "docs/ai/code-review.md"]
+
+                [integrations.spec_kit]
+                mode = "off"
+                state = "absent"
+                managed_by = "spec-kit"
+                available_commands = []
+                detection_evidence = []
+
+                [integrations.spec_kit.paths]
                 """,
             )
             write_file(
@@ -326,14 +372,24 @@ class ValidateTests(unittest.TestCase):
                 [lifecycle]
                 state = "active"
                 pack_selection = "manifest"
-                managed_sections = ["AGENTS.md:selected-stack-packs"]
+                managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge"]
 
                 [generated_files]
                 stack_guidance = "docs/ai/stack-guidance.md"
+                spec_kit_bridge = "docs/ai/spec-kit-bridge.md"
 
                 [managed_outputs]
                 safe_to_regenerate = ["docs/ai/stack-guidance.md"]
                 adapt_manually = ["AGENTS.md"]
+
+                [integrations.spec_kit]
+                mode = "off"
+                state = "absent"
+                managed_by = "spec-kit"
+                available_commands = []
+                detection_evidence = []
+
+                [integrations.spec_kit.paths]
                 """,
             )
 

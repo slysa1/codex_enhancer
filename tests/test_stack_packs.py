@@ -24,6 +24,10 @@ from scripts.stack_packs import (
 
 
 TEMP_ROOT = Path(__file__).resolve().parent / "_tmp"
+MANAGED_SECTION_LIST = (
+    'managed_sections = ["AGENTS.md:selected-stack-packs", '
+    '"AGENTS.md:spec-kit-bridge"]'
+)
 
 
 def write_file(root: Path, relative_path: str, content: str) -> None:
@@ -399,7 +403,7 @@ class StackPackTests(unittest.TestCase):
             self.assertIn("[lifecycle]", manifest)
             self.assertIn('state = "active"', manifest)
             self.assertIn('pack_selection = "manifest"', manifest)
-            self.assertIn('managed_sections = ["AGENTS.md:selected-stack-packs"]', manifest)
+            self.assertIn(MANAGED_SECTION_LIST, manifest)
             self.assertIn('name = "javascript-typescript-app"', manifest)
             self.assertIn("selected = true", manifest)
             self.assertIn('evidence = ["found package.json", "matched tsconfig.json"]', manifest)

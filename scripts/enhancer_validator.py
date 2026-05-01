@@ -12,6 +12,7 @@ from scripts.enhancer_spec import (
     MANAGED_SECTIONS,
     ValidationProfile,
 )
+from scripts.spec_kit_bridge import SPEC_KIT_BRIDGE_SKILLS
 
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
@@ -519,11 +520,24 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
             )
 
     generated_files = manifest.get("generated_files", {})
-    if not isinstance(generated_files, dict) or generated_files.get("stack_guidance") != "docs/ai/stack-guidance.md":
+    if not isinstance(generated_files, dict):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define a [generated_files] table",
+            "Keep generated file paths visible so refresh and review workflows stay explicit.",
+        )
+        generated_files = {}
+    if generated_files.get("stack_guidance") != "docs/ai/stack-guidance.md":
         add_error(
             errors,
             ".codex/enhancer/manifest.toml must record docs/ai/stack-guidance.md under [generated_files]",
             "Keep the generated_files.stack_guidance entry aligned with the installed stack guidance file.",
+        )
+    if generated_files.get("spec_kit_bridge") != "docs/ai/spec-kit-bridge.md":
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must record docs/ai/spec-kit-bridge.md under [generated_files]",
+            "Keep the generated_files.spec_kit_bridge entry aligned with the installed Spec Kit bridge guide.",
         )
 
     managed_outputs = manifest.get("managed_outputs", {})
@@ -543,11 +557,15 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
             "Keep managed_outputs.safe_to_regenerate as a TOML string array.",
         )
     else:
-        expected_safe_outputs = {"docs/ai/stack-guidance.md", ".codex/enhancer/manifest.toml"}
+        expected_safe_outputs = {
+            "docs/ai/stack-guidance.md",
+            "docs/ai/spec-kit-bridge.md",
+            ".codex/enhancer/manifest.toml",
+        }
         if not expected_safe_outputs.issubset(set(safe_to_regenerate)):
             add_error(
                 errors,
-                ".codex/enhancer/manifest.toml must record docs/ai/stack-guidance.md and .codex/enhancer/manifest.toml under managed_outputs.safe_to_regenerate",
+                ".codex/enhancer/manifest.toml must record docs/ai/stack-guidance.md, docs/ai/spec-kit-bridge.md, and .codex/enhancer/manifest.toml under managed_outputs.safe_to_regenerate",
                 "Keep the safe-to-regenerate ownership list aligned with the generated enhancer outputs.",
             )
 
@@ -602,6 +620,8 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
             "Refresh the managed AGENTS section so it matches the empty selected_packs list.",
         )
 
+    check_spec_kit_bridge_outputs(root, manifest, errors)
+
     if verbose:
         print("OK stack pack outputs: .codex/enhancer/manifest.toml and docs/ai/stack-guidance.md")
 
@@ -639,9 +659,9 @@ def check_managed_section_markers(root: Path, managed_section_ids: set[str], err
             )
 
 
-def selected_stack_pack_section_body(root: Path) -> str | None:
+def managed_section_body(root: Path, identifier: str) -> str | None:
     for section in MANAGED_SECTIONS:
-        if section.identifier != "AGENTS.md:selected-stack-packs":
+        if section.identifier != identifier:
             continue
         full_path = root / section.path
         if not full_path.exists():
@@ -655,6 +675,112 @@ def selected_stack_pack_section_body(root: Path) -> str | None:
             return None
         return text[start_index + len(section.start_marker) : end_index]
     return None
+
+
+def selected_stack_pack_section_body(root: Path) -> str | None:
+    return managed_section_body(root, "AGENTS.md:selected-stack-packs")
+
+
+def check_spec_kit_bridge_outputs(root: Path, manifest: dict[str, object], errors: list[str]) -> None:
+    integrations = manifest.get("integrations", {})
+    if not isinstance(integrations, dict):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define [integrations] as a table",
+            "Keep external workflow integrations visible in the target manifest.",
+        )
+        return
+
+    raw_spec_kit = integrations.get("spec_kit")
+    if not isinstance(raw_spec_kit, dict):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define [integrations.spec_kit] as a table",
+            "Record the resolved Spec Kit bridge state explicitly, even when the bridge is off.",
+        )
+        return
+
+    mode = raw_spec_kit.get("mode")
+    state = raw_spec_kit.get("state")
+    if not isinstance(mode, str) or not mode.strip():
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.spec_kit.mode must be a non-empty string",
+            "Keep the resolved bridge mode visible in the manifest.",
+        )
+    if not isinstance(state, str) or not state.strip():
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.spec_kit.state must be a non-empty string",
+            "Keep the resolved bridge state visible in the manifest.",
+        )
+
+    available_commands = raw_spec_kit.get("available_commands", [])
+    if not isinstance(available_commands, list) or any(not isinstance(item, str) for item in available_commands):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.spec_kit.available_commands must be a list of strings",
+            "Use a simple TOML string array for bridge command names.",
+        )
+
+    evidence = raw_spec_kit.get("detection_evidence", [])
+    if not isinstance(evidence, list) or any(not isinstance(item, str) for item in evidence):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.spec_kit.detection_evidence must be a list of strings",
+            "Record bridge evidence as simple strings so reviewers can trace the decision.",
+        )
+
+    paths = raw_spec_kit.get("paths", {})
+    if not isinstance(paths, dict):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.spec_kit.paths must be a table",
+            "Keep bridge path ownership visible in the manifest.",
+        )
+
+    bridge_body = managed_section_body(root, "AGENTS.md:spec-kit-bridge")
+    if bridge_body is not None and "docs/ai/spec-kit-bridge.md" not in bridge_body:
+        add_error(
+            errors,
+            "AGENTS.md managed Spec Kit bridge section should link to docs/ai/spec-kit-bridge.md",
+            "Keep the root bridge summary anchored to the deeper bridge guide.",
+        )
+
+    if state not in {"attached", "bootstrapped"}:
+        return
+
+    for skill_name in SPEC_KIT_BRIDGE_SKILLS:
+        skill_path = root / ".codex" / "skills" / skill_name / "SKILL.md"
+        if not skill_path.exists():
+            add_error(
+                errors,
+                f"Missing Spec Kit bridge skill: .codex/skills/{skill_name}/SKILL.md",
+                "Install or restore the bridge skills whenever the manifest records an active Spec Kit bridge.",
+            )
+
+    bridge_doc = root / "docs/ai/spec-kit-bridge.md"
+    if bridge_doc.exists():
+        text = load_text(bridge_doc)
+        if "specs/" not in text:
+            add_error(
+                errors,
+                "docs/ai/spec-kit-bridge.md should explain how feature work uses specs/",
+                "Keep the bridge guide focused on real Spec Kit artifacts, not just generic references.",
+            )
+        for skill_name in SPEC_KIT_BRIDGE_SKILLS:
+            if skill_name not in text:
+                add_error(
+                    errors,
+                    f"docs/ai/spec-kit-bridge.md is missing bridge skill guidance for {skill_name!r}",
+                    "Document each installed bridge skill so users know when to invoke it.",
+                )
+    if bridge_body is not None and "Spec Kit bridge is" not in bridge_body:
+        add_error(
+            errors,
+            "AGENTS.md managed Spec Kit bridge section should summarize the active bridge state",
+            "Refresh the managed bridge section so the root repo map reflects the current bridge mode.",
+        )
 
 
 def validate(root: Path, profile: ValidationProfile, verbose: bool = False) -> list[str]:

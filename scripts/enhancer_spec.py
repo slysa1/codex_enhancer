@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ENHANCER_VERSION = "3.0"
-ENHANCER_MANIFEST_SCHEMA_VERSION = 2
-SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS = frozenset({1, ENHANCER_MANIFEST_SCHEMA_VERSION})
+ENHANCER_VERSION = "3.2"
+ENHANCER_MANIFEST_SCHEMA_VERSION = 3
+SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, ENHANCER_MANIFEST_SCHEMA_VERSION})
 
 CHECK_COMMAND = "python scripts/check.py"
 TEST_COMMAND = 'python -m unittest discover -s tests -p "test_*.py" -v'
@@ -37,6 +37,12 @@ MANAGED_SECTIONS = (
         path=Path("AGENTS.md"),
         start_marker="<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs start -->",
         end_marker="<!-- codex-enhancer:managed-section AGENTS.md:selected-stack-packs end -->",
+    ),
+    ManagedSection(
+        identifier="AGENTS.md:spec-kit-bridge",
+        path=Path("AGENTS.md"),
+        start_marker="<!-- codex-enhancer:managed-section AGENTS.md:spec-kit-bridge start -->",
+        end_marker="<!-- codex-enhancer:managed-section AGENTS.md:spec-kit-bridge end -->",
     ),
 )
 
@@ -68,6 +74,9 @@ class CopyAsset:
     destination: Path
 
 
+SPEC_KIT_BRIDGE_TEMPLATE_PATH = Path("scaffold/target-repo/docs/ai/spec-kit-bridge.md")
+
+
 SOURCE_VALIDATION_PROFILE = ValidationProfile(
     name="source",
     required_files=(
@@ -80,23 +89,30 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("docs/ai/code-review.md"),
         Path("docs/ai/migration-v3.md"),
         Path("docs/ai/roadmap.md"),
+        Path("docs/ai/spec-kit-bridge.md"),
         Path(".codex/skills/AGENTS.md"),
         Path(".codex/skills/plan-change/SKILL.md"),
         Path(".codex/skills/review-prep/SKILL.md"),
         Path(".codex/skills/adapt-enhancer/SKILL.md"),
         Path("scripts/check.py"),
         Path("scripts/enhancer_spec.py"),
+        Path("scripts/spec_kit_bridge.py"),
         Path("scripts/enhancer_validator.py"),
         Path("scripts/install_enhancer.py"),
         Path("scripts/install_enhancer_gui.py"),
         Path("scripts/stack_packs.py"),
         Path("tests/test_check.py"),
         Path("tests/test_install_enhancer.py"),
+        Path("tests/test_spec_kit_bridge.py"),
         Path("tests/test_stack_packs.py"),
         Path("scaffold/target-repo/AGENTS.md"),
         Path("scaffold/target-repo/docs/ai/architecture.md"),
         Path("scaffold/target-repo/docs/ai/code-review.md"),
+        Path("scaffold/target-repo/docs/ai/spec-kit-bridge.md"),
         Path("scaffold/target-repo/.codex/skills/adapt-enhancer/SKILL.md"),
+        Path("scaffold/target-repo/.codex/skills/spec-implement-bridge/SKILL.md"),
+        Path("scaffold/target-repo/.codex/skills/spec-sync-check/SKILL.md"),
+        Path("scaffold/target-repo/.codex/skills/spec-review-bridge/SKILL.md"),
         Path("scaffold/target-repo/scripts/check.py"),
         Path("scaffold/target-repo/tests/test_check.py"),
         Path("scaffold/target-repo/.github/workflows/validate.yml"),
@@ -148,6 +164,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "docs/ai/code-review.md",
             "docs/ai/migration-v3.md",
             "docs/ai/roadmap.md",
+            "docs/ai/spec-kit-bridge.md",
             ".codex/skills/",
             "tests/",
         ),
@@ -155,6 +172,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             CHECK_COMMAND,
             TEST_COMMAND,
             "docs/ai/migration-v3.md",
+            "docs/ai/spec-kit-bridge.md",
         ),
         Path("docs/ai/migration-v3.md"): (
             "--inspect-install",
@@ -176,6 +194,7 @@ TARGET_VALIDATION_PROFILE = ValidationProfile(
         Path("AGENTS.md"),
         Path("docs/ai/architecture.md"),
         Path("docs/ai/code-review.md"),
+        Path("docs/ai/spec-kit-bridge.md"),
         Path("docs/ai/stack-guidance.md"),
         Path(".codex/skills/AGENTS.md"),
         Path(".codex/skills/plan-change/SKILL.md"),
@@ -199,6 +218,7 @@ TARGET_VALIDATION_PROFILE = ValidationProfile(
             TEST_COMMAND,
             "docs/ai/architecture.md",
             "docs/ai/code-review.md",
+            "docs/ai/spec-kit-bridge.md",
             "docs/ai/stack-guidance.md",
             ".codex/enhancer/manifest.toml",
             ".codex/skills/",
@@ -206,12 +226,14 @@ TARGET_VALIDATION_PROFILE = ValidationProfile(
             "adapt-enhancer",
         ),
         Path("docs/ai/architecture.md"): (
+            "spec-kit-bridge.md",
             "stack-guidance.md",
             ".codex/enhancer/manifest.toml",
         ),
         Path("docs/ai/code-review.md"): (
             CHECK_COMMAND,
             TEST_COMMAND,
+            "spec-kit-bridge.md",
             "stack-guidance.md",
             ".codex/enhancer/manifest.toml",
         ),
@@ -251,6 +273,22 @@ INSTALL_TEMPLATE_ASSETS = (
     TemplateAsset(
         template_path=Path("scaffold/target-repo/.codex/skills/adapt-enhancer/SKILL.md"),
         destination=Path(".codex/skills/adapt-enhancer/SKILL.md"),
+    ),
+)
+
+
+OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS = (
+    TemplateAsset(
+        template_path=Path("scaffold/target-repo/.codex/skills/spec-implement-bridge/SKILL.md"),
+        destination=Path(".codex/skills/spec-implement-bridge/SKILL.md"),
+    ),
+    TemplateAsset(
+        template_path=Path("scaffold/target-repo/.codex/skills/spec-sync-check/SKILL.md"),
+        destination=Path(".codex/skills/spec-sync-check/SKILL.md"),
+    ),
+    TemplateAsset(
+        template_path=Path("scaffold/target-repo/.codex/skills/spec-review-bridge/SKILL.md"),
+        destination=Path(".codex/skills/spec-review-bridge/SKILL.md"),
     ),
 )
 

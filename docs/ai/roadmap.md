@@ -141,14 +141,14 @@ The installed target repo should record the chosen packs in a visible manifest.
 
 ### Proposed `.codex/enhancer/manifest.toml`
 ```toml
-schema_version = 2
-enhancer_version = "3.0"
+schema_version = 3
+enhancer_version = "3.1"
 selected_packs = ["monorepo-workspace", "javascript-typescript-app"]
 
 [lifecycle]
 state = "active"
 pack_selection = "manifest"
-managed_sections = ["AGENTS.md:selected-stack-packs"]
+managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge"]
 
 [[detected_packs]]
 name = "monorepo-workspace"
@@ -866,3 +866,140 @@ Implemented baseline:
 - pack recommendations are backed by explicit, reviewable evidence instead of vague heuristics
 - `library-package` is available only if the stronger detector can justify it
 - install, inspect, manage-packs, refresh, and upgrade all stay aligned across CLI, GUI, docs, and validation
+
+## Proposed 3.1 Spec Kit Bridge
+
+Status: implemented in enhancer `3.2` across the installer core, GUI, manifest state, generated bridge guide, and narrow bridge skills. Keep this section as design history plus follow-up context.
+
+### Goal
+Make Codex Enhancer coexist cleanly with official GitHub Spec Kit so repos that already use Spec Kit can keep one spec-driven workflow without giving up the enhancer's repo-local guidance, validation, and review discipline.
+
+### Scope
+- treat Spec Kit as an optional workflow integration, not a stack pack
+- detect and document real official Spec Kit footprints such as `.specify/`, `specs/`, `.github/prompts/`, and `.github/agents/`
+- record bridge state in the enhancer manifest without taking ownership of Spec Kit files
+- let the installer attach to or bootstrap official Spec Kit deliberately
+- add narrow bridge skills that consume Spec Kit artifacts for implementation, sync checks, and review prep
+
+### Non-Goals
+- no vendored copy of Spec Kit inside this repo
+- no reimplementation of `specify`, Spec Kit templates, or Spec Kit command routing
+- no hidden migration state for Spec Kit installs
+- no automatic rewriting of `.specify/`, `specs/`, or official prompt or agent files
+
+### 3.1 Step 1: Contract, Scaffold, And Roadmap Groundwork
+Objective:
+- define the bridge as a first-class optional integration in the shared schema, target scaffold, and durable docs before any installer behavior depends on it
+
+Files to change:
+- `scripts/enhancer_spec.py`
+- `AGENTS.md`
+- `docs/ai/architecture.md`
+- `docs/ai/code-review.md`
+- `docs/ai/roadmap.md`
+- `docs/ai/spec-kit-bridge.md`
+- `scaffold/target-repo/AGENTS.md`
+- `scaffold/target-repo/docs/ai/architecture.md`
+- `scaffold/target-repo/docs/ai/code-review.md`
+- `scaffold/target-repo/docs/ai/spec-kit-bridge.md`
+- validator fixtures and installer tests
+
+Files deliberately not added:
+- no bootstrap command execution yet
+- no bridge-specific skills yet
+- no Spec Kit file mutation logic
+
+Validation:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- locking the contract too early and making later bridge phases awkward; keep the first patch limited to ownership, manifest, and visible scaffold markers
+
+### 3.1 Step 2: Detection And Inspect Support
+Objective:
+- detect official Spec Kit footprints and surface bridge state through inspect and manifest helpers without changing target repos yet
+
+Files to change:
+- `scripts/spec_kit_bridge.py`
+- `scripts/stack_packs.py`
+- `scripts/install_enhancer.py`
+- tests
+
+Files deliberately not added:
+- no installer apply mode for bootstrap yet
+
+Validation:
+- unit tests for detection and command-surface resolution
+- inspect output tests for bridge-off, attached, and ambiguous repos
+
+Main risk:
+- over-assuming one official Spec Kit layout when the integration surface differs by environment
+
+### 3.1 Step 3: Attach And Bootstrap Installer Flow
+Objective:
+- let the installer explicitly ignore, attach to, or bootstrap official Spec Kit while preserving clear ownership boundaries
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `scripts/install_enhancer_gui.py`
+- `README.md`
+- tests
+
+Files deliberately not added:
+- no vendored Spec Kit templates
+- no silent network bootstrap
+
+Validation:
+- dry-run and apply tests for `off`, `attach`, and `bootstrap` bridge modes
+- GUI preview tests for bridge messaging
+
+Main risk:
+- user confusion about what the enhancer will overwrite; the preview must separate enhancer-owned writes from untouched official Spec Kit state
+
+### 3.1 Step 4: Artifact-Aware Bridge Skills
+Objective:
+- add a very small bridge skill set that uses existing Spec Kit artifacts to improve implementation, sync checks, and review prep
+
+Files to change:
+- `scaffold/target-repo/.codex/skills/`
+- target docs
+- installer scaffolding
+- tests
+
+Files deliberately not added:
+- no broad "do Spec Kit workflow" meta-skill
+
+Validation:
+- skill frontmatter tests
+- target validation fixture updates
+- install tests that confirm bridge-enabled targets receive the right skills
+
+Main risk:
+- creating generic skills that duplicate official Spec Kit commands instead of complementing them
+
+### 3.1 Step 5: Review, Drift, And Release Follow-Through
+Objective:
+- make review guidance, optional drift checks, and release docs reflect the bridge so the workflow stays usable after the first install
+
+Files to change:
+- `docs/ai/code-review.md`
+- `README.md`
+- optional validator or helper scripts if justified
+- tests
+
+Files deliberately not added:
+- no always-on CI job for Spec Kit repos until the drift checks prove stable
+
+Validation:
+- full local check suite
+- any added drift checks against stable fixtures
+
+Main risk:
+- shipping documentation that promises more than the bridge can currently automate
+
+### 3.1 Success Bar
+- a repo can keep using official Spec Kit without the enhancer fighting its files or command surface
+- the enhancer manifest and `AGENTS.md` make bridge state visible to humans and Codex
+- installer previews explain exactly what the enhancer owns and what remains official Spec Kit state
+- bridge skills improve implementation and review only when Spec Kit artifacts already exist

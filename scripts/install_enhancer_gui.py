@@ -41,6 +41,7 @@ from scripts.install_enhancer import (
     format_pack_decision_hint,
     overwrite_paths,
 )
+from scripts.spec_kit_bridge import render_spec_kit_detection_lines
 from scripts.stack_packs import PackSelection, selected_pack_names
 
 
@@ -56,6 +57,22 @@ MODE_CHOICES = (
     ("Auto (recommended)", "auto"),
     ("New repo", "new"),
     ("Existing repo", "existing"),
+)
+SPEC_KIT_MODE_CHOICES = (
+    ("Auto detect (recommended)", "auto"),
+    ("Bridge off", "off"),
+    ("Attach existing official install", "attach"),
+    ("Bootstrap official Spec Kit", "bootstrap"),
+)
+SPEC_KIT_SCRIPT_CHOICES = (
+    ("Auto", "auto"),
+    ("PowerShell", "ps"),
+    ("Shell", "sh"),
+)
+SPEC_KIT_COMMAND_SURFACE_CHOICES = (
+    ("Auto", "auto"),
+    ("$speckit-<command>", "dollar"),
+    ("/prompts:speckit.<command>", "slash"),
 )
 
 INSTALL_PACK_INTRO = (
@@ -74,6 +91,11 @@ MANAGE_PACK_INTRO = (
 UPGRADE_PACK_INTRO = (
     "Upgrade keeps the selected packs from the target repo's existing enhancer manifest. "
     "It reconciles tracked enhancer files against the current source and writes repo-owned drift as proposals."
+)
+SPEC_KIT_INTRO = (
+    "The Spec Kit bridge is optional. Use attach when the repo already has an official Spec Kit install, "
+    "bootstrap when you want the installer to run the official Codex setup first, and off when you want the enhancer "
+    "to ignore Spec Kit entirely."
 )
 WINDOW_MIN_WIDTH = 760
 WINDOW_MIN_HEIGHT = 620
@@ -130,7 +152,7 @@ def requires_confirmation(plan: InstallPlan) -> bool:
 
 
 def progress_total(plan: InstallPlan) -> int:
-    return len(plan.writes) + (1 if plan.gitignore is not None else 0)
+    return len(plan.external_steps) + len(plan.writes) + (1 if plan.gitignore is not None else 0)
 
 
 def build_plan_preview(plan: InstallPlan) -> str:
@@ -175,6 +197,9 @@ def build_plan_preview(plan: InstallPlan) -> str:
         lines.extend(("", *ownership_lines))
 
     lines.extend(["", "Stack packs:", *format_pack_entries(plan.pack_selections)])
+    bridge_entries = format_spec_kit_entries(plan)
+    if bridge_entries:
+        lines.extend(["", "Spec Kit bridge:", *bridge_entries])
 
     if plan.operation == "upgrade-enhancer":
         lines.extend(["", *format_upgrade_sections(plan)])
@@ -229,6 +254,28 @@ def format_pack_entries(selections: tuple[PackSelection, ...]) -> list[str]:
         entries.append("- Manifest selected packs: " + ", ".join(f"`{name}`" for name in selected_names))
     else:
         entries.append("- Manifest selected packs: none")
+    return entries
+
+
+def format_spec_kit_entries(plan: InstallPlan) -> list[str]:
+    entries: list[str] = []
+    if plan.spec_kit_bridge is not None:
+        entries.append(
+            f"- Bridge mode: {plan.spec_kit_bridge.mode} ({plan.spec_kit_bridge.state})"
+        )
+        if plan.spec_kit_bridge.command_label:
+            entries.append(f"- Preferred command surface: {plan.spec_kit_bridge.command_label}")
+        if plan.spec_kit_bridge.available_commands:
+            commands = ", ".join(f"`{command}`" for command in plan.spec_kit_bridge.available_commands)
+            entries.append(f"- Bridge-aware commands: {commands}")
+        if plan.external_steps:
+            for step in plan.external_steps:
+                entries.append("- Bootstrap command: " + " ".join(step.argv))
+    detection = plan.spec_kit_detection
+    if detection is not None and detection.detected:
+        entries.extend(render_spec_kit_detection_lines(detection))
+    elif not entries:
+        return []
     return entries
 
 
@@ -325,6 +372,10 @@ class InstallerApp:
         self.operation_var = tk.StringVar(value="install")
         self.force_var = tk.BooleanVar(value=False)
         self.confirm_overwrite_var = tk.BooleanVar(value=False)
+        self.spec_kit_mode_var = tk.StringVar(value=SPEC_KIT_MODE_CHOICES[0][0])
+        self.spec_kit_script_var = tk.StringVar(value=SPEC_KIT_SCRIPT_CHOICES[0][0])
+        self.spec_kit_command_surface_var = tk.StringVar(value=SPEC_KIT_COMMAND_SURFACE_CHOICES[0][0])
+        self.spec_kit_version_var = tk.StringVar()
         self.status_var = tk.StringVar(
             value="Choose a repository folder, pick install, upgrade, or refresh, review the plan, then run it."
         )
@@ -355,7 +406,7 @@ class InstallerApp:
         frame = ttk.Frame(self.root, padding=16)
         frame.grid(sticky="nsew")
         frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(5, weight=1)
+        frame.rowconfigure(6, weight=1)
 
         style = ttk.Style(self.root)
         style.configure("InstallerTitle.TLabel", font=("Segoe UI", 16, "bold"))
@@ -409,8 +460,60 @@ class InstallerApp:
         )
         self.force_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
+        spec_kit_frame = ttk.LabelFrame(frame, text="Spec Kit bridge", padding=12)
+        spec_kit_frame.grid(row=3, column=0, sticky="ew", pady=(14, 0))
+        spec_kit_frame.columnconfigure(1, weight=1)
+        self.spec_kit_frame = spec_kit_frame
+
+        self.spec_kit_intro = ttk.Label(
+            spec_kit_frame,
+            text=SPEC_KIT_INTRO,
+            wraplength=700,
+        )
+        self.spec_kit_intro.grid(row=0, column=0, columnspan=4, sticky="w")
+
+        ttk.Label(spec_kit_frame, text="Mode").grid(row=1, column=0, sticky="w", pady=(10, 0), padx=(0, 8))
+        self.spec_kit_mode_combo = ttk.Combobox(
+            spec_kit_frame,
+            state="readonly",
+            textvariable=self.spec_kit_mode_var,
+            values=[label for label, _value in SPEC_KIT_MODE_CHOICES],
+        )
+        self.spec_kit_mode_combo.current(0)
+        self.spec_kit_mode_combo.grid(row=1, column=1, sticky="w", pady=(10, 0))
+
+        ttk.Label(spec_kit_frame, text="Script").grid(row=1, column=2, sticky="w", pady=(10, 0), padx=(16, 8))
+        self.spec_kit_script_combo = ttk.Combobox(
+            spec_kit_frame,
+            state="readonly",
+            textvariable=self.spec_kit_script_var,
+            values=[label for label, _value in SPEC_KIT_SCRIPT_CHOICES],
+            width=14,
+        )
+        self.spec_kit_script_combo.current(0)
+        self.spec_kit_script_combo.grid(row=1, column=3, sticky="w", pady=(10, 0))
+
+        ttk.Label(spec_kit_frame, text="Command surface").grid(row=2, column=0, sticky="w", pady=(10, 0), padx=(0, 8))
+        self.spec_kit_command_surface_combo = ttk.Combobox(
+            spec_kit_frame,
+            state="readonly",
+            textvariable=self.spec_kit_command_surface_var,
+            values=[label for label, _value in SPEC_KIT_COMMAND_SURFACE_CHOICES],
+            width=28,
+        )
+        self.spec_kit_command_surface_combo.current(0)
+        self.spec_kit_command_surface_combo.grid(row=2, column=1, sticky="w", pady=(10, 0))
+
+        ttk.Label(spec_kit_frame, text="Version").grid(row=2, column=2, sticky="w", pady=(10, 0), padx=(16, 8))
+        self.spec_kit_version_entry = ttk.Entry(
+            spec_kit_frame,
+            textvariable=self.spec_kit_version_var,
+            width=18,
+        )
+        self.spec_kit_version_entry.grid(row=2, column=3, sticky="w", pady=(10, 0))
+
         pack_frame = ttk.LabelFrame(frame, text="Stack packs", padding=12)
-        pack_frame.grid(row=3, column=0, sticky="ew", pady=(14, 0))
+        pack_frame.grid(row=4, column=0, sticky="ew", pady=(14, 0))
         pack_frame.columnconfigure(0, weight=1)
         self.pack_frame = pack_frame
         self.pack_intro = ttk.Label(
@@ -455,7 +558,7 @@ class InstallerApp:
         self._show_pack_placeholder("No pack scan yet. Click 'Review install plan' to detect stack packs.")
 
         action_frame = ttk.Frame(frame)
-        action_frame.grid(row=4, column=0, sticky="ew", pady=(14, 12))
+        action_frame.grid(row=5, column=0, sticky="ew", pady=(14, 12))
         action_frame.columnconfigure(0, weight=1)
 
         self.review_button = ttk.Button(action_frame, text="Review install plan", command=self._review_plan)
@@ -472,7 +575,7 @@ class InstallerApp:
         self.confirm_check.grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
         preview_frame = ttk.LabelFrame(frame, text="Plan preview", padding=12)
-        preview_frame.grid(row=5, column=0, sticky="nsew")
+        preview_frame.grid(row=6, column=0, sticky="nsew")
         preview_frame.columnconfigure(0, weight=1)
         preview_frame.rowconfigure(0, weight=1)
 
@@ -485,7 +588,7 @@ class InstallerApp:
         self.preview.configure(state="disabled")
 
         status_frame = ttk.Frame(frame)
-        status_frame.grid(row=6, column=0, sticky="ew", pady=(12, 0))
+        status_frame.grid(row=7, column=0, sticky="ew", pady=(12, 0))
         status_frame.columnconfigure(0, weight=1)
 
         self.status_label = ttk.Label(status_frame, textvariable=self.status_var, wraplength=700)
@@ -532,9 +635,16 @@ class InstallerApp:
         self.target_var.trace_add("write", self._on_inputs_changed)
         self.operation_var.trace_add("write", self._on_inputs_changed)
         self.force_var.trace_add("write", self._on_inputs_changed)
+        self.spec_kit_mode_var.trace_add("write", self._on_inputs_changed)
+        self.spec_kit_script_var.trace_add("write", self._on_inputs_changed)
+        self.spec_kit_command_surface_var.trace_add("write", self._on_inputs_changed)
+        self.spec_kit_version_var.trace_add("write", self._on_inputs_changed)
         self.confirm_overwrite_var.trace_add("write", self._on_confirm_changed)
         self.operation_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
         self.mode_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
+        self.spec_kit_mode_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
+        self.spec_kit_script_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
+        self.spec_kit_command_surface_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
 
     def _operation_value(self) -> str:
         label = self.operation_combo.get()
@@ -546,6 +656,27 @@ class InstallerApp:
     def _mode_value(self) -> str:
         label = self.mode_combo.get()
         for candidate_label, candidate_value in MODE_CHOICES:
+            if candidate_label == label:
+                return candidate_value
+        return "auto"
+
+    def _spec_kit_mode_value(self) -> str:
+        label = self.spec_kit_mode_combo.get()
+        for candidate_label, candidate_value in SPEC_KIT_MODE_CHOICES:
+            if candidate_label == label:
+                return candidate_value
+        return "auto"
+
+    def _spec_kit_script_value(self) -> str:
+        label = self.spec_kit_script_combo.get()
+        for candidate_label, candidate_value in SPEC_KIT_SCRIPT_CHOICES:
+            if candidate_label == label:
+                return candidate_value
+        return "auto"
+
+    def _spec_kit_command_surface_value(self) -> str:
+        label = self.spec_kit_command_surface_combo.get()
+        for candidate_label, candidate_value in SPEC_KIT_COMMAND_SURFACE_CHOICES:
             if candidate_label == label:
                 return candidate_value
         return "auto"
@@ -563,11 +694,19 @@ class InstallerApp:
         is_refresh = self._is_refresh_operation()
         is_manage = self._is_manage_operation()
         is_upgrade = self._is_upgrade_operation()
+
+        def set_spec_kit_state(state: str) -> None:
+            self.spec_kit_mode_combo.configure(state=state)
+            self.spec_kit_script_combo.configure(state=state)
+            self.spec_kit_command_surface_combo.configure(state=state)
+            self.spec_kit_version_entry.configure(state="normal" if state != "disabled" else "disabled")
+
         if is_refresh:
             self.force_var.set(False)
             self.force_check.configure(state="disabled")
             self.mode_combo.set("Existing repo")
             self.mode_combo.configure(state="disabled")
+            set_spec_kit_state("disabled")
             self.pack_intro.configure(text=REFRESH_PACK_INTRO)
             self.review_button.configure(text="Review refresh plan")
             self.install_button.configure(text="Refresh generated outputs")
@@ -578,6 +717,7 @@ class InstallerApp:
             self.force_check.configure(state="disabled")
             self.mode_combo.set("Existing repo")
             self.mode_combo.configure(state="disabled")
+            set_spec_kit_state("disabled")
             self.pack_intro.configure(text=MANAGE_PACK_INTRO)
             self.review_button.configure(text="Review pack changes")
             self.install_button.configure(text="Apply pack changes")
@@ -588,6 +728,7 @@ class InstallerApp:
             self.force_check.configure(state="disabled")
             self.mode_combo.set("Existing repo")
             self.mode_combo.configure(state="disabled")
+            set_spec_kit_state("readonly")
             self.pack_intro.configure(text=UPGRADE_PACK_INTRO)
             self.review_button.configure(text="Review upgrade plan")
             self.install_button.configure(text="Apply upgrade reconcile")
@@ -595,6 +736,7 @@ class InstallerApp:
 
         self.mode_combo.configure(state="readonly")
         self.force_check.configure(state="normal")
+        set_spec_kit_state("readonly")
         self.pack_intro.configure(text=INSTALL_PACK_INTRO)
         self.review_button.configure(text="Review install plan")
         self.install_button.configure(text="Install enhancer")
@@ -719,11 +861,18 @@ class InstallerApp:
         set_packs: tuple[str, ...] | None = None,
     ) -> InstallPlan:
         raw_target = self.target_var.get().strip()
+        spec_kit_version = self.spec_kit_version_var.get().strip() or None
         is_refresh = self._is_refresh_operation()
         is_manage = self._is_manage_operation()
         is_upgrade = self._is_upgrade_operation()
         if is_upgrade:
-            return build_upgrade_plan(Path(raw_target))
+            return build_upgrade_plan(
+                Path(raw_target),
+                spec_kit_mode=self._spec_kit_mode_value(),
+                spec_kit_script=self._spec_kit_script_value(),
+                spec_kit_command_surface=self._spec_kit_command_surface_value(),
+                spec_kit_version=spec_kit_version,
+            )
         if is_manage:
             return build_pack_management_plan(
                 Path(raw_target),
@@ -737,6 +886,10 @@ class InstallerApp:
             refresh_generated=is_refresh,
             use_recommended_packs=use_recommended_packs if not is_refresh else False,
             include_packs=include_packs if not is_refresh else (),
+            spec_kit_mode=self._spec_kit_mode_value() if not is_refresh else None,
+            spec_kit_script=self._spec_kit_script_value(),
+            spec_kit_command_surface=self._spec_kit_command_surface_value(),
+            spec_kit_version=spec_kit_version,
         )
 
     def _clear_pack_controls(self) -> None:
@@ -870,6 +1023,23 @@ class InstallerApp:
                     or self._is_upgrade_operation()
                 )
                 else "normal"
+            )
+        if busy:
+            self.spec_kit_mode_combo.configure(state="disabled")
+            self.spec_kit_script_combo.configure(state="disabled")
+            self.spec_kit_command_surface_combo.configure(state="disabled")
+            self.spec_kit_version_entry.configure(state="disabled")
+        else:
+            spec_state = (
+                "disabled"
+                if self._is_refresh_operation() or self._is_manage_operation()
+                else "readonly"
+            )
+            self.spec_kit_mode_combo.configure(state=spec_state)
+            self.spec_kit_script_combo.configure(state=spec_state)
+            self.spec_kit_command_surface_combo.configure(state=spec_state)
+            self.spec_kit_version_entry.configure(
+                state="disabled" if spec_state == "disabled" else "normal"
             )
         for child in self.pack_container.winfo_children():
             try:

@@ -13,6 +13,7 @@ This repository currently ships the enhancer itself. There is no application pac
 - A Windows launcher in [install_enhancer.bat](install_enhancer.bat)
 - A bootstrap installer in [scripts/install_enhancer.py](scripts/install_enhancer.py)
 - A GUI installer in [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py)
+- A Spec Kit bridge resolver in [scripts/spec_kit_bridge.py](scripts/spec_kit_bridge.py)
 - A stack-pack registry in [scaffold/stack-packs/](scaffold/stack-packs/)
 - A stack-pack loader in [scripts/stack_packs.py](scripts/stack_packs.py)
 - A shared install/validation spec in [scripts/enhancer_spec.py](scripts/enhancer_spec.py)
@@ -66,9 +67,11 @@ The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gu
 - type a target repo path manually
 - browse for a target folder
 - choose between a full scaffold install, an upgrade/reconcile pass, and a managed-output refresh
+- choose whether the Spec Kit bridge should stay off, attach to an existing official install, or bootstrap official Spec Kit for Codex
 - review detected stack packs and adjust the selected set before install
 - manage stack packs later without reinstalling the scaffold
 - review stack packs from the existing target manifest during upgrade and refresh
+- preview bridge mode, bridge command surface, and any official bootstrap command before apply
 - review which files will be created, proposed, or overwritten, with critical conflicts called out separately
 - confirm overwrite actions before install
 - watch installation progress
@@ -225,6 +228,51 @@ Pack interaction rules stay deliberately simple:
 - `frontend-ui` and `node-api-service` stay surface-specific and should only be selected together for repos that genuinely ship both UI and service code.
 - `library-package` should be selected for reusable package contract guidance, not for normal apps that merely happen to have `package.json`.
 
+### Spec Kit Bridge
+
+The Spec Kit bridge is optional and separate from stack packs. It never vendors Spec Kit or rewrites official Spec Kit-owned files.
+
+What the bridge does:
+- detects official Spec Kit footprints like `.specify/`, `specs/`, `.github/prompts/`, `.github/agents/`, or `.agents/skills/speckit-*`
+- records bridge state under `[integrations.spec_kit]` in `.codex/enhancer/manifest.toml`
+- renders a managed Spec Kit summary in the target `AGENTS.md`
+- regenerates `docs/ai/spec-kit-bridge.md` as a repo-local operating guide
+- optionally installs the narrow bridge skills `spec-implement-bridge`, `spec-sync-check`, and `spec-review-bridge`
+
+What the bridge does not do:
+- it does not vendor Spec Kit into this repo
+- it does not rewrite `.specify/`, `specs/`, or official Spec Kit prompts, agents, scripts, templates, or skills
+- it does not replace official Spec Kit commands like `specify`, `plan`, or `tasks`
+
+Bridge modes:
+- `--spec-kit-mode off`: ignore Spec Kit and keep only passive guidance
+- `--spec-kit-mode attach`: require an existing official Spec Kit install and add bridge guidance around it
+- `--spec-kit-mode bootstrap`: run the official Codex bootstrap command first, then write enhancer-owned bridge guidance
+- `--spec-kit-mode auto`: attach when official Spec Kit is already detected, otherwise stay off
+
+Common bridge commands:
+
+```bash
+python scripts/install_enhancer.py --target ../my-existing-repo --mode existing --spec-kit-mode attach
+python scripts/install_enhancer.py --target ../my-new-repo --mode new --spec-kit-mode bootstrap
+python scripts/install_enhancer.py --target ../my-existing-repo --upgrade-enhancer --spec-kit-mode attach
+```
+
+Bridge-specific flags:
+- `--spec-kit-script auto|ps|sh` controls the script flavor used for attach or bootstrap guidance
+- `--spec-kit-command-surface auto|dollar|slash` controls whether the bridge points users toward `$speckit-<command>` or `/prompts:speckit.<command>`
+- `--spec-kit-version <ref>` pins the official Spec Kit ref for bootstrap
+- `--spec-kit-exe <path>` uses a local `specify`-compatible executable instead of `uvx` for bootstrap
+
+Use the bridge when:
+- the repo already has an official Spec Kit install and you want the enhancer to help Codex use the resulting artifacts well
+- you want the installer to bootstrap official Spec Kit for Codex before laying down enhancer guidance
+
+Skip the bridge when:
+- the repo does not use Spec Kit
+- the repo has speculative or partial Spec Kit files that the team is not actually maintaining
+- you want the enhancer to remain completely independent of Spec Kit in that target repo
+
 What gets installed:
 
 ```text
@@ -233,6 +281,7 @@ AGENTS.md
 .codex/enhancer/manifest.toml
 docs/ai/
 docs/ai/stack-guidance.md
+docs/ai/spec-kit-bridge.md
 scripts/check.py
 scripts/enhancer_spec.py
 scripts/enhancer_validator.py
@@ -245,11 +294,16 @@ Selected stack packs are rendered twice on install:
 - a compact summary in the target root `AGENTS.md`
 - deeper detail in `docs/ai/stack-guidance.md`
 
+When the Spec Kit bridge is active, the target install also adds:
+- a managed Spec Kit summary block inside `AGENTS.md`
+- the generated bridge guide `docs/ai/spec-kit-bridge.md`
+- the bridge skills `spec-implement-bridge`, `spec-sync-check`, and `spec-review-bridge`
+
 Installed output ownership is also explicit:
-- safe to regenerate later: `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
+- safe to regenerate later: `docs/ai/stack-guidance.md`, `docs/ai/spec-kit-bridge.md`, and `.codex/enhancer/manifest.toml`
 - usually adapted manually after install: the rest of the scaffolded workflow files, including `AGENTS.md`, docs, scripts, skills, tests, and CI
 
-Current installs write manifest schema `2`. The manifest records the enhancer version, selected packs, lifecycle state, pack-selection mode, managed-output ownership, and per-pack evidence. Evidence is intentionally human-readable and tied to visible files rather than hidden heuristics. Schema `1` manifests remain readable for inspect and upgrade, but current target validation expects schema `2` after reconcile. Version inspection normalizes trailing zero segments, so `3.0` and `3.0.0` compare as the same enhancer version.
+Current installs write manifest schema `3`. The manifest records the enhancer version, selected packs, lifecycle state, pack-selection mode, managed-output ownership, per-pack evidence, and resolved Spec Kit bridge state under `[integrations.spec_kit]`. Evidence is intentionally human-readable and tied to visible files rather than hidden heuristics. Older manifests remain readable for inspect and upgrade, but current target validation expects the current schema after reconcile. Version inspection normalizes trailing zero segments, so `3.0` and `3.0.0` compare as the same enhancer version.
 
 The target `AGENTS.md` selected-stack-pack summary is wrapped in visible managed-section comments. Keep those markers intact; they let pack management update that one enhancer-owned region without rewriting repo-owned guidance outside the markers.
 
@@ -257,12 +311,13 @@ Use `--manage-packs` when you want to change selected packs after the enhancer i
 - read the current selected packs from `.codex/enhancer/manifest.toml`
 - apply `--add-pack`, `--remove-pack`, or an exact `--set-pack` replacement
 - update only the managed selected-stack-pack section in `AGENTS.md`
-- overwrite `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
+- overwrite `docs/ai/stack-guidance.md`, `docs/ai/spec-kit-bridge.md`, and `.codex/enhancer/manifest.toml`
 - leave skills, docs, scripts, tests, CI, `.gitignore`, and unmarked `AGENTS.md` content alone
 
 Use `--refresh-generated` when you want to rebuild only the safe outputs above. It will:
 - read the current selected packs from the target repo's existing `.codex/enhancer/manifest.toml`
-- overwrite `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
+- preserve the target repo's existing Spec Kit bridge state from the manifest
+- overwrite `docs/ai/stack-guidance.md`, `docs/ai/spec-kit-bridge.md`, and `.codex/enhancer/manifest.toml`
 - leave `AGENTS.md`, skills, docs, scripts, tests, CI, and `.gitignore` alone
 
 Use `--inspect-install` when you want to compare the current source repo to an already-installed target before planning an upgrade or reconcile. It reports:
@@ -271,6 +326,7 @@ Use `--inspect-install` when you want to compare the current source repo to an a
 - lifecycle state and pack-selection mode when the target manifest records them
 - managed section ids that should match visible markers in scaffold files
 - selected stack packs
+- the recorded Spec Kit bridge mode or state plus any currently detected official Spec Kit surface
 - files marked safe to regenerate vs files usually adapted manually
 
 Use `--upgrade-enhancer` when you want a reconcile preview for an existing install. It groups drift into:
@@ -280,10 +336,11 @@ Use `--upgrade-enhancer` when you want a reconcile preview for an existing insta
 
 Re-run the same command with `--write` when the grouped reconcile plan looks correct. Upgrade apply will:
 - overwrite managed generated outputs and source-aligned direct-copy files in place
-- refresh the managed selected-stack-pack section in `AGENTS.md` in place when the markers are valid
+- refresh the managed selected-stack-pack section and managed Spec Kit bridge section in `AGENTS.md` in place when the markers are valid
 - write repo-owned scaffold drift under `.codex/enhancer-proposals/` for manual review and merge
 - preserve existing proposal files by choosing a unique proposal filename when a proposed path already exists
 - preserve the installed pack selection from the target manifest
+- preserve the installed Spec Kit bridge state from the target manifest unless you explicitly pass new `--spec-kit-*` overrides
 - leave pack selection changes to `--manage-packs` instead of silently changing them during upgrade
 
 Use pack management instead when you need to:
@@ -294,14 +351,15 @@ Use a full install preview instead when you need to:
 - choose force-based overwrite behavior for a fresh install instead of proposal-based reconcile output
 
 After installation, adapt the repo in this order:
-1. Review `AGENTS.md` and `docs/ai/stack-guidance.md` for any selected stack packs and confirm that guidance matches the target repo.
+1. Review `AGENTS.md`, `docs/ai/stack-guidance.md`, and `docs/ai/spec-kit-bridge.md` for any selected packs or bridge guidance and confirm that they match the target repo.
 2. Update `AGENTS.md` with the target repo's purpose, layout, and real commands.
-3. Use the `adapt-enhancer` skill to replace inherited generic guidance.
-4. Remove or replace any docs that do not apply to the target repo.
-5. Keep only the skills that solve repeated procedures in that repo.
-6. Update `scripts/check.py` and `scripts/enhancer_spec.py` so the validation rules match the target repo.
-7. Update `tests/test_check.py` so the fixture matches the target repo's expected enhancer shape.
-8. Update `.github/workflows/validate.yml` so CI runs the same local commands.
+3. If the bridge is active, verify whether the installed bridge skills are genuinely useful in that repo.
+4. Use the `adapt-enhancer` skill to replace inherited generic guidance.
+5. Remove or replace any docs that do not apply to the target repo.
+6. Keep only the skills that solve repeated procedures in that repo.
+7. Update `scripts/check.py` and `scripts/enhancer_spec.py` so the validation rules match the target repo.
+8. Update `tests/test_check.py` so the fixture matches the target repo's expected enhancer shape.
+9. Update `.github/workflows/validate.yml` so CI runs the same local commands.
 
 Important: do not install this enhancer into another repo unchanged and call it done. The value comes from making it repo specific.
 
@@ -358,6 +416,14 @@ Use [.codex/skills/review-prep/SKILL.md](.codex/skills/review-prep/SKILL.md) whe
 - you need to call out omissions, risks, or future follow-up
 
 Do not use it as a substitute for real testing once the repo contains product code.
+
+#### Spec Kit bridge skills
+If the target repo uses the Spec Kit bridge, the installer may also add:
+- `spec-implement-bridge` for implementing work from existing `spec.md`, `plan.md`, and `tasks.md`
+- `spec-sync-check` for checking code drift against Spec Kit artifacts
+- `spec-review-bridge` for preparing review notes from Spec Kit-driven work
+
+These are intentionally narrow. They do not replace official Spec Kit commands and should only be used after official Spec Kit artifacts already exist in the target repo.
 
 ### Canonical Commands
 These are the maintained commands for this repository today:
