@@ -1,3 +1,6 @@
 __pycache__/
 *.py[cod]
 tests/_tmp/
+build/
+dist/
+*.egg-info/

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-enhancer"
+dynamic = ["version"]
+description = "Repo-native workflow layer and installer for Codex guidance, validation, and optional integrations."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Codex Enhancer maintainers" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+]
+dependencies = []
+
+[project.scripts]
+codex-enhancer = "scripts.codex_enhancer_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/slysa1/codex_enhancer"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["scripts*", "codex_enhancer*"]
+exclude = ["tests*", "scaffold*", "docs*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "scripts.enhancer_spec.ENHANCER_VERSION" }

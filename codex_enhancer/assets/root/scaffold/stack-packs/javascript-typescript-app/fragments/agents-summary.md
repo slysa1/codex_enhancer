@@ -1,0 +1,3 @@
+- Respect the repo's actual package manager and lockfile.
+- Treat typechecking as first-class validation when the repo exposes it.
+- Run the narrowest real lint, test, and build commands first.

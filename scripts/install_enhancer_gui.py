@@ -24,9 +24,9 @@ except ImportError as error:  # pragma: no cover - depends on local Python insta
 else:
     TK_IMPORT_ERROR = None
 
+from codex_enhancer.package_assets import asset_path
 from scripts.install_enhancer import (
     GENERATED_OUTPUT_DESTINATIONS,
-    SOURCE_ROOT,
     SOURCE_ALIGNED_UPGRADE_DESTINATIONS,
     InstallPlan,
     apply_install_plan,
@@ -46,7 +46,7 @@ from scripts.stack_packs import PackSelection, selected_pack_names
 
 
 WINDOW_TITLE = "Codex Enhancer Installer"
-PRODUCT_README = SOURCE_ROOT / "README.md"
+PRODUCT_README = asset_path("README.md")
 OPERATION_CHOICES = (
     ("Install or update scaffold", "install"),
     ("Manage stack packs", "manage-packs"),
@@ -74,6 +74,10 @@ SPEC_KIT_COMMAND_SURFACE_CHOICES = (
     ("$speckit-<command>", "dollar"),
     ("/prompts:speckit.<command>", "slash"),
 )
+UTILITY_HARNESS_MODE_CHOICES = (
+    ("Off (recommended)", "off"),
+    ("Install helper tools", "install"),
+)
 
 INSTALL_PACK_INTRO = (
     "Stack packs add extra Codex guidance for common repo shapes. After scanning, recommended "
@@ -96,6 +100,10 @@ SPEC_KIT_INTRO = (
     "The Spec Kit bridge is optional. Use attach when the repo already has an official Spec Kit install, "
     "bootstrap when you want the installer to run the official Codex setup first, and off when you want the enhancer "
     "to ignore Spec Kit entirely."
+)
+UTILITY_HARNESS_INTRO = (
+    "The Utility Harness is optional Codex/operator tooling. It installs requirements-codex.txt, tools/ai scripts, "
+    "and docs/ai/utility-harness.md, but never installs dependencies automatically."
 )
 WINDOW_MIN_WIDTH = 760
 WINDOW_MIN_HEIGHT = 620
@@ -200,6 +208,9 @@ def build_plan_preview(plan: InstallPlan) -> str:
     bridge_entries = format_spec_kit_entries(plan)
     if bridge_entries:
         lines.extend(["", "Spec Kit bridge:", *bridge_entries])
+    utility_entries = format_utility_harness_entries(plan)
+    if utility_entries:
+        lines.extend(["", "Utility Harness:", *utility_entries])
 
     if plan.operation == "upgrade-enhancer":
         lines.extend(["", *format_upgrade_sections(plan)])
@@ -279,6 +290,19 @@ def format_spec_kit_entries(plan: InstallPlan) -> list[str]:
     return entries
 
 
+def format_utility_harness_entries(plan: InstallPlan) -> list[str]:
+    if plan.utility_harness is None or not plan.utility_harness.enabled:
+        return []
+    entries = [
+        f"- Mode: {plan.utility_harness.mode} ({plan.utility_harness.state})",
+        "- Dependencies: listed for manual Codex/operator install only",
+    ]
+    if plan.utility_harness.tool_files:
+        tools = ", ".join(f"`{path}`" for path in plan.utility_harness.tool_files)
+        entries.append(f"- Tools: {tools}")
+    return entries
+
+
 def format_upgrade_sections(plan: InstallPlan) -> list[str]:
     generated_entries = []
     direct_entries = []
@@ -352,6 +376,14 @@ def build_completion_message(plan: InstallPlan) -> str:
         lines.extend(f"- {name}" for name in selected_names)
     else:
         lines.append("- none selected")
+    if plan.utility_harness is not None and plan.utility_harness.enabled:
+        lines.extend(
+            [
+                "",
+                "Utility Harness:",
+                "- installed",
+            ]
+        )
     lines.extend(
         [
             "",
@@ -376,6 +408,7 @@ class InstallerApp:
         self.spec_kit_script_var = tk.StringVar(value=SPEC_KIT_SCRIPT_CHOICES[0][0])
         self.spec_kit_command_surface_var = tk.StringVar(value=SPEC_KIT_COMMAND_SURFACE_CHOICES[0][0])
         self.spec_kit_version_var = tk.StringVar()
+        self.utility_harness_mode_var = tk.StringVar(value=UTILITY_HARNESS_MODE_CHOICES[0][0])
         self.status_var = tk.StringVar(
             value="Choose a repository folder, pick install, upgrade, or refresh, review the plan, then run it."
         )
@@ -406,7 +439,7 @@ class InstallerApp:
         frame = ttk.Frame(self.root, padding=16)
         frame.grid(sticky="nsew")
         frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(6, weight=1)
+        frame.rowconfigure(7, weight=1)
 
         style = ttk.Style(self.root)
         style.configure("InstallerTitle.TLabel", font=("Segoe UI", 16, "bold"))
@@ -512,8 +545,29 @@ class InstallerApp:
         )
         self.spec_kit_version_entry.grid(row=2, column=3, sticky="w", pady=(10, 0))
 
+        utility_frame = ttk.LabelFrame(frame, text="Utility Harness", padding=12)
+        utility_frame.grid(row=4, column=0, sticky="ew", pady=(14, 0))
+        utility_frame.columnconfigure(1, weight=1)
+        self.utility_frame = utility_frame
+
+        ttk.Label(
+            utility_frame,
+            text=UTILITY_HARNESS_INTRO,
+            wraplength=700,
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(utility_frame, text="Mode").grid(row=1, column=0, sticky="w", pady=(10, 0), padx=(0, 8))
+        self.utility_harness_mode_combo = ttk.Combobox(
+            utility_frame,
+            state="readonly",
+            textvariable=self.utility_harness_mode_var,
+            values=[label for label, _value in UTILITY_HARNESS_MODE_CHOICES],
+            width=24,
+        )
+        self.utility_harness_mode_combo.current(0)
+        self.utility_harness_mode_combo.grid(row=1, column=1, sticky="w", pady=(10, 0))
+
         pack_frame = ttk.LabelFrame(frame, text="Stack packs", padding=12)
-        pack_frame.grid(row=4, column=0, sticky="ew", pady=(14, 0))
+        pack_frame.grid(row=5, column=0, sticky="ew", pady=(14, 0))
         pack_frame.columnconfigure(0, weight=1)
         self.pack_frame = pack_frame
         self.pack_intro = ttk.Label(
@@ -558,7 +612,7 @@ class InstallerApp:
         self._show_pack_placeholder("No pack scan yet. Click 'Review install plan' to detect stack packs.")
 
         action_frame = ttk.Frame(frame)
-        action_frame.grid(row=5, column=0, sticky="ew", pady=(14, 12))
+        action_frame.grid(row=6, column=0, sticky="ew", pady=(14, 12))
         action_frame.columnconfigure(0, weight=1)
 
         self.review_button = ttk.Button(action_frame, text="Review install plan", command=self._review_plan)
@@ -575,7 +629,7 @@ class InstallerApp:
         self.confirm_check.grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
         preview_frame = ttk.LabelFrame(frame, text="Plan preview", padding=12)
-        preview_frame.grid(row=6, column=0, sticky="nsew")
+        preview_frame.grid(row=7, column=0, sticky="nsew")
         preview_frame.columnconfigure(0, weight=1)
         preview_frame.rowconfigure(0, weight=1)
 
@@ -588,7 +642,7 @@ class InstallerApp:
         self.preview.configure(state="disabled")
 
         status_frame = ttk.Frame(frame)
-        status_frame.grid(row=7, column=0, sticky="ew", pady=(12, 0))
+        status_frame.grid(row=8, column=0, sticky="ew", pady=(12, 0))
         status_frame.columnconfigure(0, weight=1)
 
         self.status_label = ttk.Label(status_frame, textvariable=self.status_var, wraplength=700)
@@ -639,12 +693,14 @@ class InstallerApp:
         self.spec_kit_script_var.trace_add("write", self._on_inputs_changed)
         self.spec_kit_command_surface_var.trace_add("write", self._on_inputs_changed)
         self.spec_kit_version_var.trace_add("write", self._on_inputs_changed)
+        self.utility_harness_mode_var.trace_add("write", self._on_inputs_changed)
         self.confirm_overwrite_var.trace_add("write", self._on_confirm_changed)
         self.operation_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
         self.mode_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
         self.spec_kit_mode_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
         self.spec_kit_script_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
         self.spec_kit_command_surface_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
+        self.utility_harness_mode_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
 
     def _operation_value(self) -> str:
         label = self.operation_combo.get()
@@ -681,6 +737,13 @@ class InstallerApp:
                 return candidate_value
         return "auto"
 
+    def _utility_harness_mode_value(self) -> str:
+        label = self.utility_harness_mode_combo.get()
+        for candidate_label, candidate_value in UTILITY_HARNESS_MODE_CHOICES:
+            if candidate_label == label:
+                return candidate_value
+        return "off"
+
     def _is_refresh_operation(self) -> bool:
         return self._operation_value() == "refresh-generated"
 
@@ -701,12 +764,16 @@ class InstallerApp:
             self.spec_kit_command_surface_combo.configure(state=state)
             self.spec_kit_version_entry.configure(state="normal" if state != "disabled" else "disabled")
 
+        def set_utility_state(state: str) -> None:
+            self.utility_harness_mode_combo.configure(state=state)
+
         if is_refresh:
             self.force_var.set(False)
             self.force_check.configure(state="disabled")
             self.mode_combo.set("Existing repo")
             self.mode_combo.configure(state="disabled")
             set_spec_kit_state("disabled")
+            set_utility_state("disabled")
             self.pack_intro.configure(text=REFRESH_PACK_INTRO)
             self.review_button.configure(text="Review refresh plan")
             self.install_button.configure(text="Refresh generated outputs")
@@ -718,6 +785,7 @@ class InstallerApp:
             self.mode_combo.set("Existing repo")
             self.mode_combo.configure(state="disabled")
             set_spec_kit_state("disabled")
+            set_utility_state("disabled")
             self.pack_intro.configure(text=MANAGE_PACK_INTRO)
             self.review_button.configure(text="Review pack changes")
             self.install_button.configure(text="Apply pack changes")
@@ -729,6 +797,7 @@ class InstallerApp:
             self.mode_combo.set("Existing repo")
             self.mode_combo.configure(state="disabled")
             set_spec_kit_state("readonly")
+            set_utility_state("readonly")
             self.pack_intro.configure(text=UPGRADE_PACK_INTRO)
             self.review_button.configure(text="Review upgrade plan")
             self.install_button.configure(text="Apply upgrade reconcile")
@@ -737,6 +806,7 @@ class InstallerApp:
         self.mode_combo.configure(state="readonly")
         self.force_check.configure(state="normal")
         set_spec_kit_state("readonly")
+        set_utility_state("readonly")
         self.pack_intro.configure(text=INSTALL_PACK_INTRO)
         self.review_button.configure(text="Review install plan")
         self.install_button.configure(text="Install enhancer")
@@ -872,6 +942,7 @@ class InstallerApp:
                 spec_kit_script=self._spec_kit_script_value(),
                 spec_kit_command_surface=self._spec_kit_command_surface_value(),
                 spec_kit_version=spec_kit_version,
+                utility_harness_mode=self._utility_harness_mode_value(),
             )
         if is_manage:
             return build_pack_management_plan(
@@ -890,6 +961,7 @@ class InstallerApp:
             spec_kit_script=self._spec_kit_script_value(),
             spec_kit_command_surface=self._spec_kit_command_surface_value(),
             spec_kit_version=spec_kit_version,
+            utility_harness_mode=self._utility_harness_mode_value() if not is_refresh else None,
         )
 
     def _clear_pack_controls(self) -> None:
@@ -1029,6 +1101,7 @@ class InstallerApp:
             self.spec_kit_script_combo.configure(state="disabled")
             self.spec_kit_command_surface_combo.configure(state="disabled")
             self.spec_kit_version_entry.configure(state="disabled")
+            self.utility_harness_mode_combo.configure(state="disabled")
         else:
             spec_state = (
                 "disabled"
@@ -1041,6 +1114,7 @@ class InstallerApp:
             self.spec_kit_version_entry.configure(
                 state="disabled" if spec_state == "disabled" else "normal"
             )
+            self.utility_harness_mode_combo.configure(state=spec_state)
         for child in self.pack_container.winfo_children():
             try:
                 child.configure(state=state)

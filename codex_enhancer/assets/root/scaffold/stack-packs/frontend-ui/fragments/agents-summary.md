@@ -1,0 +1,3 @@
+- Check loading, empty, error, and success states when the surface has them.
+- Preserve accessibility basics such as labels, keyboard reachability, focus behavior, and semantic structure.
+- Keep visual changes aligned with the existing design system or UI language.

@@ -1003,3 +1003,59 @@ Main risk:
 - the enhancer manifest and `AGENTS.md` make bridge state visible to humans and Codex
 - installer previews explain exactly what the enhancer owns and what remains official Spec Kit state
 - bridge skills improve implementation and review only when Spec Kit artifacts already exist
+
+## Proposed 3.3 Codex Utility Harness
+
+Status: implemented as an optional install-time integration. Keep this section as scope history plus future guardrails.
+
+### Goal
+Give target repos explicit repo-local helper tools that help Codex inspect large trees, read mixed file formats, summarize structure, and run recorded validation commands without turning the enhancer into a package manager or agent runtime.
+
+### Scope
+- install `requirements-codex.txt` for Codex/operator helper dependencies only
+- install `tools/ai/inspect_repo.py`, `tools/ai/read_any.py`, `tools/ai/summarize_tree.py`, and `tools/ai/run_checks.py`
+- install `docs/ai/utility-harness.md`
+- record state under `[integrations.utility_harness]` in the target manifest
+- expose the option through CLI and GUI previews before writing
+
+### Non-Goals
+- no automatic dependency installation
+- no production dependency pollution
+- no OCR, daemon, background indexer, package manager, or hidden orchestration
+- no guessed validation commands
+- no broad Utility Harness skill until repeated use proves one is worth adding
+
+### Success Bar
+- a target repo can preview and install the harness explicitly with `--utility-harness-mode install`
+- the manifest records whether the harness is absent or installed
+- harness file drift is reviewable as normal files or proposals
+- helper scripts stay deterministic, bounded, and safe to run without optional dependencies unless richer formats require them
+
+## Proposed 3.4 Spec Kit Usability And Release Hardening
+
+Status: implemented as a narrow CLI and packaging-readiness pass.
+
+### Goal
+Make the packaged `codex-enhancer` command more useful for Spec Kit repos after install, while keeping release readiness explicit and reviewable.
+
+### Scope
+- add a read-only Spec Kit feature report that summarizes `specs/` feature artifacts, missing core files, and task checkbox state
+- add a read-only Spec Kit sync report that maps changed paths to feature artifacts, task state, contracts, quickstart cues, and obvious validation gaps
+- add a dedicated bridge-management flow for installed targets so bridge mode, script flavor, and command-surface guidance can change without a full enhancer upgrade
+- keep official Spec Kit files read-only from enhancer flows
+- document the package release checklist and keep the wheel/sdist boundary visible
+- bump the public package version to `3.4.0`
+
+### Non-Goals
+- no Spec Kit template rewriting
+- no semantic implementation drift engine
+- no PR automation
+- no package runtime dependencies
+- no release publisher or background updater
+
+### Success Bar
+- `codex-enhancer spec-report <repo>` gives useful artifact context without writes
+- `codex-enhancer spec-sync <repo> --feature <feature> --changed <path>` gives useful code-to-artifact cues without writes
+- `codex-enhancer bridge <repo> --attach-spec-kit` previews enhancer-owned bridge updates only
+- source validation and packaging tests enforce the release checklist and packaged asset mirror
+- release builds remain normal Python wheel/sdist artifacts with no hidden downloader behavior

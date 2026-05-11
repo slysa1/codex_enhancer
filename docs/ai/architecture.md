@@ -6,18 +6,22 @@ This repository contains the enhancer itself, not an application stack. The work
 ## Current Layers
 1. [README.md](../../README.md): human-facing overview and quick start.
 2. [AGENTS.md](../../AGENTS.md): short entrypoint for repo purpose, workflow, commands, and definition of done.
-3. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, [v3 migration notes](./migration-v3.md), the phased [design roadmap](./roadmap.md), and the [Spec Kit bridge contract](./spec-kit-bridge.md).
-4. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
-5. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, pack management, upgrade/reconcile, and guided install or managed-output refresh flow.
-6. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus pack management, upgrade/reconcile, and safe generated-output refreshes.
-7. [scripts/stack_packs.py](../../scripts/stack_packs.py) and [scaffold/stack-packs/](../../scaffold/stack-packs/): file-based registry, loader, manifest-evidence collector, and renderer for optional stack packs.
-8. [scripts/spec_kit_bridge.py](../../scripts/spec_kit_bridge.py): bridge-aware detection, bridge-mode resolution, and summary helpers for optional official Spec Kit installs.
-9. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
-10. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.
-11. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for the enhancer source repo.
-12. [scaffold/target-repo/](../../scaffold/target-repo/): target-repo files that should not be copied verbatim from the source repo.
-13. [tests/](../../tests/): regression protection for the validator, installer core, GUI-facing helpers, stack-pack loader, and Spec Kit bridge detector.
-14. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
+3. [pyproject.toml](../../pyproject.toml) and [MANIFEST.in](../../MANIFEST.in): package metadata for exposing the distributable `codex-enhancer` command.
+4. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, [v3 migration notes](./migration-v3.md), [release checklist](./release.md), the phased [design roadmap](./roadmap.md), the [Spec Kit bridge contract](./spec-kit-bridge.md), and the [Utility Harness contract](./utility-harness.md).
+5. [codex_enhancer/package_assets.py](../../codex_enhancer/package_assets.py): package asset lookup for scaffold inputs in both source checkouts and installed wheels.
+6. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
+7. [codex-enhancer](../../codex-enhancer), [codex-enhancer.bat](../../codex-enhancer.bat), and [scripts/codex_enhancer_cli.py](../../scripts/codex_enhancer_cli.py): thin source-checkout command facade over the installer core.
+8. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, pack management, upgrade/reconcile, and guided install or managed-output refresh flow.
+9. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus pack management, upgrade/reconcile, and safe generated-output refreshes.
+10. [scripts/stack_packs.py](../../scripts/stack_packs.py) and [scaffold/stack-packs/](../../scaffold/stack-packs/): file-based registry, loader, manifest-evidence collector, and renderer for optional stack packs.
+11. [scripts/spec_kit_bridge.py](../../scripts/spec_kit_bridge.py): bridge-aware detection, bridge-mode resolution, feature/sync reporting, and summary helpers for optional official Spec Kit installs.
+12. [scripts/utility_harness.py](../../scripts/utility_harness.py): mode resolution and summary helpers for the optional Codex Utility Harness.
+13. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
+14. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.
+15. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for the enhancer source repo.
+16. [scaffold/target-repo/](../../scaffold/target-repo/): target-repo files that should not be copied verbatim from the source repo.
+17. [tests/](../../tests/): regression protection for the validator, installer core, command facade, GUI-facing helpers, stack-pack loader, Spec Kit bridge detector, and Utility Harness resolver.
+18. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
 
 ## Decision Guide
 
@@ -27,6 +31,8 @@ This repository contains the enhancer itself, not an application stack. The work
 - One architecture note and one review note under [docs/ai/](../ai/)
 - A very small skills subtree with narrow triggers
 - A bootstrap installer plus an explicit scaffold
+- A thin command facade that delegates to the bootstrap installer
+- Minimal distributable package metadata for local CLI installation and wheel/sdist installs
 - One deterministic check command plus a small test suite
 - CI only because the repo now has stable, zero-dependency validation commands
 
@@ -37,6 +43,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - Additional skills only after repeated use proves they remove real prompt repetition
 - Optional stack packs only if they stay file-based, visible, evidence-backed, and conservative as described in [roadmap.md](./roadmap.md)
 - An optional Spec Kit bridge only if it stays repo-local, keeps ownership boundaries explicit, and complements official Spec Kit instead of vendoring or replacing it
+- An optional Utility Harness only if it stays explicit, scaffolded, dependency-isolated, and limited to Codex/operator helper tools
 
 ### Niche Later
 - Domain-specific playbooks for migrations, incidents, releases, or API contracts
@@ -44,8 +51,9 @@ This repository contains the enhancer itself, not an application stack. The work
 - MCP setup for concrete external systems that the repo actually depends on
 
 ### Not Worth Adding Now
-- Slash-command ecosystems
+- Slash-command ecosystems or parallel command frameworks
 - Standalone packages, daemons, or updater machinery
+- Published release automation before artifact smoke tests are routine
 - Hidden persistent state
 - Browser automation
 - MCP without a real external dependency
@@ -57,13 +65,17 @@ This repository contains the enhancer itself, not an application stack. The work
 - If a new rule applies only to one subtree, add a nested `AGENTS.md` there.
 - If a new skill needs more than one narrow procedure, split it or reconsider whether it should be a doc instead.
 - If a script needs third-party dependencies, justify them in the same change.
+- If package metadata changes, keep the console script, README install guidance, source validation requirements, packaged assets, and packaging tests aligned.
+- If release expectations change, keep [release.md](./release.md), packaging tests, and README build guidance aligned.
 - If the installer changes, keep the launcher, GUI, scaffold, shared spec, source validator, and tests aligned in the same patch.
+- If the command facade changes, keep [README.md](../../README.md), source validation requirements, and CLI tests aligned with the installer flags it delegates to.
 - If a change introduces a new top-level workflow asset, update [AGENTS.md](../../AGENTS.md) so the repo map stays accurate.
 - If a lifecycle change affects installed-repo upgrade behavior, update [migration-v3.md](./migration-v3.md) with the operator-facing rule.
 - If a scaffold file gains or loses an enhancer-managed section marker, update the manifest renderer and validator expectations in the same patch.
 - If pack management changes, keep CLI flags, GUI mode labels, manifest rendering, managed-section behavior, README guidance, and tests aligned in the same patch.
 - If pack evidence or package-manager detection changes, keep stack-pack reasons, generated manifests, command discovery, README guidance, and tests aligned in the same patch.
-- If the Spec Kit bridge changes, keep [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), target scaffold docs, bridge skills, managed-section markers, manifest state, and validator expectations aligned in the same patch.
+- If the Spec Kit bridge changes, keep [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), target scaffold docs, bridge skills, managed-section markers, manifest state, CLI facade behavior, and validator expectations aligned in the same patch.
+- If the Utility Harness changes, keep [docs/ai/utility-harness.md](./utility-harness.md), target scaffold docs, helper scripts, manifest state, GUI/CLI flags, and validator expectations aligned in the same patch.
 - Keep overlapping stack packs composable but conservative. For example, `library-package` may compose with `javascript-typescript-app`, but it should not be inferred for ordinary frontend or API applications without reusable-package metadata.
 
 ## When To Add More Structure

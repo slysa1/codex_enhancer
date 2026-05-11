@@ -1,0 +1,37 @@
+# Codex Utility Harness
+
+## Purpose
+The Utility Harness is an optional integration that installs repo-local helper tools for Codex/operator inspection. It gives future Codex sessions repeatable local instruments for large repositories and mixed file formats without making Codex Enhancer a package manager or runtime.
+
+## Contract
+- The harness is off by default.
+- It is installed only when an operator explicitly passes `--utility-harness-mode install`.
+- The installer records state under `[integrations.utility_harness]` in `.codex/enhancer/manifest.toml`.
+- Harness files are normal visible repo files and remain reviewable through git diffs.
+- `requirements-codex.txt` is for Codex/operator helper dependencies only.
+- The installer never installs those dependencies automatically.
+
+## Installed Surface
+- `requirements-codex.txt`
+- `tools/ai/inspect_repo.py`
+- `tools/ai/read_any.py`
+- `tools/ai/summarize_tree.py`
+- `tools/ai/run_checks.py`
+- `docs/ai/utility-harness.md`
+
+## Ownership
+- Enhancer-owned at install time: the scaffolded harness files and manifest state.
+- Repo-owned after adaptation: any local tuning to commands, ignore behavior, or helper script output.
+- Safe generated outputs remain limited to `docs/ai/stack-guidance.md`, `docs/ai/spec-kit-bridge.md`, and `.codex/enhancer/manifest.toml`.
+- Upgrade should propose harness file drift rather than silently overwriting local edits.
+
+## Non-Goals
+- no automatic dependency installation
+- no production dependency pollution
+- no OCR
+- no background indexer
+- no daemon, agent runtime, or orchestration layer
+- no guessed validation commands
+
+## Review Rule
+If the harness changes, reviewers should verify that helper dependencies stay isolated, scripts remain deterministic and bounded, and `run_checks.py` only runs commands recorded in visible repo files.

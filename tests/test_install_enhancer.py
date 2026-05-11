@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import json
 import shutil
+import subprocess
+import sys
 import textwrap
 import unittest
 import uuid
@@ -15,6 +17,7 @@ from scripts.install_enhancer import (
     build_install_plan,
     build_overwrite_confirmation_message,
     build_pack_management_plan,
+    build_spec_kit_bridge_management_plan,
     build_upgrade_plan,
     discover_commands,
     format_next_steps,
@@ -249,6 +252,30 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Integration: `copilot`", output)
             self.assertIn("Likely command surface: .github/prompts and .github/agents.", output)
 
+    def test_inspect_install_reports_utility_harness_state(self) -> None:
+        with repo_fixture("inspect_utility") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--utility-harness-mode",
+                    "install",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(["--target", str(install_target), "--inspect-install"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Utility Harness:", output)
+            self.assertIn("Utility Harness mode: `install`", output)
+            self.assertIn("Utility Harness state: `installed`", output)
+
     def test_install_attach_mode_requires_existing_spec_kit(self) -> None:
         with repo_fixture("install_attach_missing") as install_target:
             write_file(install_target, "README.md", "# Demo\n")
@@ -355,6 +382,131 @@ class InstallEnhancerTests(unittest.TestCase):
             manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
             self.assertIn('mode = "bootstrap"', manifest)
             self.assertIn('state = "bootstrapped"', manifest)
+
+    def test_spec_kit_report_prints_feature_summary(self) -> None:
+        with repo_fixture("spec_report") as install_target:
+            write_file(install_target, "specs/001-login/spec.md", "# Spec\n")
+            write_file(install_target, "specs/001-login/plan.md", "# Plan\n")
+            write_file(
+                install_target,
+                "specs/001-login/tasks.md",
+                """
+                # Tasks
+                - [x] T001 Done
+                - [ ] T002 Open
+                """,
+            )
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--spec-kit-report", "--spec-kit-feature", "001"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Spec Kit feature report", output)
+            self.assertIn("`001-login` at `specs/001-login`", output)
+            self.assertIn("Tasks: 2 total, 1 done, 1 open", output)
+
+    def test_spec_kit_sync_report_prints_changed_path_context(self) -> None:
+        with repo_fixture("spec_sync_report") as install_target:
+            write_file(install_target, "specs/001-login/spec.md", "# Spec\n")
+            write_file(install_target, "specs/001-login/plan.md", "# Plan\n")
+            write_file(
+                install_target,
+                "specs/001-login/tasks.md",
+                """
+                # Tasks
+                - [x] T001 Done
+                - [ ] T002 Open
+                """,
+            )
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--spec-kit-sync-report",
+                    "--spec-kit-feature",
+                    "001",
+                    "--spec-kit-changed-path",
+                    "src/auth.py",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Spec Kit sync report", output)
+            self.assertIn("`001-login` at `specs/001-login`", output)
+            self.assertIn("Artifacts to re-read:", output)
+            self.assertIn("`src/auth.py`", output)
+
+    def test_manage_spec_kit_bridge_turns_bridge_off_without_touching_spec_kit_files(self) -> None:
+        with repo_fixture("manage_spec_kit_bridge") as install_target:
+            write_file(
+                install_target,
+                ".specify/integration.json",
+                '{\n  "integration": "codex",\n  "version": "0.8.3"\n}\n',
+            )
+            write_file(
+                install_target,
+                ".specify/init-options.json",
+                '{\n  "integration": "codex",\n  "script": "ps",\n  "speckit_version": "0.8.3"\n}\n',
+            )
+            write_file(install_target, ".agents/skills/speckit-plan/SKILL.md", "# Plan\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--spec-kit-mode",
+                    "attach",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            plan = build_spec_kit_bridge_management_plan(
+                install_target,
+                spec_kit_mode="off",
+                require_changes=True,
+            )
+            self.assertEqual(plan.operation, "manage-spec-kit-bridge")
+            self.assertFalse(plan.spec_kit_bridge.enabled)
+            self.assertTrue(all(not item.destination.parts[0].startswith(".specify") for item in plan.writes))
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-spec-kit-bridge",
+                    "--spec-kit-mode",
+                    "off",
+                    "--write",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Applying Codex Enhancer Spec Kit bridge management plan", output)
+            self.assertTrue((install_target / ".specify/integration.json").exists())
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            agents = (install_target / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn('mode = "off"', manifest)
+            self.assertIn("Spec Kit bridge is off", agents)
+
+    def test_manage_spec_kit_bridge_requires_bridge_option(self) -> None:
+        with repo_fixture("manage_spec_kit_bridge_missing_option") as install_target:
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--manage-spec-kit-bridge"]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("requires a Spec Kit bridge option", output)
 
     def test_inspect_install_rejects_write_and_force_flags(self) -> None:
         with repo_fixture("inspect_invalid") as install_target:
@@ -847,7 +999,7 @@ class InstallEnhancerTests(unittest.TestCase):
             )
 
             self.assertEqual(exit_code, 1)
-            self.assertIn("do not combine it with pack-selection or Spec Kit override flags", output)
+            self.assertIn("do not combine it with pack-selection, Spec Kit override, or Utility Harness flags", output)
 
     def test_explicit_pack_selects_undetected_pack(self) -> None:
         with repo_fixture("install_explicit_pack") as install_target:
@@ -943,6 +1095,8 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertTrue((install_target / ".codex/enhancer/manifest.toml").exists())
             self.assertTrue((install_target / "scripts/check.py").exists())
             self.assertTrue((install_target / "scripts/enhancer_spec.py").exists())
+            self.assertTrue((install_target / "scripts/spec_kit_bridge.py").exists())
+            self.assertTrue((install_target / "scripts/utility_harness.py").exists())
             self.assertTrue((install_target / "scripts/enhancer_validator.py").exists())
             self.assertTrue((install_target / "tests/test_check.py").exists())
             self.assertTrue((install_target / ".github/workflows/validate.yml").exists())
@@ -950,6 +1104,100 @@ class InstallEnhancerTests(unittest.TestCase):
             gitignore = (install_target / ".gitignore").read_text(encoding="utf-8")
             for line in GITIGNORE_LINES:
                 self.assertIn(line, gitignore)
+
+    def test_utility_harness_install_adds_helper_files_and_manifest_state(self) -> None:
+        with repo_fixture("install_utility") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--utility-harness-mode",
+                    "install",
+                    "--write",
+                    "--force",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Utility Harness:", output)
+            self.assertTrue((install_target / "requirements-codex.txt").exists())
+            self.assertTrue((install_target / "tools/ai/inspect_repo.py").exists())
+            self.assertTrue((install_target / "tools/ai/read_any.py").exists())
+            self.assertTrue((install_target / "tools/ai/summarize_tree.py").exists())
+            self.assertTrue((install_target / "tools/ai/run_checks.py").exists())
+            self.assertTrue((install_target / "docs/ai/utility-harness.md").exists())
+
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            agents = (install_target / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn("[integrations.utility_harness]", manifest)
+            self.assertIn('mode = "install"', manifest)
+            self.assertIn('state = "installed"', manifest)
+            self.assertIn('"tools/ai/run_checks.py"', manifest)
+            self.assertIn("Codex Utility Harness is installed", agents)
+            self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
+
+            listed_checks = subprocess.run(
+                [sys.executable, "-B", "tools/ai/run_checks.py", "--list"],
+                cwd=install_target,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(listed_checks.returncode, 0)
+            self.assertIn("enhancer:check", listed_checks.stdout)
+            self.assertNotIn("tools/ai/run_checks.py", listed_checks.stdout)
+
+    def test_utility_harness_dry_run_does_not_write_helper_files(self) -> None:
+        with repo_fixture("install_utility_preview") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--utility-harness-mode",
+                    "install",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Utility Harness:", output)
+            self.assertIn("Codex Utility Harness is installed", output)
+            self.assertIn("- create: requirements-codex.txt", output)
+            self.assertFalse((install_target / "requirements-codex.txt").exists())
+
+    def test_refresh_generated_preserves_utility_harness_state(self) -> None:
+        with repo_fixture("refresh_utility") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--utility-harness-mode",
+                    "install",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--refresh-generated", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Applying Codex Enhancer generated-output refresh", output)
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            self.assertIn("[integrations.utility_harness]", manifest)
+            self.assertIn('state = "installed"', manifest)
+            self.assertTrue((install_target / "tools/ai/run_checks.py").exists())
 
     def test_new_repo_install_produces_valid_target_profile(self) -> None:
         with repo_fixture("install_valid") as target:
@@ -1829,6 +2077,20 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertIn("Official Spec Kit detected.", preview)
             self.assertIn("Integration: `copilot`", preview)
             self.assertIn("Likely command surface: .github/prompts and .github/agents.", preview)
+
+    def test_gui_plan_preview_lists_utility_harness(self) -> None:
+        with repo_fixture("install_preview_utility") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            plan = build_install_plan(
+                install_target,
+                mode="existing",
+                utility_harness_mode="install",
+            )
+            preview = build_plan_preview(plan)
+
+            self.assertIn("Utility Harness:", preview)
+            self.assertIn("Mode: install (installed)", preview)
+            self.assertIn("tools/ai/run_checks.py", preview)
 
     def test_gui_pack_management_preview_and_completion_message(self) -> None:
         with repo_fixture("install_preview_manage") as install_target:

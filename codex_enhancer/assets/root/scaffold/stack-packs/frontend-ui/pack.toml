@@ -1,0 +1,47 @@
+schema_version = 1
+name = "frontend-ui"
+label = "Frontend UI"
+description = "Rules for repositories that ship browser-facing UI surfaces."
+version = "0.1.0"
+
+[discovery]
+any_globs = [
+  "src/**/*.tsx",
+  "src/**/*.jsx",
+  "src/**/*.vue",
+  "src/**/*.svelte",
+  "app/**/*.tsx",
+  "app/**/*.jsx",
+  "pages/**/*.tsx",
+  "pages/**/*.jsx",
+  "components/**/*.tsx",
+  "components/**/*.jsx",
+  "vite.config.*",
+  "next.config.*",
+  "astro.config.*",
+  "svelte.config.*",
+]
+
+[ui]
+recommended_if_detected = true
+default_selected = false
+order = 25
+
+[guidance]
+use_when = [
+  "The repo ships browser-facing screens, routes, components, or design-system UI.",
+  "Changes should consider visual behavior, accessibility, responsive layout, and user-facing regressions.",
+]
+adds = [
+  "UI-focused review prompts for state, layout, accessibility, and design-system fit.",
+  "Guidance to run available build, preview, visual, end-to-end, or component checks when relevant.",
+]
+skip_when = [
+  "The repo is backend-only, CLI-only, or a library with no browser-facing surface.",
+  "Frontend-looking files are only examples, fixtures, or generated artifacts.",
+]
+
+[render]
+agents_summary = "fragments/agents-summary.md"
+stack_guidance = "fragments/stack-guidance.md"
+review_notes = "fragments/review-notes.md"

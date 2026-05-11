@@ -8,6 +8,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from codex_enhancer.package_assets import asset_path
 from scripts.enhancer_spec import (
     ENHANCER_MANIFEST_SCHEMA_VERSION,
     ENHANCER_VERSION,
@@ -15,9 +16,13 @@ from scripts.enhancer_spec import (
     SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS,
 )
 from scripts.spec_kit_bridge import SpecKitBridgeConfig, SpecKitPaths
+from scripts.utility_harness import (
+    UTILITY_HARNESS_DEPENDENCY_POLICY,
+    UtilityHarnessConfig,
+)
 
 
-STACK_PACK_ROOT = Path(__file__).resolve().parents[1] / "scaffold/stack-packs"
+STACK_PACK_ROOT = asset_path("scaffold/stack-packs")
 TARGET_MANIFEST_PATH = Path(".codex/enhancer/manifest.toml")
 PACKAGE_MANAGER_LOCKFILES = (
     (Path("pnpm-lock.yaml"), "pnpm"),
@@ -189,6 +194,7 @@ class EnhancerInstallState:
     managed_sections: tuple[str, ...] = ()
     pack_evidence: tuple[ManifestPackEvidence, ...] = ()
     spec_kit_bridge: SpecKitBridgeConfig | None = None
+    utility_harness: UtilityHarnessConfig | None = None
 
 
 def _required_str(data: dict[str, object], key: str) -> str:
@@ -1050,6 +1056,68 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
                 paths=paths,
             )
 
+    utility_harness: UtilityHarnessConfig | None = None
+    if integrations == {}:
+        pass
+    elif isinstance(integrations, dict):
+        raw_utility = integrations.get("utility_harness")
+        if raw_utility is None:
+            pass
+        elif not isinstance(raw_utility, dict):
+            raise ValueError(
+                f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+                "integrations.utility_harness must be a table when present."
+            )
+        else:
+            utility_harness = UtilityHarnessConfig(
+                mode=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.utility_harness.mode",
+                    raw_utility.get("mode"),
+                )
+                or "off",
+                state=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.utility_harness.state",
+                    raw_utility.get("state"),
+                )
+                or "absent",
+                managed_by=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.utility_harness.managed_by",
+                    raw_utility.get("managed_by"),
+                )
+                or "codex-enhancer",
+                requirements_file=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.utility_harness.requirements_file",
+                    raw_utility.get("requirements_file"),
+                ),
+                docs_file=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.utility_harness.docs_file",
+                    raw_utility.get("docs_file"),
+                ),
+                tool_files=_manifest_string_list(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.utility_harness.tool_files",
+                    raw_utility.get("tool_files", []),
+                ),
+                dependency_policy=_manifest_optional_string(
+                    target,
+                    TARGET_MANIFEST_PATH,
+                    "integrations.utility_harness.dependency_policy",
+                    raw_utility.get("dependency_policy"),
+                )
+                or UTILITY_HARNESS_DEPENDENCY_POLICY,
+            )
+
     return EnhancerInstallState(
         enhancer_version=enhancer_version,
         selected_packs=selected_packs,
@@ -1061,6 +1129,7 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
         managed_sections=managed_sections,
         pack_evidence=tuple(pack_evidence),
         spec_kit_bridge=spec_kit_bridge,
+        utility_harness=utility_harness,
     )
 
 
@@ -1317,6 +1386,7 @@ def render_stack_pack_manifest(
     safe_to_regenerate: tuple[Path, ...] = (),
     adapt_manually: tuple[Path, ...] = (),
     spec_kit_bridge: SpecKitBridgeConfig | None = None,
+    utility_harness: UtilityHarnessConfig | None = None,
 ) -> str:
     selected = tuple(selected_packs)
     selected_set = set(selected)
@@ -1415,4 +1485,27 @@ def render_stack_pack_manifest(
             lines.append(f"context_file = {_toml_string(spec_kit_bridge.paths.context_file)}")
         if spec_kit_bridge.paths.constitution is not None:
             lines.append(f"constitution = {_toml_string(spec_kit_bridge.paths.constitution)}")
+
+    if utility_harness is not None:
+        lines.extend(
+            [
+                "",
+                "[integrations.utility_harness]",
+                f"mode = {_toml_string(utility_harness.mode)}",
+                f"state = {_toml_string(utility_harness.state)}",
+                f"managed_by = {_toml_string(utility_harness.managed_by)}",
+                f"dependency_policy = {_toml_string(utility_harness.dependency_policy)}",
+            ]
+        )
+        if utility_harness.requirements_file is not None:
+            lines.append(
+                f"requirements_file = {_toml_string(utility_harness.requirements_file)}"
+            )
+        if utility_harness.docs_file is not None:
+            lines.append(f"docs_file = {_toml_string(utility_harness.docs_file)}")
+        lines.append(
+            "tool_files = ["
+            + ", ".join(_toml_string(path) for path in utility_harness.tool_files)
+            + "]"
+        )
     return "\n".join(lines) + "\n"

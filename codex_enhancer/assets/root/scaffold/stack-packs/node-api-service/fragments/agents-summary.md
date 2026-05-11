@@ -1,0 +1,3 @@
+- Treat request, response, and schema changes as contract changes.
+- Check auth, validation, and error behavior instead of only happy paths.
+- Call out backward-compatibility risk when routes, payloads, or error shapes change.

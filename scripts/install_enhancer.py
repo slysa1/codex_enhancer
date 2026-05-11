@@ -16,6 +16,7 @@ from typing import Callable
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from codex_enhancer.package_assets import read_asset_text
 from scripts.enhancer_spec import (
     CHECK_COMMAND,
     ENHANCER_MANIFEST_SCHEMA_VERSION,
@@ -25,6 +26,7 @@ from scripts.enhancer_spec import (
     INSTALL_TEMPLATE_ASSETS,
     MANAGED_SECTIONS,
     OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS,
+    OPTIONAL_UTILITY_HARNESS_COPY_ASSETS,
     SPEC_KIT_BRIDGE_TEMPLATE_PATH,
     TEST_COMMAND,
 )
@@ -39,6 +41,8 @@ from scripts.spec_kit_bridge import (
     render_spec_kit_bridge_doc_workflow,
     render_spec_kit_bridge_summary,
     render_spec_kit_detection_lines,
+    render_spec_kit_feature_report,
+    render_spec_kit_sync_report,
     resolve_spec_kit_bridge,
 )
 from scripts.stack_packs import (
@@ -61,6 +65,11 @@ from scripts.stack_packs import (
     resolve_managed_pack_selection,
     resolve_stack_pack_selection,
     selected_pack_names,
+)
+from scripts.utility_harness import (
+    UtilityHarnessConfig,
+    render_utility_harness_summary,
+    resolve_utility_harness,
 )
 
 
@@ -112,6 +121,7 @@ class InstallPlan:
     manifest_preview: str
     spec_kit_bridge: SpecKitBridgeConfig | None = None
     spec_kit_detection: SpecKitDetection | None = None
+    utility_harness: UtilityHarnessConfig | None = None
     external_steps: tuple[ExternalStep, ...] = ()
 
 
@@ -125,6 +135,7 @@ class InstallInspection:
     install_state: EnhancerInstallState | None
     spec_kit_bridge: SpecKitBridgeConfig | None = None
     spec_kit_detection: SpecKitDetection | None = None
+    utility_harness: UtilityHarnessConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -179,12 +190,16 @@ SOURCE_ALIGNED_UPGRADE_DESTINATIONS = frozenset(
 )
 
 
-def install_managed_destinations(spec_kit_bridge: SpecKitBridgeConfig | None) -> tuple[Path, ...]:
-    if spec_kit_bridge is None or not spec_kit_bridge.enabled:
-        return BASE_INSTALL_MANAGED_DESTINATIONS
-    return BASE_INSTALL_MANAGED_DESTINATIONS + tuple(
-        asset.destination for asset in OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS
-    )
+def install_managed_destinations(
+    spec_kit_bridge: SpecKitBridgeConfig | None,
+    utility_harness: UtilityHarnessConfig | None = None,
+) -> tuple[Path, ...]:
+    destinations = BASE_INSTALL_MANAGED_DESTINATIONS
+    if spec_kit_bridge is not None and spec_kit_bridge.enabled:
+        destinations += tuple(asset.destination for asset in OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS)
+    if utility_harness is not None and utility_harness.enabled:
+        destinations += tuple(asset.destination for asset in OPTIONAL_UTILITY_HARNESS_COPY_ASSETS)
+    return destinations
 
 
 def infer_mode(target: Path) -> str:
@@ -242,6 +257,7 @@ def inspect_install(target: Path) -> InstallInspection:
             install_state=None,
             spec_kit_bridge=None,
             spec_kit_detection=spec_kit_detection,
+            utility_harness=None,
         )
 
     install_state = load_enhancer_install_state(resolved_target)
@@ -266,6 +282,7 @@ def inspect_install(target: Path) -> InstallInspection:
         install_state=install_state,
         spec_kit_bridge=install_state.spec_kit_bridge,
         spec_kit_detection=spec_kit_detection,
+        utility_harness=install_state.utility_harness,
     )
 
 
@@ -307,6 +324,23 @@ def _format_spec_kit_lines(
     return lines
 
 
+def _format_utility_harness_lines(
+    utility_harness: UtilityHarnessConfig | None,
+    *,
+    always_include: bool,
+) -> list[str]:
+    if utility_harness is None:
+        if not always_include:
+            return []
+        utility_harness = resolve_utility_harness(mode="off")
+    if not always_include and not utility_harness.enabled:
+        return []
+    lines = ["", "Utility Harness:"]
+    lines.extend(render_utility_harness_summary(utility_harness).splitlines())
+    lines.append("")
+    return lines
+
+
 def format_install_inspection(inspection: InstallInspection) -> str:
     lines = [
         f"Codex Enhancer install inspection for {inspection.target}",
@@ -317,6 +351,12 @@ def format_install_inspection(inspection: InstallInspection) -> str:
         _format_spec_kit_lines(
             inspection.spec_kit_bridge,
             inspection.spec_kit_detection,
+            always_include=True,
+        )
+    )
+    lines.extend(
+        _format_utility_harness_lines(
+            inspection.utility_harness,
             always_include=True,
         )
     )
@@ -344,6 +384,9 @@ def format_install_inspection(inspection: InstallInspection) -> str:
     if inspection.spec_kit_bridge is not None:
         lines.append(f"- Spec Kit bridge mode: `{inspection.spec_kit_bridge.mode}`")
         lines.append(f"- Spec Kit bridge state: `{inspection.spec_kit_bridge.state}`")
+    if inspection.utility_harness is not None:
+        lines.append(f"- Utility Harness mode: `{inspection.utility_harness.mode}`")
+        lines.append(f"- Utility Harness state: `{inspection.utility_harness.state}`")
     if state.lifecycle_state or state.pack_selection_mode or state.managed_sections:
         lines.append(f"- Lifecycle state: `{state.lifecycle_state or 'unknown'}`")
         lines.append(f"- Pack selection mode: `{state.pack_selection_mode or 'unknown'}`")
@@ -599,6 +642,7 @@ def build_replacements(
     pack_selections: tuple[PackSelection, ...],
     spec_kit_bridge: SpecKitBridgeConfig,
     spec_kit_detection: SpecKitDetection,
+    utility_harness: UtilityHarnessConfig,
     *,
     ignore_existing_guidance: tuple[Path, ...] = (),
 ) -> dict[str, str]:
@@ -624,6 +668,7 @@ def build_replacements(
         ),
         "SPEC_KIT_WORKFLOW_GUIDE": render_spec_kit_bridge_doc_workflow(spec_kit_bridge),
         "SPEC_KIT_SKILL_GUIDE": render_spec_kit_bridge_doc_skills(spec_kit_bridge),
+        "UTILITY_HARNESS_SUMMARY": render_utility_harness_summary(utility_harness),
     }
 
 
@@ -681,8 +726,7 @@ def plan_template_writes(
     )
 
     for asset in template_assets:
-        template_path = SOURCE_ROOT / asset.template_path
-        content = render_template(template_path.read_text(encoding="utf-8"), replacements)
+        content = render_template(read_asset_text(asset.template_path), replacements)
         destination = target / asset.destination
         action = "create"
         write_path = asset.destination
@@ -706,16 +750,14 @@ def plan_template_writes(
 
 
 def render_generated_spec_kit_bridge_doc(replacements: dict[str, str]) -> str:
-    template_path = SOURCE_ROOT / SPEC_KIT_BRIDGE_TEMPLATE_PATH
-    return render_template(template_path.read_text(encoding="utf-8"), replacements)
+    return render_template(read_asset_text(SPEC_KIT_BRIDGE_TEMPLATE_PATH), replacements)
 
 
 def plan_copy_writes(target: Path, force: bool) -> list[PlannedWrite]:
     writes: list[PlannedWrite] = []
 
     for asset in INSTALL_COPY_ASSETS:
-        source_path = SOURCE_ROOT / asset.source_path
-        content = source_path.read_text(encoding="utf-8")
+        content = read_asset_text(asset.source_path)
         destination = target / asset.destination
         action = "create"
         write_path = asset.destination
@@ -735,6 +777,38 @@ def plan_copy_writes(target: Path, force: bool) -> list[PlannedWrite]:
             )
         )
 
+    return writes
+
+
+def plan_utility_harness_writes(
+    target: Path,
+    force: bool,
+    utility_harness: UtilityHarnessConfig,
+) -> list[PlannedWrite]:
+    if not utility_harness.enabled:
+        return []
+
+    writes: list[PlannedWrite] = []
+    for asset in OPTIONAL_UTILITY_HARNESS_COPY_ASSETS:
+        content = read_asset_text(asset.source_path)
+        destination = target / asset.destination
+        action = "create"
+        write_path = asset.destination
+        if destination.exists():
+            if force:
+                action = "overwrite"
+            else:
+                action = "proposal"
+                write_path = unique_proposal_destination(target, asset.destination)
+        writes.append(
+            PlannedWrite(
+                destination=asset.destination,
+                write_path=write_path,
+                content=content,
+                source_label=asset.source_path.as_posix(),
+                action=action,
+            )
+        )
     return writes
 
 
@@ -940,6 +1014,7 @@ def build_upgrade_plan(
     spec_kit_command_surface: str = "auto",
     spec_kit_version: str | None = None,
     spec_kit_executable: str | None = None,
+    utility_harness_mode: str | None = None,
 ) -> InstallPlan:
     inspection = inspect_install(target)
     if inspection.status == "not-installed":
@@ -961,7 +1036,13 @@ def build_upgrade_plan(
         version=spec_kit_version,
         executable=spec_kit_executable,
     )
-    ownership = summarize_output_ownership(install_managed_destinations(spec_kit_bridge))
+    utility_harness = resolve_utility_harness(
+        mode=utility_harness_mode,
+        existing=install_state.utility_harness,
+    )
+    ownership = summarize_output_ownership(
+        install_managed_destinations(spec_kit_bridge, utility_harness)
+    )
     pack_selections = resolve_manifest_pack_selection(
         pack_detections,
         selected_packs=install_state.selected_packs,
@@ -972,6 +1053,7 @@ def build_upgrade_plan(
         safe_to_regenerate=ownership.safe_to_regenerate,
         adapt_manually=ownership.adapt_manually,
         spec_kit_bridge=spec_kit_bridge,
+        utility_harness=utility_harness,
     )
 
     writes: list[PlannedWrite] = []
@@ -980,6 +1062,7 @@ def build_upgrade_plan(
         pack_selections,
         spec_kit_bridge,
         spec_kit_detection,
+        utility_harness,
         ignore_existing_guidance=(Path("AGENTS.md"),),
     )
 
@@ -987,8 +1070,7 @@ def build_upgrade_plan(
         OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS if spec_kit_bridge.enabled else ()
     )
     for asset in template_assets:
-        template_path = SOURCE_ROOT / asset.template_path
-        content = render_template(template_path.read_text(encoding="utf-8"), replacements)
+        content = render_template(read_asset_text(asset.template_path), replacements)
         if asset.destination == Path("AGENTS.md"):
             writes.extend(
                 plan_agents_upgrade_writes(
@@ -1012,8 +1094,7 @@ def build_upgrade_plan(
             writes.append(planned)
 
     for asset in INSTALL_COPY_ASSETS:
-        source_path = SOURCE_ROOT / asset.source_path
-        content = source_path.read_text(encoding="utf-8")
+        content = read_asset_text(asset.source_path)
         planned = _plan_changed_write(
             resolved_target,
             asset.destination,
@@ -1027,6 +1108,19 @@ def build_upgrade_plan(
         )
         if planned is not None:
             writes.append(planned)
+
+    if utility_harness.enabled:
+        for asset in OPTIONAL_UTILITY_HARNESS_COPY_ASSETS:
+            content = read_asset_text(asset.source_path)
+            planned = _plan_changed_write(
+                resolved_target,
+                asset.destination,
+                content,
+                asset.source_path.as_posix(),
+                existing_action="proposal",
+            )
+            if planned is not None:
+                writes.append(planned)
 
     for planned in plan_generated_writes(
         resolved_target,
@@ -1074,6 +1168,7 @@ def build_upgrade_plan(
         manifest_preview=manifest_preview,
         spec_kit_bridge=spec_kit_bridge,
         spec_kit_detection=spec_kit_detection,
+        utility_harness=utility_harness,
         external_steps=external_steps,
     )
 
@@ -1107,7 +1202,13 @@ def build_pack_management_plan(
         detection=spec_kit_detection,
         install_state=install_state,
     )
-    ownership = summarize_output_ownership(install_managed_destinations(spec_kit_bridge))
+    utility_harness = resolve_utility_harness(
+        mode=None,
+        existing=install_state.utility_harness,
+    )
+    ownership = summarize_output_ownership(
+        install_managed_destinations(spec_kit_bridge, utility_harness)
+    )
     pack_selections = resolve_managed_pack_selection(
         pack_detections,
         current_selected_packs=install_state.selected_packs,
@@ -1121,12 +1222,14 @@ def build_pack_management_plan(
         safe_to_regenerate=ownership.safe_to_regenerate,
         adapt_manually=ownership.adapt_manually,
         spec_kit_bridge=spec_kit_bridge,
+        utility_harness=utility_harness,
     )
     replacements = build_replacements(
         resolved_target,
         pack_selections,
         spec_kit_bridge,
         spec_kit_detection,
+        utility_harness,
         ignore_existing_guidance=(Path("AGENTS.md"),),
     )
 
@@ -1175,6 +1278,161 @@ def build_pack_management_plan(
         manifest_preview=manifest_preview,
         spec_kit_bridge=spec_kit_bridge,
         spec_kit_detection=spec_kit_detection,
+        utility_harness=utility_harness,
+    )
+
+
+def build_spec_kit_bridge_management_plan(
+    target: Path,
+    *,
+    spec_kit_mode: str | None = None,
+    spec_kit_script: str = "auto",
+    spec_kit_command_surface: str = "auto",
+    spec_kit_version: str | None = None,
+    spec_kit_executable: str | None = None,
+    require_changes: bool = False,
+) -> InstallPlan:
+    if require_changes and not (
+        spec_kit_mode
+        or spec_kit_script != "auto"
+        or spec_kit_command_surface != "auto"
+        or spec_kit_version
+        or spec_kit_executable
+    ):
+        raise ValueError(
+            "--manage-spec-kit-bridge requires a Spec Kit bridge option such as --spec-kit-mode."
+        )
+
+    inspection = inspect_install(target)
+    if inspection.status == "not-installed":
+        raise ValueError(
+            "Target repo does not contain an enhancer install yet; run a full install preview first."
+        )
+    if inspection.status != "current":
+        raise ValueError(
+            "Target enhancer install is not current; run --upgrade-enhancer before managing the Spec Kit bridge."
+        )
+
+    resolved_target = inspection.target
+    spec_kit_detection = inspection.spec_kit_detection or detect_spec_kit(resolved_target)
+    pack_detections = detect_stack_packs(resolved_target)
+    install_state = inspection.install_state or EnhancerInstallState(None, (), (), ())
+    spec_kit_bridge = resolve_target_spec_kit_bridge(
+        resolved_target,
+        detection=spec_kit_detection,
+        install_state=install_state,
+        mode=spec_kit_mode,
+        script_type=spec_kit_script,
+        command_surface=spec_kit_command_surface,
+        version=spec_kit_version,
+        executable=spec_kit_executable,
+    )
+    utility_harness = resolve_utility_harness(
+        mode=None,
+        existing=install_state.utility_harness,
+    )
+    ownership = summarize_output_ownership(
+        install_managed_destinations(spec_kit_bridge, utility_harness)
+    )
+    pack_selections = resolve_manifest_pack_selection(
+        pack_detections,
+        selected_packs=install_state.selected_packs,
+    )
+    manifest_preview = render_stack_pack_manifest(
+        pack_detections,
+        selected_packs=selected_pack_names(pack_selections),
+        safe_to_regenerate=ownership.safe_to_regenerate,
+        adapt_manually=ownership.adapt_manually,
+        spec_kit_bridge=spec_kit_bridge,
+        utility_harness=utility_harness,
+    )
+    replacements = build_replacements(
+        resolved_target,
+        pack_selections,
+        spec_kit_bridge,
+        spec_kit_detection,
+        utility_harness,
+        ignore_existing_guidance=(Path("AGENTS.md"),),
+    )
+
+    writes: list[PlannedWrite] = []
+    agents_update = _plan_changed_write(
+        resolved_target,
+        Path("AGENTS.md"),
+        render_managed_agents_update(
+            resolved_target,
+            section_replacements={
+                SPEC_KIT_BRIDGE_SECTION_ID: render_spec_kit_bridge_summary(
+                    spec_kit_bridge,
+                    spec_kit_detection,
+                ),
+            },
+        ),
+        "managed AGENTS.md Spec Kit bridge section",
+        existing_action="overwrite",
+    )
+    if agents_update is not None:
+        writes.append(agents_update)
+
+    if spec_kit_bridge.enabled:
+        for asset in OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS:
+            content = render_template(read_asset_text(asset.template_path), replacements)
+            planned = _plan_changed_write(
+                resolved_target,
+                asset.destination,
+                content,
+                asset.template_path.as_posix(),
+                existing_action="proposal",
+            )
+            if planned is not None:
+                writes.append(planned)
+
+    for planned in plan_generated_writes(
+        resolved_target,
+        force=True,
+        replacements=replacements,
+        pack_selections=pack_selections,
+        manifest_preview=manifest_preview,
+    ):
+        changed = _plan_changed_write(
+            resolved_target,
+            planned.destination,
+            planned.content,
+            planned.source_label,
+            existing_action="overwrite",
+        )
+        if changed is not None:
+            writes.append(changed)
+
+    external_steps = (
+        tuple(
+            [
+                ExternalStep(
+                    argv=spec_kit_bridge.bootstrap_command,
+                    cwd=resolved_target,
+                    label="Bootstrap official Spec Kit",
+                    source_label="official Spec Kit bootstrap",
+                )
+            ]
+        )
+        if spec_kit_bridge.bootstrap_command
+        else ()
+    )
+
+    return InstallPlan(
+        target=resolved_target,
+        operation="manage-spec-kit-bridge",
+        mode="existing",
+        force=False,
+        writes=tuple(writes),
+        gitignore=None,
+        pack_detections=pack_detections,
+        pack_selections=pack_selections,
+        manifest_preview=manifest_preview,
+        spec_kit_bridge=spec_kit_bridge,
+        spec_kit_detection=spec_kit_detection,
+        utility_harness=utility_harness,
+        external_steps=external_steps,
     )
 
 
@@ -1220,6 +1478,7 @@ def build_install_plan(
     spec_kit_command_surface: str = "auto",
     spec_kit_version: str | None = None,
     spec_kit_executable: str | None = None,
+    utility_harness_mode: str | None = None,
 ) -> InstallPlan:
     resolved_target = target.resolve()
     validate_mode(resolved_target, mode)
@@ -1239,7 +1498,13 @@ def build_install_plan(
             detection=spec_kit_detection,
             install_state=install_state,
         )
-        ownership = summarize_output_ownership(install_managed_destinations(spec_kit_bridge))
+        utility_harness = resolve_utility_harness(
+            mode=None,
+            existing=install_state.utility_harness,
+        )
+        ownership = summarize_output_ownership(
+            install_managed_destinations(spec_kit_bridge, utility_harness)
+        )
         selected_names = load_selected_packs_from_manifest(resolved_target)
         pack_selections = resolve_manifest_pack_selection(
             pack_detections,
@@ -1250,6 +1515,7 @@ def build_install_plan(
             pack_selections,
             spec_kit_bridge,
             spec_kit_detection,
+            utility_harness,
             ignore_existing_guidance=(Path("AGENTS.md"),),
         )
         manifest_preview = render_stack_pack_manifest(
@@ -1258,6 +1524,7 @@ def build_install_plan(
             safe_to_regenerate=ownership.safe_to_regenerate,
             adapt_manually=ownership.adapt_manually,
             spec_kit_bridge=spec_kit_bridge,
+            utility_harness=utility_harness,
         )
         writes = tuple(
             plan_generated_writes(
@@ -1280,6 +1547,7 @@ def build_install_plan(
             manifest_preview=manifest_preview,
             spec_kit_bridge=spec_kit_bridge,
             spec_kit_detection=spec_kit_detection,
+            utility_harness=utility_harness,
         )
 
     gitignore = compute_gitignore_update(resolved_target)
@@ -1292,7 +1560,10 @@ def build_install_plan(
         version=spec_kit_version,
         executable=spec_kit_executable,
     )
-    ownership = summarize_output_ownership(install_managed_destinations(spec_kit_bridge))
+    utility_harness = resolve_utility_harness(mode=utility_harness_mode or "off")
+    ownership = summarize_output_ownership(
+        install_managed_destinations(spec_kit_bridge, utility_harness)
+    )
     pack_selections = resolve_stack_pack_selection(
         pack_detections,
         use_recommended_packs=use_recommended_packs,
@@ -1304,6 +1575,7 @@ def build_install_plan(
         pack_selections,
         spec_kit_bridge,
         spec_kit_detection,
+        utility_harness,
     )
     manifest_preview = render_stack_pack_manifest(
         pack_detections,
@@ -1311,6 +1583,7 @@ def build_install_plan(
         safe_to_regenerate=ownership.safe_to_regenerate,
         adapt_manually=ownership.adapt_manually,
         spec_kit_bridge=spec_kit_bridge,
+        utility_harness=utility_harness,
     )
     writes = tuple(
         plan_template_writes(
@@ -1320,6 +1593,11 @@ def build_install_plan(
             spec_kit_bridge=spec_kit_bridge,
         )
         + plan_copy_writes(resolved_target, force=force)
+        + plan_utility_harness_writes(
+            resolved_target,
+            force=force,
+            utility_harness=utility_harness,
+        )
         + plan_generated_writes(
             resolved_target,
             force=force,
@@ -1354,6 +1632,7 @@ def build_install_plan(
         manifest_preview=manifest_preview,
         spec_kit_bridge=spec_kit_bridge,
         spec_kit_detection=spec_kit_detection,
+        utility_harness=utility_harness,
         external_steps=external_steps,
     )
 
@@ -1365,6 +1644,9 @@ def format_plan_header(plan: InstallPlan, write: bool) -> str:
         else
         "Codex Enhancer stack-pack management plan"
         if plan.operation == "manage-packs"
+        else
+        "Codex Enhancer Spec Kit bridge management plan"
+        if plan.operation == "manage-spec-kit-bridge"
         else
         "Codex Enhancer generated-output refresh"
         if plan.operation == "refresh-generated"
@@ -1386,6 +1668,12 @@ def format_plan_lines(plan: InstallPlan) -> list[str]:
     )
     if spec_kit_lines:
         lines.extend(spec_kit_lines)
+    utility_lines = _format_utility_harness_lines(
+        plan.utility_harness,
+        always_include=False,
+    )
+    if utility_lines:
+        lines.extend(utility_lines)
     if plan.external_steps:
         lines.append("External steps:")
         for step in plan.external_steps:
@@ -1457,6 +1745,8 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
         lines.append("- Upgrade reconcile keeps the installed pack selection and compares tracked enhancer files against the current source.")
     elif plan.operation == "manage-packs":
         lines.append("- Pack management updates the selected target manifest packs, managed AGENTS section, and generated bridge or pack guidance.")
+    elif plan.operation == "manage-spec-kit-bridge":
+        lines.append("- Spec Kit bridge management keeps the installed pack selection and updates only enhancer-owned bridge guidance and generated outputs.")
     elif plan.operation == "refresh-generated":
         lines.append("- Stack guidance, the Spec Kit bridge guide, and the pack manifest will be regenerated from the existing target manifest.")
     else:
@@ -1466,7 +1756,12 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
 
 
 def summarize_conflicts(plan: InstallPlan) -> ConflictSummary:
-    if plan.operation in {"refresh-generated", "upgrade-enhancer", "manage-packs"}:
+    if plan.operation in {
+        "refresh-generated",
+        "upgrade-enhancer",
+        "manage-packs",
+        "manage-spec-kit-bridge",
+    }:
         return ConflictSummary(
             critical_proposals=(),
             standard_proposals=(),
@@ -1532,13 +1827,16 @@ def format_output_ownership_lines(plan: InstallPlan) -> list[str]:
     if not summary.safe_to_regenerate and not summary.adapt_manually:
         return []
 
-    if plan.operation == "manage-packs":
+    if plan.operation in {"manage-packs", "manage-spec-kit-bridge"}:
         lines = ["Output ownership:"]
         if summary.safe_to_regenerate:
             lines.append("- Regenerated managed outputs: " + _format_conflict_paths(summary.safe_to_regenerate))
         if summary.adapt_manually:
             lines.append("- Managed sections updated in place: " + _format_conflict_paths(summary.adapt_manually))
-        lines.append("- Repo-owned content outside managed markers stays untouched.")
+        if plan.operation == "manage-spec-kit-bridge":
+            lines.append("- Official Spec Kit files stay untouched.")
+        else:
+            lines.append("- Repo-owned content outside managed markers stays untouched.")
         return lines
 
     lines = ["Output ownership:"]
@@ -1768,6 +2066,7 @@ def format_plan_report(plan: InstallPlan, write: bool) -> str:
 def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
     proposals = [item for item in plan.writes if item.action == "proposal"]
     bridge_enabled = plan.spec_kit_bridge is not None and plan.spec_kit_bridge.enabled
+    utility_enabled = plan.utility_harness is not None and plan.utility_harness.enabled
     if plan.operation == "upgrade-enhancer":
         if not write:
             lines = [
@@ -1795,6 +2094,8 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
             lines.append("- Review merged `.gitignore` entries if the target repo uses different ignore conventions.")
         if bridge_enabled:
             lines.append("- Review `docs/ai/spec-kit-bridge.md` and any installed bridge skills before feature work.")
+        if utility_enabled:
+            lines.append("- Review `docs/ai/utility-harness.md` before installing or running Codex helper dependencies.")
         lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
         lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
         return lines
@@ -1803,6 +2104,8 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
         action = (
             "refresh preview"
             if plan.operation == "refresh-generated"
+            else "Spec Kit bridge-management preview"
+            if plan.operation == "manage-spec-kit-bridge"
             else "pack-management preview"
             if plan.operation == "manage-packs"
             else "preview"
@@ -1831,6 +2134,17 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
         lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
         return lines
 
+    if plan.operation == "manage-spec-kit-bridge":
+        if bridge_enabled:
+            lines.append("- Review the updated managed Spec Kit bridge section in `AGENTS.md` and the regenerated `docs/ai/spec-kit-bridge.md`.")
+            lines.append("- Review any bridge skill proposals under `.codex/enhancer-proposals/` before merging them.")
+        else:
+            lines.append("- Review the updated managed Spec Kit bridge section in `AGENTS.md`; the bridge is now off.")
+        lines.append("- Confirm official Spec Kit-owned files under `.specify/`, `specs/`, `.github/`, or `.agents/` were not edited by the enhancer.")
+        lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
+        lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
+        return lines
+
     if plan.operation == "refresh-generated":
         lines.extend(render_refresh_follow_up_lines(plan.pack_selections))
         lines.append("- Review the refreshed `docs/ai/spec-kit-bridge.md` if this repo uses the Spec Kit bridge.")
@@ -1852,6 +2166,8 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
     lines.extend(render_install_follow_up_lines(plan.pack_selections))
     if bridge_enabled:
         lines.append("- Review `docs/ai/spec-kit-bridge.md` and the bridge skills before using Spec Kit-driven feature branches.")
+    if utility_enabled:
+        lines.append("- Review `docs/ai/utility-harness.md` and keep `requirements-codex.txt` out of production dependency flows.")
     lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
     lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
     return lines
@@ -1861,6 +2177,8 @@ def format_after_install_preview(plan: InstallPlan) -> list[str]:
     heading = (
         "After refresh:"
         if plan.operation == "refresh-generated"
+        else "After Spec Kit bridge management:"
+        if plan.operation == "manage-spec-kit-bridge"
         else "After pack management:"
         if plan.operation == "manage-packs"
         else "After install:"
@@ -1901,6 +2219,8 @@ def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | 
     if progress_callback:
         if plan.operation == "upgrade-enhancer":
             message = "Preparing upgrade..."
+        elif plan.operation == "manage-spec-kit-bridge":
+            message = "Preparing Spec Kit bridge management..."
         elif plan.operation == "manage-packs":
             message = "Preparing pack management..."
         elif plan.operation == "refresh-generated":
@@ -1959,6 +2279,30 @@ def main(argv: list[str]) -> int:
         help="inspect source-vs-target enhancer install state without planning writes",
     )
     parser.add_argument(
+        "--spec-kit-report",
+        action="store_true",
+        help="print a read-only report of detected Spec Kit feature artifacts",
+    )
+    parser.add_argument(
+        "--spec-kit-sync-report",
+        action="store_true",
+        help="print a read-only Spec Kit feature sync report for changed paths",
+    )
+    parser.add_argument(
+        "--spec-kit-feature",
+        help="limit Spec Kit reports to a feature directory name or numeric prefix",
+    )
+    parser.add_argument(
+        "--spec-kit-changed-path",
+        action="append",
+        default=[],
+        help="changed path to include in --spec-kit-sync-report; may be repeated",
+    )
+    parser.add_argument(
+        "--spec-kit-base",
+        help="git base ref for --spec-kit-sync-report path discovery using git diff --name-only",
+    )
+    parser.add_argument(
         "--upgrade-enhancer",
         action="store_true",
         help="preview or apply a reconcile of an existing enhancer install against the current source repo",
@@ -1967,6 +2311,11 @@ def main(argv: list[str]) -> int:
         "--manage-packs",
         action="store_true",
         help="preview or apply selected stack-pack changes in an existing enhancer install",
+    )
+    parser.add_argument(
+        "--manage-spec-kit-bridge",
+        action="store_true",
+        help="preview or apply Spec Kit bridge mode changes for an existing enhancer install",
     )
     parser.add_argument(
         "--mode",
@@ -2049,6 +2398,11 @@ def main(argv: list[str]) -> int:
         "--spec-kit-exe",
         help="path to a local `specify`-compatible executable to use instead of uvx for bootstrap",
     )
+    parser.add_argument(
+        "--utility-harness-mode",
+        choices=("off", "install"),
+        help="install or disable the optional Codex Utility Harness helper files",
+    )
     args = parser.parse_args(argv)
 
     if args.list_packs and args.target is None:
@@ -2070,9 +2424,67 @@ def main(argv: list[str]) -> int:
         print(format_pack_catalog(target))
         return 0
 
+    if args.spec_kit_report and args.spec_kit_sync_report:
+        print("--spec-kit-report and --spec-kit-sync-report are separate read-only reports.")
+        return 1
+
+    if args.spec_kit_feature and not (args.spec_kit_report or args.spec_kit_sync_report):
+        print("--spec-kit-feature requires --spec-kit-report or --spec-kit-sync-report.")
+        return 1
+
+    if (args.spec_kit_changed_path or args.spec_kit_base) and not args.spec_kit_sync_report:
+        print("--spec-kit-changed-path and --spec-kit-base require --spec-kit-sync-report.")
+        return 1
+
+    if (args.spec_kit_report or args.spec_kit_sync_report) and (
+        args.inspect_install
+        or args.upgrade_enhancer
+        or args.manage_packs
+        or args.manage_spec_kit_bridge
+        or args.write
+        or args.force
+        or args.refresh_generated
+        or args.use_recommended_packs
+        or args.pack
+        or args.no_pack
+        or args.add_pack
+        or args.remove_pack
+        or args.set_pack
+        or args.spec_kit_mode
+        or args.spec_kit_script != "auto"
+        or args.spec_kit_command_surface != "auto"
+        or args.spec_kit_version
+        or args.spec_kit_exe
+        or args.utility_harness_mode
+    ):
+        print("Spec Kit reports are read-only and cannot be combined with install, write, bridge, utility, or pack-selection flags.")
+        return 1
+
+    if args.spec_kit_report:
+        if not target.exists() or not target.is_dir():
+            print(f"Target {target} does not exist or is not a directory.")
+            return 1
+        print(render_spec_kit_feature_report(target, feature=args.spec_kit_feature))
+        return 0
+
+    if args.spec_kit_sync_report:
+        if not target.exists() or not target.is_dir():
+            print(f"Target {target} does not exist or is not a directory.")
+            return 1
+        print(
+            render_spec_kit_sync_report(
+                target,
+                feature=args.spec_kit_feature,
+                changed_paths=tuple(args.spec_kit_changed_path),
+                git_base=args.spec_kit_base,
+            )
+        )
+        return 0
+
     if args.inspect_install and (
         args.upgrade_enhancer
         or args.manage_packs
+        or args.manage_spec_kit_bridge
         or
         args.write
         or args.force
@@ -2088,6 +2500,12 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_command_surface != "auto"
         or args.spec_kit_version
         or args.spec_kit_exe
+        or args.spec_kit_report
+        or args.spec_kit_sync_report
+        or args.spec_kit_feature
+        or args.spec_kit_changed_path
+        or args.spec_kit_base
+        or args.utility_harness_mode
     ):
         print("--inspect-install only inspects the target repo and cannot be combined with write, refresh, force, or pack-selection flags.")
         return 1
@@ -2104,6 +2522,7 @@ def main(argv: list[str]) -> int:
     if args.upgrade_enhancer and (
         args.force
         or args.manage_packs
+        or args.manage_spec_kit_bridge
         or args.refresh_generated
         or args.use_recommended_packs
         or args.pack
@@ -2127,6 +2546,44 @@ def main(argv: list[str]) -> int:
                 spec_kit_command_surface=args.spec_kit_command_surface,
                 spec_kit_version=args.spec_kit_version,
                 spec_kit_executable=args.spec_kit_exe,
+                utility_harness_mode=args.utility_harness_mode,
+            )
+        except ValueError as error:
+            print(str(error))
+            return 1
+        print(format_plan_report(plan, write=args.write))
+        if args.write:
+            apply_install_plan(plan)
+        return 0
+
+    if args.manage_spec_kit_bridge and (
+        args.force
+        or args.manage_packs
+        or args.refresh_generated
+        or args.use_recommended_packs
+        or args.pack
+        or args.no_pack
+        or args.add_pack
+        or args.remove_pack
+        or args.set_pack
+        or args.utility_harness_mode
+    ):
+        print("--manage-spec-kit-bridge updates bridge state and cannot be combined with force, refresh, Utility Harness, or pack-selection flags.")
+        return 1
+
+    if args.manage_spec_kit_bridge:
+        if args.mode == "new":
+            print("--manage-spec-kit-bridge only works with --mode existing or --mode auto.")
+            return 1
+        try:
+            plan = build_spec_kit_bridge_management_plan(
+                target,
+                spec_kit_mode=args.spec_kit_mode,
+                spec_kit_script=args.spec_kit_script,
+                spec_kit_command_surface=args.spec_kit_command_surface,
+                spec_kit_version=args.spec_kit_version,
+                spec_kit_executable=args.spec_kit_exe,
+                require_changes=True,
             )
         except ValueError as error:
             print(str(error))
@@ -2142,6 +2599,7 @@ def main(argv: list[str]) -> int:
 
     if args.manage_packs and (
         args.force
+        or args.manage_spec_kit_bridge
         or args.refresh_generated
         or args.use_recommended_packs
         or args.pack
@@ -2151,8 +2609,9 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_command_surface != "auto"
         or args.spec_kit_version
         or args.spec_kit_exe
+        or args.utility_harness_mode
     ):
-        print("--manage-packs updates installed pack selection and cannot be combined with install-time Spec Kit or pack-selection flags.")
+        print("--manage-packs updates installed pack selection and cannot be combined with install-time Spec Kit, Utility Harness, or pack-selection flags.")
         return 1
 
     if args.manage_packs:
@@ -2185,6 +2644,7 @@ def main(argv: list[str]) -> int:
 
     if args.refresh_generated and (
         args.use_recommended_packs
+        or args.manage_spec_kit_bridge
         or args.pack
         or args.no_pack
         or args.add_pack
@@ -2195,10 +2655,11 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_command_surface != "auto"
         or args.spec_kit_version
         or args.spec_kit_exe
+        or args.utility_harness_mode
     ):
         print(
             "--refresh-generated uses the target repo's existing manifest selection and bridge state; "
-            "do not combine it with pack-selection or Spec Kit override flags."
+            "do not combine it with pack-selection, Spec Kit override, or Utility Harness flags."
         )
         return 1
 
@@ -2216,6 +2677,7 @@ def main(argv: list[str]) -> int:
             spec_kit_command_surface=args.spec_kit_command_surface,
             spec_kit_version=args.spec_kit_version,
             spec_kit_executable=args.spec_kit_exe,
+            utility_harness_mode=args.utility_harness_mode,
         )
     except ValueError as error:
         print(str(error))

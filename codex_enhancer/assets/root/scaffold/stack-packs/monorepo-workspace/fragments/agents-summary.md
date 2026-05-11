@@ -1,0 +1,3 @@
+- Resolve the correct workspace or package before running commands.
+- Prefer package-scoped or affected checks before repo-wide validation.
+- Expand validation scope when shared config or contracts change.

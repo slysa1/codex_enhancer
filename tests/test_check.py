@@ -30,17 +30,34 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         See [AGENTS.md](AGENTS.md).
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
+        Use `pip install -e .` for local CLI packaging.
+        Build distributable artifacts with `python -m build`.
+        Run `python scripts/codex_enhancer_cli.py list-packs` or `codex-enhancer.bat`.
+        Preview bundled installs with `--with-spec-kit`.
+        Run `python scripts/codex_enhancer_cli.py spec-report ../repo`,
+        `python scripts/codex_enhancer_cli.py spec-sync ../repo --changed src/app.py`,
+        and `python scripts/codex_enhancer_cli.py bridge ../repo --attach-spec-kit`.
         Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_gui.py`.
         Read [docs/ai/migration-v3.md](docs/ai/migration-v3.md) before upgrading existing installs.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the next planned evolution.
+        See [docs/ai/release.md](docs/ai/release.md) before building packages.
+        See [docs/ai/utility-harness.md](docs/ai/utility-harness.md) for the optional harness.
+        Preview with `--utility-harness-mode install`.
         """,
         "AGENTS.md": f"""
         # Codex Enhancer
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
+        Local package metadata lives in `pyproject.toml` and package assets live in `codex_enhancer/package_assets.py`.
+        Use `scripts/codex_enhancer_cli.py` and `codex-enhancer.bat` for the friendly command facade.
+        Use `--with-spec-kit` only when the user explicitly wants official Spec Kit bootstrapped.
+        Use `spec-sync` for read-only Spec Kit changed-path sync cues.
         Use `install_enhancer.bat` for the Windows GUI installer.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the enhancer roadmap.
+        See [docs/ai/release.md](docs/ai/release.md) for package release checks.
         See [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md) for the optional Spec Kit bridge.
+        See [docs/ai/utility-harness.md](docs/ai/utility-harness.md) for the optional Utility Harness.
+        The resolver lives in `scripts/utility_harness.py`.
 
         See [docs/ai/architecture.md](docs/ai/architecture.md),
         [docs/ai/code-review.md](docs/ai/code-review.md),
@@ -48,6 +65,44 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         [.codex/skills/](.codex/skills/), and [tests/](tests/).
         """,
         "install_enhancer.bat": """
+        @echo off
+        """,
+        "MANIFEST.in": """
+        recursive-include codex_enhancer/assets/root *
+        """,
+        "pyproject.toml": """
+        [build-system]
+        requires = ["setuptools>=70"]
+        build-backend = "setuptools.build_meta"
+
+        [project]
+        name = "codex-enhancer"
+        dynamic = ["version"]
+        license = "GPL-3.0-or-later"
+        license-files = ["LICENSE"]
+
+        [project.scripts]
+        codex-enhancer = "scripts.codex_enhancer_cli:main"
+
+        [tool.setuptools]
+        include-package-data = true
+
+        [tool.setuptools.packages.find]
+        include = ["scripts*", "codex_enhancer*"]
+
+        [tool.setuptools.dynamic]
+        version = { attr = "scripts.enhancer_spec.ENHANCER_VERSION" }
+        """,
+        "codex_enhancer/__init__.py": """
+        # package marker
+        """,
+        "codex_enhancer/package_assets.py": """
+        # package asset locator
+        """,
+        "codex-enhancer": """
+        #!/usr/bin/env python3
+        """,
+        "codex-enhancer.bat": """
         @echo off
         """,
         "docs/ai/architecture.md": """
@@ -60,13 +115,23 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         See [docs/ai/migration-v3.md](migration-v3.md).
+        See [docs/ai/release.md](release.md).
         See [docs/ai/spec-kit-bridge.md](spec-kit-bridge.md).
+        See [docs/ai/utility-harness.md](utility-harness.md).
         """,
         "docs/ai/migration-v3.md": """
         # V3 Migration Notes
 
         Use `--inspect-install`, `--upgrade-enhancer`, `--manage-packs`,
+        `--manage-spec-kit-bridge`, `--spec-kit-report`, `--spec-kit-sync-report`,
         and `--refresh-generated`.
+        """,
+        "docs/ai/release.md": """
+        # Release Checklist
+
+        Run `python -m build`, smoke `codex-enhancer list-packs`,
+        keep requirements-codex.txt out of production dependencies, and
+        mirror `codex_enhancer/assets/root/`.
         """,
         "docs/ai/roadmap.md": """
         # Codex Enhancer Roadmap
@@ -77,6 +142,12 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         # Spec Kit Bridge
 
         Treat official Spec Kit files as separately owned.
+        Use spec-report and spec-sync for read-only summaries and bridge for bridge mode changes.
+        """,
+        "docs/ai/utility-harness.md": """
+        # Codex Utility Harness
+
+        Keep requirements-codex.txt out of production dependencies.
         """,
         ".codex/skills/AGENTS.md": """
         # Skills
@@ -120,11 +191,17 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "scripts/check.py": """
         # placeholder script file for fixture
         """,
+        "scripts/codex_enhancer_cli.py": """
+        # placeholder command facade
+        """,
         "scripts/enhancer_spec.py": """
         # placeholder enhancer spec for fixture
         """,
         "scripts/spec_kit_bridge.py": """
         # placeholder Spec Kit bridge helper for fixture
+        """,
+        "scripts/utility_harness.py": """
+        # placeholder Utility Harness helper for fixture
         """,
         "scripts/enhancer_validator.py": """
         # placeholder validator for fixture
@@ -141,11 +218,20 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "tests/test_check.py": """
         # placeholder test file for fixture
         """,
+        "tests/test_codex_enhancer_cli.py": """
+        # placeholder command facade test file
+        """,
         "tests/test_install_enhancer.py": """
         # placeholder installer test file for fixture
         """,
+        "tests/test_packaging.py": """
+        # placeholder packaging test file for fixture
+        """,
         "tests/test_spec_kit_bridge.py": """
         # placeholder Spec Kit bridge test file for fixture
+        """,
+        "tests/test_utility_harness.py": """
+        # placeholder Utility Harness test file for fixture
         """,
         "tests/test_stack_packs.py": """
         # placeholder stack pack test file for fixture
@@ -173,6 +259,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scaffold/target-repo/docs/ai/spec-kit-bridge.md": """
         # Spec Kit Bridge template
+        """,
+        "scaffold/target-repo/docs/ai/utility-harness.md": """
+        # Utility Harness template
         """,
         "scaffold/target-repo/.codex/skills/adapt-enhancer/SKILL.md": """
         ---
@@ -211,6 +300,21 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         ## Do not use
         - Do not use when the change was not driven by Spec Kit artifacts.
+        """,
+        "scaffold/target-repo/requirements-codex.txt": """
+        pathspec
+        """,
+        "scaffold/target-repo/tools/ai/inspect_repo.py": """
+        # utility harness inspect repo tool
+        """,
+        "scaffold/target-repo/tools/ai/read_any.py": """
+        # utility harness read any tool
+        """,
+        "scaffold/target-repo/tools/ai/summarize_tree.py": """
+        # utility harness summarize tree tool
+        """,
+        "scaffold/target-repo/tools/ai/run_checks.py": """
+        # utility harness run checks tool
         """,
         "scaffold/target-repo/scripts/check.py": """
         # template check wrapper

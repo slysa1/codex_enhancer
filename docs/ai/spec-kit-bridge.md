@@ -26,6 +26,7 @@ This document defines how Codex Enhancer should coexist with official GitHub Spe
 - Target installs now record bridge state under `[integrations.spec_kit]` in `.codex/enhancer/manifest.toml`.
 - `docs/ai/spec-kit-bridge.md` is now an enhancer-managed generated guide in target repos and is safe to regenerate later.
 - When the bridge is active, target installs also add the narrow bridge skills `spec-implement-bridge`, `spec-sync-check`, and `spec-review-bridge`.
+- `spec-report` and `spec-sync` provide read-only feature artifact and changed-path sync reports without editing official Spec Kit files.
 
 ## Installer Modes
 - `off`: the enhancer ignores Spec Kit and leaves only passive guidance.
@@ -33,14 +34,23 @@ This document defines how Codex Enhancer should coexist with official GitHub Spe
 - `bootstrap`: the enhancer runs the official Codex bootstrap command first, then writes enhancer-owned bridge guidance without vendoring Spec Kit itself.
 - `auto`: the enhancer attaches if official Spec Kit is already detected, otherwise it stays off.
 
+## Friendly CLI Shortcuts
+- `python scripts/codex_enhancer_cli.py init <repo> --with-spec-kit`: preview bootstrapping official Spec Kit for Codex together with the enhancer scaffold.
+- `python scripts/codex_enhancer_cli.py init <repo> --with-spec-kit --write`: run the official Spec Kit bootstrap, then write enhancer-owned bridge guidance and skills.
+- `python scripts/codex_enhancer_cli.py spec-report <repo>`: summarize existing feature artifacts under `specs/` without editing official Spec Kit files.
+- `python scripts/codex_enhancer_cli.py spec-sync <repo> --feature <feature> --changed <path>`: summarize changed paths against existing feature artifacts, task state, contracts, and quickstart cues without editing official Spec Kit files.
+- `python scripts/codex_enhancer_cli.py bridge <repo> --attach-spec-kit`: preview changing an installed target's bridge mode without running a full enhancer upgrade.
+- `--attach-spec-kit` attaches to an existing official install; `--no-spec-kit` keeps the bridge off.
+
+The preview must show the official bootstrap command before apply. Treat rerunning with `--write` as the user's consent to let the installer download or execute official Spec Kit tooling.
+
 ## Development Rule
 - If a bridge change affects ownership, update the shared spec, validator expectations, source docs, and target scaffold in the same patch.
 - If a bridge change affects install behavior later, keep CLI, GUI, manifest rendering, and README guidance aligned in the same patch.
 - If a bridge rule only applies when Spec Kit is present, keep the default target-repo behavior safe and low-noise when Spec Kit is absent.
 
 ## Remaining Follow-up
-1. Add richer drift checks that compare code back against `spec.md`, `tasks.md`, `contracts/`, and `quickstart.md`.
-2. Consider a dedicated reconcile flow for changing bridge mode in already-installed repos without a full scaffold or upgrade run.
-3. Add optional PR support that summarizes implementation and validation from Spec Kit feature artifacts.
+1. Add richer semantic drift checks after the read-only `spec-sync` report proves useful.
+2. Add optional PR support that summarizes implementation and validation from Spec Kit feature artifacts.
 
 See [roadmap.md](./roadmap.md) for the step-by-step implementation plan.

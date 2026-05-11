@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+import tomllib
+import unittest
+from pathlib import Path
+
+from codex_enhancer.package_assets import asset_path
+from scripts.enhancer_spec import ENHANCER_VERSION
+
+
+class PackagingMetadataTests(unittest.TestCase):
+    def load_pyproject(self) -> dict[str, object]:
+        root = Path(__file__).resolve().parents[1]
+        return tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+
+    def test_console_script_points_to_cli_facade(self) -> None:
+        pyproject = self.load_pyproject()
+        project = pyproject["project"]
+
+        self.assertEqual(project["name"], "codex-enhancer")
+        self.assertEqual(project["license"], "GPL-3.0-or-later")
+        self.assertEqual(project["license-files"], ["LICENSE"])
+        self.assertEqual(
+            project["scripts"]["codex-enhancer"],
+            "scripts.codex_enhancer_cli:main",
+        )
+        self.assertIn("codex_enhancer*", pyproject["tool"]["setuptools"]["packages"]["find"]["include"])
+
+    def test_package_version_comes_from_enhancer_spec(self) -> None:
+        pyproject = self.load_pyproject()
+
+        self.assertEqual(pyproject["project"]["dynamic"], ["version"])
+        self.assertEqual(
+            pyproject["tool"]["setuptools"]["dynamic"]["version"]["attr"],
+            "scripts.enhancer_spec.ENHANCER_VERSION",
+        )
+        self.assertRegex(ENHANCER_VERSION, r"^\d+\.\d+\.\d+$")
+
+    def test_packaged_assets_mirror_runtime_scaffold_inputs(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        packaged_root = root / "codex_enhancer/assets/root"
+        source_roots = (root / "scaffold", root / ".codex/skills")
+
+        self.assertEqual(asset_path("scaffold/stack-packs").resolve(), (root / "scaffold/stack-packs").resolve())
+        self.assertTrue((packaged_root / "README.md").is_file())
+        self.assertEqual(
+            (packaged_root / "README.md").read_text(encoding="utf-8"),
+            (root / "README.md").read_text(encoding="utf-8"),
+        )
+
+        for source_root in source_roots:
+            for source_path in source_root.rglob("*"):
+                if source_path.is_dir():
+                    continue
+                relative_path = source_path.relative_to(root)
+                packaged_path = packaged_root / relative_path
+                self.assertTrue(packaged_path.is_file(), relative_path.as_posix())
+                self.assertEqual(
+                    packaged_path.read_text(encoding="utf-8"),
+                    source_path.read_text(encoding="utf-8"),
+                    relative_path.as_posix(),
+                )
+
+    def test_release_checklist_and_manifest_exclude_generated_build_noise(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        release_doc = (root / "docs/ai/release.md").read_text(encoding="utf-8")
+        manifest = (root / "MANIFEST.in").read_text(encoding="utf-8")
+
+        self.assertIn("python -m build", release_doc)
+        self.assertIn("codex-enhancer list-packs", release_doc)
+        self.assertIn("requirements-codex.txt", release_doc)
+        self.assertIn("global-exclude __pycache__ *.py[cod]", manifest)
+
+
+if __name__ == "__main__":
+    unittest.main()

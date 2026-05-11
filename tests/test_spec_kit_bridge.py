@@ -8,9 +8,13 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from scripts.spec_kit_bridge import (
+    build_spec_kit_sync_report,
     detect_spec_kit,
+    discover_spec_kit_features,
+    render_spec_kit_feature_report,
     render_spec_kit_bridge_summary,
     render_spec_kit_detection_lines,
+    render_spec_kit_sync_report,
     resolve_spec_kit_bridge,
 )
 
@@ -164,6 +168,93 @@ class SpecKitBridgeTests(unittest.TestCase):
                     "ps",
                 ),
             )
+
+    def test_feature_report_summarizes_artifacts_and_task_state(self) -> None:
+        with repo_fixture("spec_kit_features") as root:
+            write_file(root, ".specify/memory/constitution.md", "# Constitution\n")
+            write_file(root, "specs/001-login/spec.md", "# Login spec\n")
+            write_file(root, "specs/001-login/plan.md", "# Login plan\n")
+            write_file(
+                root,
+                "specs/001-login/tasks.md",
+                """
+                # Tasks
+                - [x] T001 Build auth form
+                - [ ] T002 Add validation
+                """,
+            )
+            write_file(root, "specs/001-login/contracts/openapi.yaml", "openapi: 3.1.0\n")
+            write_file(root, "specs/002-search/spec.md", "# Search spec\n")
+
+            summaries = discover_spec_kit_features(root)
+            report = render_spec_kit_feature_report(root, feature="001")
+
+            self.assertEqual([summary.name for summary in summaries], ["001-login", "002-search"])
+            self.assertEqual(summaries[0].task_total, 2)
+            self.assertEqual(summaries[0].task_done, 1)
+            self.assertEqual(summaries[0].task_open, 1)
+            self.assertIn("`001-login` at `specs/001-login`", report)
+            self.assertIn("`contracts/ (1 file)`", report)
+            self.assertIn("Tasks: 2 total, 1 done, 1 open", report)
+            self.assertNotIn("002-search", report)
+
+    def test_feature_report_handles_missing_specs_directory(self) -> None:
+        with repo_fixture("spec_kit_no_specs") as root:
+            report = render_spec_kit_feature_report(root)
+
+            self.assertIn("Official Spec Kit not detected", report)
+            self.assertIn("No `specs/` directory was found.", report)
+
+    def test_sync_report_links_changed_paths_to_feature_artifacts(self) -> None:
+        with repo_fixture("spec_kit_sync") as root:
+            write_file(root, ".specify/integration.json", '{"integration": "codex"}\n')
+            write_file(root, "specs/001-login/spec.md", "# Login spec\n")
+            write_file(root, "specs/001-login/plan.md", "# Login plan\n")
+            write_file(
+                root,
+                "specs/001-login/tasks.md",
+                """
+                # Tasks
+                - [x] T001 Build auth form
+                - [ ] T002 Add validation
+                """,
+            )
+            write_file(root, "specs/001-login/quickstart.md", "# Quickstart\n")
+            write_file(root, "specs/001-login/contracts/openapi.yaml", "openapi: 3.1.0\n")
+
+            sync = build_spec_kit_sync_report(
+                root,
+                feature="001",
+                changed_paths=("src/auth.py", "tests/test_auth.py"),
+            )
+            rendered = render_spec_kit_sync_report(
+                root,
+                feature="001",
+                changed_paths=("src/auth.py", "tests/test_auth.py"),
+            )
+
+            self.assertEqual(sync.changed_paths, ("src/auth.py", "tests/test_auth.py"))
+            self.assertIn("specs/001-login/spec.md", sync.artifact_paths)
+            self.assertIn("`001-login` still has 1 open task(s).", sync.notes)
+            self.assertIn("Spec Kit sync report", rendered)
+            self.assertIn("Artifacts to re-read:", rendered)
+            self.assertIn("`src/auth.py`", rendered)
+            self.assertIn("Changed path categories: source: 1, tests: 1.", rendered)
+
+    def test_sync_report_reports_missing_changed_paths_and_git_errors(self) -> None:
+        with repo_fixture("spec_kit_sync_git_error") as root:
+            write_file(root, "specs/001-login/spec.md", "# Login spec\n")
+
+            report = render_spec_kit_sync_report(
+                root,
+                feature="001",
+                git_base="definitely-not-a-ref",
+            )
+
+            self.assertIn("Spec Kit sync report", report)
+            self.assertIn("Git base: `definitely-not-a-ref`", report)
+            self.assertIn("Git diff unavailable:", report)
+            self.assertIn("No changed paths were supplied", report)
 
 
 if __name__ == "__main__":

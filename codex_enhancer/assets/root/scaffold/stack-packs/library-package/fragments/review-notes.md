@@ -1,0 +1,3 @@
+- Note which public entrypoints, exports, generated types, or package metadata changed.
+- Record whether build, pack, typecheck, and consumer-facing tests were run or intentionally skipped.
+- Flag breaking-change or migration risk when exported symbols, file layout, runtime targets, or package metadata changed.

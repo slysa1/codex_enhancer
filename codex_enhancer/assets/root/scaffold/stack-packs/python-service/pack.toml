@@ -1,0 +1,32 @@
+schema_version = 1
+name = "python-service"
+label = "Python service"
+description = "Rules for repositories that expose Python application, service, or toolchain entrypoints."
+version = "0.1.0"
+
+[discovery]
+any_files = ["pyproject.toml", "requirements.txt", "setup.cfg", "setup.py"]
+
+[ui]
+recommended_if_detected = true
+default_selected = false
+order = 30
+
+[guidance]
+use_when = [
+  "The repo has pyproject.toml, requirements files, setup metadata, or Python service/tool entrypoints.",
+  "Codex should discover the local Python environment and use existing test, lint, type, or format tools.",
+]
+adds = [
+  "Python environment and dependency-discovery discipline before running commands.",
+  "Service/tool review prompts for configuration, entrypoints, fixtures, and regression tests.",
+]
+skip_when = [
+  "Python only appears in the enhancer scaffold or one-off maintenance scripts.",
+  "The primary application stack is not Python and Python files are incidental.",
+]
+
+[render]
+agents_summary = "fragments/agents-summary.md"
+stack_guidance = "fragments/stack-guidance.md"
+review_notes = "fragments/review-notes.md"

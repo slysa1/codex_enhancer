@@ -10,13 +10,16 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 5. If a skill changed, verify the trigger is narrow and the `## Do not use` section is still accurate.
 6. If a script changed, verify it is deterministic and dependency-light.
 7. If repo commands changed, confirm [.github/workflows/validate.yml](../../.github/workflows/validate.yml) changed with them.
-8. If installer, scaffold, or stack-pack behavior changed, confirm the end-to-end installer tests still pass.
-9. If stack-pack generation or management changed, verify target `AGENTS.md`, `docs/ai/stack-guidance.md`, and `.codex/enhancer/manifest.toml` stay aligned with the selected packs.
-10. If output ownership rules changed, verify previews and the target manifest still distinguish safe-to-regenerate outputs from scaffold files that should usually be adapted manually.
-11. If the GUI installer changed, verify the overwrite preview, pack-selection controls, confirmation gate, progress updates, and README handoff still match the installer core.
-12. If lifecycle, upgrade, refresh, managed-section, or proposal behavior changed, confirm [docs/ai/migration-v3.md](./migration-v3.md) explains the operator-facing impact.
-13. If the Spec Kit bridge changed, verify [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), the target scaffold bridge doc, bridge skills, manifest section ids, and visible `AGENTS.md` markers changed together.
-14. If roadmap or stack-pack design changed, confirm the phased roadmap in [roadmap.md](./roadmap.md) still matches the intended architecture.
+8. If package metadata or release expectations changed, confirm [pyproject.toml](../../pyproject.toml), [MANIFEST.in](../../MANIFEST.in), [docs/ai/release.md](./release.md), packaged assets, the `codex-enhancer` console script, README install guidance, and packaging tests agree.
+9. If installer, scaffold, or stack-pack behavior changed, confirm the end-to-end installer tests still pass.
+10. If stack-pack generation or management changed, verify target `AGENTS.md`, `docs/ai/stack-guidance.md`, and `.codex/enhancer/manifest.toml` stay aligned with the selected packs.
+11. If output ownership rules changed, verify previews and the target manifest still distinguish safe-to-regenerate outputs from scaffold files that should usually be adapted manually.
+12. If the command facade changed, verify it still delegates to [scripts/install_enhancer.py](../../scripts/install_enhancer.py) and has focused translation tests.
+13. If the GUI installer changed, verify the overwrite preview, pack-selection controls, confirmation gate, progress updates, and README handoff still match the installer core.
+14. If lifecycle, upgrade, refresh, managed-section, or proposal behavior changed, confirm [docs/ai/migration-v3.md](./migration-v3.md) explains the operator-facing impact.
+15. If the Spec Kit bridge changed, verify [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), the target scaffold bridge doc, bridge skills, manifest section ids, CLI bridge/report commands, and visible `AGENTS.md` markers changed together.
+16. If the Utility Harness changed, verify [docs/ai/utility-harness.md](./utility-harness.md), target scaffold tools, `requirements-codex.txt`, CLI/GUI preview wording, manifest state, and validator expectations changed together.
+17. If roadmap or stack-pack design changed, confirm the phased roadmap in [roadmap.md](./roadmap.md) still matches the intended architecture.
 
 ## Review Priorities
 1. Wrong or stale instructions
@@ -43,4 +46,6 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 - If output ownership changed, call out which files are now considered safe to regenerate versus usually adapted manually, especially `docs/ai/spec-kit-bridge.md` and `.codex/enhancer/manifest.toml`.
 - If migration behavior changed, call out the exact inspect, upgrade, manage-packs, refresh, and validation commands reviewers should use.
 - If the Spec Kit bridge changed, call out what the enhancer owns versus what remains official Spec Kit state.
+- If the Utility Harness changed, call out that dependencies remain Codex/operator-only and no automatic install path was added.
+- If packaging changed, call out the wheel/sdist smoke path from [docs/ai/release.md](./release.md).
 - Prefer one coherent patch over speculative scaffolding.

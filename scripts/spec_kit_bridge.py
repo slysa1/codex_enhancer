@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +34,11 @@ SPEC_KIT_BRIDGE_SKILLS = (
 )
 DEFAULT_BOOTSTRAP_COMMANDS = CORE_COMMAND_ORDER[:7]
 DEFAULT_SPEC_KIT_VERSION = "main"
+FEATURE_CORE_FILES = ("spec.md", "plan.md", "tasks.md")
+FEATURE_SUPPORT_FILES = ("research.md", "data-model.md", "quickstart.md")
+TASK_CHECKBOX_PATTERN = re.compile(r"^\s*[-*]\s+\[(?P<state>[ xX])\]\s+")
+DEFAULT_SYNC_ARTIFACT_LIMIT = 60
+DEFAULT_SYNC_CHANGED_PATH_LIMIT = 80
 
 
 def default_spec_kit_script_type() -> str:
@@ -84,6 +91,32 @@ class SpecKitBridgeConfig:
         return self.state in {"attached", "bootstrapped"}
 
 
+@dataclass(frozen=True)
+class SpecKitFeatureSummary:
+    name: str
+    path: str
+    core_files: tuple[str, ...]
+    missing_core_files: tuple[str, ...]
+    support_files: tuple[str, ...]
+    contract_file_count: int
+    checklist_file_count: int
+    task_total: int
+    task_done: int
+    task_open: int
+
+
+@dataclass(frozen=True)
+class SpecKitSyncReport:
+    target: str
+    feature_filter: str | None
+    features: tuple[SpecKitFeatureSummary, ...]
+    artifact_paths: tuple[str, ...]
+    changed_paths: tuple[str, ...]
+    notes: tuple[str, ...]
+    git_base: str | None = None
+    git_error: str | None = None
+
+
 def _read_json_object(path: Path) -> dict[str, object] | None:
     if not path.exists():
         return None
@@ -92,6 +125,15 @@ def _read_json_object(path: Path) -> dict[str, object] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def _read_bounded_text(path: Path, *, limit_bytes: int = 512 * 1024) -> str:
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(limit_bytes + 1)
+    except OSError:
+        return ""
+    return raw[:limit_bytes].decode("utf-8", errors="replace")
 
 
 def _string_value(data: dict[str, object] | None, key: str) -> str | None:
@@ -143,6 +185,296 @@ def _ordered_commands(commands: tuple[str, ...]) -> tuple[str, ...]:
     extras = sorted(command for command in unique if command not in CORE_COMMAND_ORDER)
     core = tuple(command for command in CORE_COMMAND_ORDER if command in unique)
     return core + tuple(command for command in extras if command not in core)
+
+
+def _count_files_bounded(directory: Path, *, limit: int = 100) -> int:
+    if not directory.is_dir():
+        return 0
+    count = 0
+    for path in directory.rglob("*"):
+        if not path.is_file():
+            continue
+        count += 1
+        if count >= limit:
+            return count
+    return count
+
+
+def _list_files_bounded(directory: Path, *, limit: int = 25) -> tuple[Path, ...]:
+    if not directory.is_dir():
+        return ()
+    paths: list[Path] = []
+    for path in sorted(directory.rglob("*"), key=lambda item: item.as_posix().lower()):
+        if not path.is_file():
+            continue
+        paths.append(path)
+        if len(paths) >= limit:
+            break
+    return tuple(paths)
+
+
+def _count_task_checkboxes(path: Path) -> tuple[int, int, int]:
+    if not path.is_file():
+        return (0, 0, 0)
+
+    total = 0
+    done = 0
+    for line in _read_bounded_text(path).splitlines():
+        match = TASK_CHECKBOX_PATTERN.match(line)
+        if match is None:
+            continue
+        total += 1
+        if match.group("state").lower() == "x":
+            done += 1
+    return (total, done, total - done)
+
+
+def _feature_matches(name: str, requested: str | None) -> bool:
+    if requested is None:
+        return True
+    wanted = requested.strip().lower()
+    if not wanted:
+        return True
+    lowered = name.lower()
+    if lowered == wanted:
+        return True
+    numeric_prefix = lowered.split("-", 1)[0]
+    return numeric_prefix == wanted
+
+
+def summarize_spec_kit_feature(feature_dir: Path, target: Path) -> SpecKitFeatureSummary:
+    core_files = tuple(name for name in FEATURE_CORE_FILES if (feature_dir / name).is_file())
+    support_files = tuple(
+        name for name in FEATURE_SUPPORT_FILES if (feature_dir / name).is_file()
+    )
+    missing_core_files = tuple(name for name in FEATURE_CORE_FILES if name not in core_files)
+    task_total, task_done, task_open = _count_task_checkboxes(feature_dir / "tasks.md")
+    return SpecKitFeatureSummary(
+        name=feature_dir.name,
+        path=feature_dir.relative_to(target).as_posix(),
+        core_files=core_files,
+        missing_core_files=missing_core_files,
+        support_files=support_files,
+        contract_file_count=_count_files_bounded(feature_dir / "contracts"),
+        checklist_file_count=_count_files_bounded(feature_dir / "checklists"),
+        task_total=task_total,
+        task_done=task_done,
+        task_open=task_open,
+    )
+
+
+def discover_spec_kit_features(
+    target: Path,
+    *,
+    feature: str | None = None,
+    max_features: int = 20,
+) -> tuple[SpecKitFeatureSummary, ...]:
+    root = target.resolve()
+    specs_root = root / "specs"
+    if not specs_root.is_dir():
+        return ()
+
+    summaries: list[SpecKitFeatureSummary] = []
+    for path in sorted(specs_root.iterdir(), key=lambda item: item.name.lower()):
+        if len(summaries) >= max_features:
+            break
+        if not path.is_dir() or path.name.startswith("."):
+            continue
+        if not _feature_matches(path.name, feature):
+            continue
+        summaries.append(summarize_spec_kit_feature(path, root))
+    return tuple(summaries)
+
+
+def _normalize_changed_path(root: Path, path: str) -> str | None:
+    stripped = path.strip()
+    if not stripped:
+        return None
+
+    candidate = Path(stripped).expanduser()
+    if candidate.is_absolute():
+        try:
+            return candidate.resolve().relative_to(root).as_posix()
+        except (OSError, ValueError):
+            return candidate.as_posix()
+
+    normalized = stripped.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    normalized = normalized.strip("/")
+    return normalized or None
+
+
+def _normalize_changed_paths(root: Path, changed_paths: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    normalized_paths: list[str] = []
+    for changed_path in changed_paths:
+        normalized = _normalize_changed_path(root, changed_path)
+        if normalized is None or normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_paths.append(normalized)
+    return tuple(normalized_paths)
+
+
+def collect_spec_kit_changed_paths_from_git(
+    target: Path,
+    *,
+    base: str,
+) -> tuple[tuple[str, ...], str | None]:
+    root = target.resolve()
+    base_ref = base.strip()
+    if not base_ref:
+        return ((), "no git base ref was supplied")
+
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
+            cwd=root,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=30,
+        )
+    except FileNotFoundError:
+        return ((), "git executable was not found")
+    except subprocess.TimeoutExpired:
+        return ((), f"git diff against {base_ref!r} timed out")
+    except OSError as error:
+        return ((), f"git diff could not run: {error}")
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        return ((), f"git diff against {base_ref!r} failed: {detail}")
+
+    paths = tuple(line.strip() for line in result.stdout.splitlines() if line.strip())
+    return (_normalize_changed_paths(root, paths), None)
+
+
+def _collect_feature_artifact_paths(
+    root: Path,
+    feature: SpecKitFeatureSummary,
+    *,
+    limit: int = DEFAULT_SYNC_ARTIFACT_LIMIT,
+) -> tuple[str, ...]:
+    feature_dir = root / feature.path
+    artifacts: list[str] = []
+
+    for name in (*FEATURE_CORE_FILES, *FEATURE_SUPPORT_FILES):
+        path = feature_dir / name
+        if path.is_file():
+            artifacts.append(path.relative_to(root).as_posix())
+
+    for directory_name in ("contracts", "checklists"):
+        for path in _list_files_bounded(feature_dir / directory_name, limit=limit):
+            artifacts.append(path.relative_to(root).as_posix())
+            if len(artifacts) >= limit:
+                return tuple(artifacts)
+
+    return tuple(artifacts[:limit])
+
+
+def _classify_changed_path(path: str) -> str:
+    lowered = path.lower()
+    normalized = lowered.replace("\\", "/")
+    name = Path(normalized).name
+
+    if normalized.startswith(("specs/", ".specify/")):
+        return "Spec Kit artifacts"
+    if normalized.startswith(("tests/", "test/")) or "/tests/" in normalized:
+        return "tests"
+    if name.startswith("test_") or name.endswith(("_test.py", ".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")):
+        return "tests"
+    if any(token in normalized for token in ("contract", "openapi", "schema", "graphql")):
+        return "contracts/API"
+    if normalized.startswith(("docs/", "readme")):
+        return "docs"
+    return "source"
+
+
+def _format_changed_path_categories(changed_paths: tuple[str, ...]) -> str:
+    categories: dict[str, int] = {}
+    for changed_path in changed_paths:
+        category = _classify_changed_path(changed_path)
+        categories[category] = categories.get(category, 0) + 1
+    return ", ".join(f"{name}: {count}" for name, count in sorted(categories.items()))
+
+
+def build_spec_kit_sync_report(
+    target: Path,
+    *,
+    feature: str | None = None,
+    changed_paths: tuple[str, ...] = (),
+    git_base: str | None = None,
+    max_features: int = 20,
+) -> SpecKitSyncReport:
+    root = target.resolve()
+    normalized_changed_paths = _normalize_changed_paths(root, changed_paths)
+    git_changed_paths: tuple[str, ...] = ()
+    git_error: str | None = None
+    if git_base:
+        git_changed_paths, git_error = collect_spec_kit_changed_paths_from_git(
+            root,
+            base=git_base,
+        )
+        normalized_changed_paths = _normalize_changed_paths(
+            root,
+            normalized_changed_paths + git_changed_paths,
+        )
+
+    features = discover_spec_kit_features(root, feature=feature, max_features=max_features)
+    artifact_paths: list[str] = []
+    for feature_summary in features:
+        for artifact_path in _collect_feature_artifact_paths(root, feature_summary):
+            if artifact_path not in artifact_paths:
+                artifact_paths.append(artifact_path)
+
+    notes: list[str] = []
+    if git_base and git_error is None:
+        notes.append(f"Changed paths include local git diff names from `{git_base}...HEAD`.")
+    if git_error:
+        notes.append(f"Git diff unavailable: {git_error}.")
+
+    if not features:
+        if not (root / "specs").is_dir():
+            notes.append("No `specs/` directory was found.")
+        elif feature:
+            notes.append("No feature directory matched the requested filter.")
+        else:
+            notes.append("No feature directories were found under `specs/`.")
+    elif feature is None and len(features) > 1:
+        notes.append("Multiple feature directories matched; pass `--feature` to focus the sync report.")
+
+    for feature_summary in features:
+        if feature_summary.missing_core_files:
+            missing = ", ".join(f"`{name}`" for name in feature_summary.missing_core_files)
+            notes.append(f"`{feature_summary.name}` is missing core artifact(s): {missing}.")
+        if feature_summary.task_open:
+            notes.append(f"`{feature_summary.name}` still has {feature_summary.task_open} open task(s).")
+        if feature_summary.contract_file_count and normalized_changed_paths:
+            notes.append(f"`{feature_summary.name}` has contracts; re-read them before reviewing API or client changes.")
+        if "quickstart.md" in feature_summary.support_files and normalized_changed_paths:
+            notes.append(f"`{feature_summary.name}` has `quickstart.md`; re-check it when validation behavior changes.")
+
+    if not normalized_changed_paths:
+        notes.append("No changed paths were supplied; use `--changed` or `--base` for code-to-spec sync cues.")
+    else:
+        notes.append(f"Changed path categories: {_format_changed_path_categories(normalized_changed_paths)}.")
+        if any(_classify_changed_path(path) == "Spec Kit artifacts" for path in normalized_changed_paths):
+            notes.append("Spec Kit-owned files appear in the changed paths; this enhancer report remains read-only.")
+        if not any(_classify_changed_path(path) == "tests" for path in normalized_changed_paths):
+            notes.append("No obvious test paths were supplied; verify whether the feature tasks require validation updates.")
+
+    return SpecKitSyncReport(
+        target=root.as_posix(),
+        feature_filter=feature,
+        features=features,
+        artifact_paths=tuple(artifact_paths[:DEFAULT_SYNC_ARTIFACT_LIMIT]),
+        changed_paths=normalized_changed_paths[:DEFAULT_SYNC_CHANGED_PATH_LIMIT],
+        notes=tuple(notes),
+        git_base=git_base,
+        git_error=git_error,
+    )
 
 
 def _resolve_command_surface(
@@ -470,6 +802,149 @@ def render_spec_kit_detection_lines(detection: SpecKitDetection) -> list[str]:
     if detection.evidence:
         lines.append("- Evidence: " + "; ".join(detection.evidence))
     return lines
+
+
+def _format_count_label(count: int, singular: str) -> str:
+    if count == 1:
+        return f"1 {singular}"
+    return f"{count} {singular}s"
+
+
+def render_spec_kit_feature_report(
+    target: Path,
+    *,
+    feature: str | None = None,
+    max_features: int = 20,
+) -> str:
+    root = target.resolve()
+    detection = detect_spec_kit(root)
+    summaries = discover_spec_kit_features(
+        root,
+        feature=feature,
+        max_features=max_features,
+    )
+
+    lines = [f"Spec Kit feature report for {root}"]
+    lines.extend(render_spec_kit_detection_lines(detection))
+    if feature:
+        lines.append(f"- Feature filter: `{feature}`")
+
+    if not summaries:
+        if not (root / "specs").is_dir():
+            lines.append("- No `specs/` directory was found.")
+        elif feature:
+            lines.append("- No feature directory matched the requested filter.")
+        else:
+            lines.append("- No feature directories were found under `specs/`.")
+        return "\n".join(lines)
+
+    lines.append("")
+    lines.append("Features:")
+    for summary in summaries:
+        lines.append(f"- `{summary.name}` at `{summary.path}`")
+        artifacts = [*summary.core_files, *summary.support_files]
+        if summary.contract_file_count:
+            artifacts.append(
+                f"contracts/ ({_format_count_label(summary.contract_file_count, 'file')})"
+            )
+        if summary.checklist_file_count:
+            artifacts.append(
+                f"checklists/ ({_format_count_label(summary.checklist_file_count, 'file')})"
+            )
+        lines.append(
+            "  - Artifacts: " + (", ".join(f"`{item}`" for item in artifacts) or "none")
+        )
+        missing = (
+            ", ".join(f"`{item}`" for item in summary.missing_core_files)
+            if summary.missing_core_files
+            else "none"
+        )
+        lines.append(f"  - Missing core artifacts: {missing}")
+        if summary.task_total:
+            lines.append(
+                "  - Tasks: "
+                f"{summary.task_total} total, {summary.task_done} done, {summary.task_open} open"
+            )
+        else:
+            lines.append("  - Tasks: no checkbox tasks found")
+    return "\n".join(lines)
+
+
+def render_spec_kit_sync_report(
+    target: Path,
+    *,
+    feature: str | None = None,
+    changed_paths: tuple[str, ...] = (),
+    git_base: str | None = None,
+    max_features: int = 20,
+) -> str:
+    root = target.resolve()
+    detection = detect_spec_kit(root)
+    report = build_spec_kit_sync_report(
+        root,
+        feature=feature,
+        changed_paths=changed_paths,
+        git_base=git_base,
+        max_features=max_features,
+    )
+
+    lines = [f"Spec Kit sync report for {root}"]
+    lines.extend(render_spec_kit_detection_lines(detection))
+    if feature:
+        lines.append(f"- Feature filter: `{feature}`")
+    if git_base:
+        lines.append(f"- Git base: `{git_base}`")
+
+    if report.features:
+        lines.append("")
+        lines.append("Feature artifacts:")
+        for summary in report.features:
+            lines.append(f"- `{summary.name}` at `{summary.path}`")
+            artifacts = [*summary.core_files, *summary.support_files]
+            if summary.contract_file_count:
+                artifacts.append(
+                    f"contracts/ ({_format_count_label(summary.contract_file_count, 'file')})"
+                )
+            if summary.checklist_file_count:
+                artifacts.append(
+                    f"checklists/ ({_format_count_label(summary.checklist_file_count, 'file')})"
+                )
+            lines.append(
+                "  - Artifacts: " + (", ".join(f"`{item}`" for item in artifacts) or "none")
+            )
+            missing = (
+                ", ".join(f"`{item}`" for item in summary.missing_core_files)
+                if summary.missing_core_files
+                else "none"
+            )
+            lines.append(f"  - Missing core artifacts: {missing}")
+            if summary.task_total:
+                lines.append(
+                    "  - Tasks: "
+                    f"{summary.task_total} total, {summary.task_done} done, {summary.task_open} open"
+                )
+            else:
+                lines.append("  - Tasks: no checkbox tasks found")
+
+    if report.artifact_paths:
+        lines.append("")
+        lines.append("Artifacts to re-read:")
+        for artifact_path in report.artifact_paths:
+            lines.append(f"- `{artifact_path}`")
+
+    if report.changed_paths:
+        lines.append("")
+        lines.append("Changed paths reviewed:")
+        for changed_path in report.changed_paths:
+            lines.append(f"- `{changed_path}`")
+
+    if report.notes:
+        lines.append("")
+        lines.append("Sync cues:")
+        for note in report.notes:
+            lines.append(f"- {note}")
+
+    return "\n".join(lines)
 
 
 def format_spec_kit_bridge_mode_label(bridge: SpecKitBridgeConfig) -> str:

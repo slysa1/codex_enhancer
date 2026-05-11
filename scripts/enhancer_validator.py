@@ -13,6 +13,11 @@ from scripts.enhancer_spec import (
     ValidationProfile,
 )
 from scripts.spec_kit_bridge import SPEC_KIT_BRIDGE_SKILLS
+from scripts.utility_harness import (
+    UTILITY_HARNESS_DEPENDENCY_POLICY,
+    UTILITY_HARNESS_REQUIRED_FILES,
+    UTILITY_HARNESS_TOOL_FILES,
+)
 
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
@@ -28,6 +33,8 @@ def relative(root: Path, path: Path) -> str:
 
 def is_ignored_path(root: Path, path: Path) -> bool:
     relative_parts = path.relative_to(root).parts
+    if relative_parts and (relative_parts[0] in {"build", "dist"} or relative_parts[0].endswith(".egg-info")):
+        return True
     if ".git" in relative_parts or "__pycache__" in relative_parts:
         return True
     if len(relative_parts) >= 2 and relative_parts[0] == "tests" and relative_parts[1] == "_tmp":
@@ -35,6 +42,8 @@ def is_ignored_path(root: Path, path: Path) -> bool:
     if len(relative_parts) >= 2 and relative_parts[0] == ".codex" and relative_parts[1] == "enhancer-proposals":
         return True
     if len(relative_parts) >= 2 and relative_parts[0] == "scaffold" and relative_parts[1] == "target-repo":
+        return True
+    if len(relative_parts) >= 3 and relative_parts[:3] == ("codex_enhancer", "assets", "root"):
         return True
     return False
 
@@ -621,6 +630,7 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
         )
 
     check_spec_kit_bridge_outputs(root, manifest, errors)
+    check_utility_harness_outputs(root, manifest, errors)
 
     if verbose:
         print("OK stack pack outputs: .codex/enhancer/manifest.toml and docs/ai/stack-guidance.md")
@@ -781,6 +791,88 @@ def check_spec_kit_bridge_outputs(root: Path, manifest: dict[str, object], error
             "AGENTS.md managed Spec Kit bridge section should summarize the active bridge state",
             "Refresh the managed bridge section so the root repo map reflects the current bridge mode.",
         )
+
+
+def check_utility_harness_outputs(root: Path, manifest: dict[str, object], errors: list[str]) -> None:
+    integrations = manifest.get("integrations", {})
+    if not isinstance(integrations, dict):
+        return
+
+    raw_utility = integrations.get("utility_harness")
+    if not isinstance(raw_utility, dict):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml must define [integrations.utility_harness] as a table",
+            "Record the resolved Utility Harness state explicitly, even when the harness is off.",
+        )
+        return
+
+    mode = raw_utility.get("mode")
+    state = raw_utility.get("state")
+    if not isinstance(mode, str) or mode not in {"off", "install"}:
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.utility_harness.mode must be off or install",
+            "Keep the Utility Harness mode as a small explicit choice.",
+        )
+    if not isinstance(state, str) or state not in {"absent", "installed"}:
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.utility_harness.state must be absent or installed",
+            "Keep the Utility Harness state visible and reviewable.",
+        )
+
+    dependency_policy = raw_utility.get("dependency_policy")
+    if dependency_policy != UTILITY_HARNESS_DEPENDENCY_POLICY:
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.utility_harness.dependency_policy is missing or stale",
+            "Keep the manifest explicit that harness packages are Codex/operator-only helper dependencies.",
+        )
+
+    tool_files = raw_utility.get("tool_files", [])
+    if not isinstance(tool_files, list) or any(not isinstance(item, str) for item in tool_files):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.utility_harness.tool_files must be a list of strings",
+            "Use a simple TOML string array for installed harness tool paths.",
+        )
+        tool_files = []
+
+    if state != "installed":
+        return
+
+    expected_tools = {path.as_posix() for path in UTILITY_HARNESS_TOOL_FILES}
+    if expected_tools - set(tool_files):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.utility_harness.tool_files is missing installed tool paths",
+            "Regenerate the manifest or restore the missing Utility Harness tool records.",
+        )
+
+    for relative_path in UTILITY_HARNESS_REQUIRED_FILES:
+        full_path = root / relative_path
+        if not full_path.exists():
+            add_error(
+                errors,
+                f"Missing Utility Harness file: {relative_path.as_posix()}",
+                "Restore the optional harness file or set integrations.utility_harness.state to absent if the harness was removed intentionally.",
+            )
+
+    docs_path = root / "docs/ai/utility-harness.md"
+    if docs_path.exists():
+        docs_text = load_text(docs_path)
+        for snippet in (
+            "requirements-codex.txt",
+            "tools/ai/inspect_repo.py",
+            "Do not add these packages to production dependency files",
+        ):
+            if snippet not in docs_text:
+                add_error(
+                    errors,
+                    f"docs/ai/utility-harness.md is missing required Utility Harness guidance: {snippet!r}",
+                    "Keep the harness guide focused on explicit helper use and dependency isolation.",
+                )
 
 
 def validate(root: Path, profile: ValidationProfile, verbose: bool = False) -> list[str]:

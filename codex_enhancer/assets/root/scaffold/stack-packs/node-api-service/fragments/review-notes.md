@@ -1,0 +1,3 @@
+- Note which routes, handlers, or contract files changed.
+- Record whether auth, validation, and error behavior were exercised or only inferred.
+- Flag backward-compatibility risk when payloads, status codes, or response shapes changed.

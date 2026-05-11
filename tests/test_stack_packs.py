@@ -21,6 +21,7 @@ from scripts.stack_packs import (
     resolve_managed_pack_selection,
     resolve_stack_pack_selection,
 )
+from scripts.utility_harness import resolve_utility_harness
 
 
 TEMP_ROOT = Path(__file__).resolve().parent / "_tmp"
@@ -444,6 +445,20 @@ class StackPackTests(unittest.TestCase):
             self.assertIn("package manager: pnpm from package.json packageManager", manifest)
             self.assertIn("package.json scripts: build", manifest)
             self.assertIn("package.json packages: typescript, vite", manifest)
+
+    def test_render_stack_pack_manifest_records_utility_harness_state(self) -> None:
+        with repo_fixture("pack_manifest_utility") as root:
+            detections = detect_stack_packs(root)
+            manifest = render_stack_pack_manifest(
+                detections,
+                utility_harness=resolve_utility_harness(mode="install"),
+            )
+
+            self.assertIn("[integrations.utility_harness]", manifest)
+            self.assertIn('mode = "install"', manifest)
+            self.assertIn('state = "installed"', manifest)
+            self.assertIn('requirements_file = "requirements-codex.txt"', manifest)
+            self.assertIn('"tools/ai/run_checks.py"', manifest)
 
     def test_render_agents_summary_supports_library_package_with_javascript_pack(self) -> None:
         with repo_fixture("pack_agents_summary_library") as root:

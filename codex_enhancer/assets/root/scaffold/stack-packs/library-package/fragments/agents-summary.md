@@ -1,0 +1,3 @@
+- Treat exported entrypoints, generated types, and package metadata as public contract.
+- Keep `exports`, `main`, `module`, `types`, `files`, and release notes aligned when they exist.
+- Validate the consumer-facing build or pack output, not only source-level tests.

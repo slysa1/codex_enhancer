@@ -1,0 +1,3 @@
+- Confirm the change targeted the intended package or workspace first.
+- Call out when shared config or contracts forced broader validation.
+- Flag any repo-wide check that was skipped and why that was safe.

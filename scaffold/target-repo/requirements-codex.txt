@@ -1,0 +1,23 @@
+# Codex/operator helper dependencies only.
+# Install manually in a local helper environment when tools/ai/read_any.py needs richer formats.
+pathspec
+charset-normalizer
+pypdf
+PyMuPDF
+python-docx
+python-pptx
+openpyxl
+beautifulsoup4
+lxml
+markdown-it-py
+ruamel.yaml
+tomli-w
+libcst
+tree-sitter
+tree-sitter-language-pack
+radon
+vulture
+typer
+rich
+pydantic
+python-dotenv
