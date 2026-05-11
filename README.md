@@ -580,7 +580,7 @@ It is a map, not a dump of every durable rule.
 
 Use docs when guidance needs more explanation. Use `AGENTS.md` when guidance must be visible immediately.
 
-For the current planned evolution of the enhancer, see [docs/ai/roadmap.md](docs/ai/roadmap.md). It defines the shipped `2.x` stack-pack model plus the phased `3.0` roadmap for managed sections, pack lifecycle, and stronger evidence-backed recommendations.
+For the current planned evolution of the enhancer, see [docs/ai/roadmap.md](docs/ai/roadmap.md). It records the shipped `2.x` and `3.x` design history plus the planned `4.0` product-maturity roadmap for first-time-user clarity, safer command handling, release confidence, and integration hardening.
 
 For upgrading existing installed repos, see [docs/ai/migration-v3.md](docs/ai/migration-v3.md). It gives the operator checklist for inspect, upgrade, pack management, refresh, proposal review, and validation.
 

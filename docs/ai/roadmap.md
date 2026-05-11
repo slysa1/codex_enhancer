@@ -1,7 +1,9 @@
 # Codex Enhancer Roadmap
 
 ## Purpose
-This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the planned `3.0` managed-section and lifecycle model. The core idea remains optional stack packs: small, visible, repo-local overlays that add durable guidance for common app shapes while preserving the current thin enhancer model.
+This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the implemented `3.x` lifecycle, Spec Kit bridge, Utility Harness, and packaging-readiness work. The core idea remains optional, visible, repo-local workflow guidance that improves Codex use without turning the enhancer into an agent runtime, package manager, or hidden orchestration layer.
+
+Sections through `3.4` are retained as design history and implementation context. The forward-looking product work starts at `4.0` and is based on a first-time-user audit that found the enhancer usable for technical Codex-heavy users, but not yet polished enough for broad daily use.
 
 ## V2 Goals
 - Keep the root enhancer simple and readable.
@@ -1059,3 +1061,353 @@ Make the packaged `codex-enhancer` command more useful for Spec Kit repos after 
 - `codex-enhancer bridge <repo> --attach-spec-kit` previews enhancer-owned bridge updates only
 - source validation and packaging tests enforce the release checklist and packaged asset mirror
 - release builds remain normal Python wheel/sdist artifacts with no hidden downloader behavior
+
+## Proposed 4.0 Product Maturity Roadmap
+
+Status: planned. Use this section to sequence audit-backed improvements that move Codex Enhancer from an early-alpha workflow scaffold toward a trustworthy daily-use tool.
+
+### Goal
+Make the enhancer clear, safe, and confidence-building for a technically capable first-time user without changing the project's thin, repo-local architecture.
+
+### Scope
+- improve first-run comprehension and product positioning
+- make post-install adaptation guided, inspectable, and verifiable
+- make installer previews shorter by default while still offering full detail and diffs
+- harden target-side command execution before the Utility Harness is promoted as a daily-use helper
+- make command discovery distinguish confirmed commands from guessed or suspicious command text
+- add release and package smoke tests that prove the distributable `codex-enhancer` command works outside the source checkout
+- stabilize Spec Kit bootstrap expectations around prerequisites, version pins, local executable fallback, and recovery
+- add machine-readable planning output for wrappers and CI without hidden state
+- rationalize Utility Harness dependencies so optional helper installs do not feel all-or-nothing
+
+### Non-Goals
+- no rewrite of the installer architecture
+- no background service, command daemon, or persistent external database
+- no automatic execution of commands extracted from arbitrary prose
+- no broad plugin marketplace or framework-specific pack explosion
+- no hosted documentation site until the README and repo-local docs are already clear
+- no dependency installation during enhancer install, Spec Kit bridge attach, or Utility Harness setup unless the user explicitly runs an external tool
+
+### Existing Baseline To Preserve
+- dry-run-first install and upgrade planning
+- proposal-mode conflict safety for repo-owned scaffold drift
+- visible `.codex/enhancer/manifest.toml` ownership and integration state
+- managed sections for enhancer-owned summaries in `AGENTS.md`
+- optional stack packs with visible evidence
+- read-only Spec Kit feature and sync reports
+- optional Utility Harness files that remain Codex/operator-only
+- zero runtime package dependencies for the source `codex-enhancer` command
+
+### Sequencing Rationale
+Do the user-facing comprehension work first so future behavior changes have a clear story. Then improve trust surfaces around adaptation, previews, diffs, and diagnostics. Harden command execution before making helper automation more discoverable. After that, add release confidence, Spec Kit bootstrap stabilization, machine-readable plans, and dependency rationalization as independent patches.
+
+### 4.0 Step 1: First-Time User Productization
+Objective:
+- make a first-time user understand what the enhancer does, why it exists, when not to use it, and what a successful first install looks like
+
+Files to change:
+- `README.md`
+- `docs/ai/architecture.md`
+- `docs/ai/roadmap.md`
+- `docs/ai/code-review.md`, if review guidance needs the new productization checks
+- `tests/test_check.py`, only if source validation expectations need new required snippets
+
+Files deliberately not added or changed:
+- no new documentation site
+- no new installer behavior in this step
+- no new skill just to explain the product
+- no marketing page that duplicates the README
+
+Implementation steps:
+1. Restructure the README so the first screen answers: what it is, who it is for, why it beats plain prompts in the right situation, and what the first successful workflow looks like.
+2. Add a concrete before/after walkthrough using a tiny target repo: preview command, expected plan shape, files created, adaptation pass, validation, and final trust checks.
+3. Add a decision table comparing Codex Enhancer with plain `AGENTS.md`, Claude Code conventions, official Spec Kit, and normal repo prompts.
+4. Add cross-platform first-run paths for source checkout, installed console script, Windows GUI, and CLI-only macOS/Linux use.
+5. Clarify source-repo inspection versus installed-target inspection so `--inspect-install .` on the product repo is not mistaken for a failed install.
+
+Validation:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- manual re-read of every README command and link touched
+- optional dry-run of `python scripts/codex_enhancer_cli.py init <probe> --new` if examples change
+
+Main risk:
+- making the README longer instead of clearer; solve by moving reference detail out of the first-run path and linking to deeper docs.
+
+Acceptance criteria:
+- a new technical user can explain the enhancer's purpose, non-goals, install path, and first useful workflow after reading the top README sections
+- the README includes one concrete before/after walkthrough with expected output shape and follow-up commands
+- the decision table makes it clear when a plain `AGENTS.md`, Spec Kit alone, or no enhancer is the better choice
+
+### 4.0 Step 2: Guided Adaptation And Trust
+Objective:
+- turn installation from "files were written" into "the target repo is visibly adapted, reviewable, and ready for Codex"
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `scripts/codex_enhancer_cli.py`
+- `scripts/install_enhancer_gui.py`, if GUI parity is needed
+- `scripts/enhancer_spec.py`
+- `scripts/enhancer_validator.py`
+- `scaffold/target-repo/AGENTS.md`
+- `scaffold/target-repo/docs/ai/code-review.md`
+- `README.md`
+- installer, CLI, and validator tests under `tests/`
+
+Files deliberately not added or changed:
+- no hidden adaptation database
+- no automatic merge engine for repo-owned scaffold edits
+- no AI-generated rewrite of target repo guidance
+- no background watcher for installed repos
+
+Implementation steps:
+1. Add a guided target audit or adaptation-check mode that detects inherited generic guidance, unresolved placeholders, broad guessed commands, and unreviewed proposal files.
+2. Teach install and upgrade next-step output to point at that adaptation check instead of leaving adaptation as an open-ended instruction.
+3. Add a concise preview mode for installer dry-runs that shows operation, selected packs, bridge state, write counts, critical conflicts, and next command, with a verbose path for full detail.
+4. Add a full diff preview option for planned creates, overwrites, proposals, managed-section refreshes, and `.gitignore` merges.
+5. Add stronger diagnostics and recovery notes for partial install, upgrade, refresh, or bootstrap failures.
+6. Add contributor hygiene guidance for generated local artifacts such as `dist/`, `*.egg-info/`, `__pycache__/`, and `tests/_tmp/`, preferably as documentation first and a cleanup helper only if repeated manual toil proves it is needed.
+
+Validation:
+- unit tests for adaptation-check findings and clean-target success
+- installer preview tests for concise and verbose output
+- diff-preview tests for creates, overwrites, proposals, managed sections, and `.gitignore`
+- failure-path tests that prove recovery guidance is visible
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- an adaptation checker could become a noisy linter for subjective docs; keep findings limited to inherited text, placeholders, stale generated sections, unresolved proposals, and commands the tool can justify with evidence.
+
+Acceptance criteria:
+- after a scaffold install, the user has one command that explains what still needs adaptation
+- a fully adapted target can pass that check without suppressions
+- default previews are short enough for first-time users while full detail and diffs remain available
+- failure output tells the user which files may have changed and how to recover
+
+### 4.0 Step 3: Command Safety And Validation Hardening
+Objective:
+- make target-side command discovery and `tools/ai/run_checks.py` safe enough for semi-trusted or unfamiliar repos
+
+Files to change:
+- `scaffold/target-repo/tools/ai/run_checks.py`
+- `scripts/install_enhancer.py`
+- `scripts/stack_packs.py`, only if command evidence needs shared package-manager helpers
+- `scripts/enhancer_spec.py`
+- `scripts/enhancer_validator.py`
+- `scaffold/target-repo/AGENTS.md`
+- `scaffold/target-repo/docs/ai/utility-harness.md`
+- `README.md`
+- tests covering generated target helper behavior
+
+Files deliberately not added or changed:
+- no automatic execution of commands extracted from arbitrary prose
+- no hidden allowlist database
+- no shell command runner service
+- no guessed install, test, lint, or build wrappers when the repo has no confirmed command
+
+Implementation steps:
+1. Classify discovered commands as confirmed, inferred, or prose-extracted.
+2. Keep confirmed manifest/package-manager commands runnable only through explicit user intent.
+3. List inferred or prose-extracted commands by default without executing them.
+4. Remove unsafe default execution of backticked validation-looking text from `AGENTS.md` and other docs.
+5. Avoid `shell=True` for known argv-safe command forms where practical, and isolate any remaining shell execution behind an explicit flag with warning text.
+6. Improve source installer command discovery so guessed commands such as `python -m pytest` are not rendered as confirmed when the repo only has a `tests/` directory.
+7. Add fixtures for malicious backticked commands, accidental shell metacharacters, missing pytest, package-manager lockfile selection, and command de-duplication.
+
+Validation:
+- unit tests prove malicious or accidental command text is surfaced but not executed by default
+- tests prove confirmed commands from trusted structured sources still run with a deliberate flag
+- installer tests prove guessed commands are labeled or omitted instead of promoted to canonical target commands
+- target validation tests cover command-source metadata if it becomes part of generated files
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- making the helper too conservative to be useful; solve by separating trusted structured command sources from prose and giving users an explicit, reviewable way to run confirmed commands.
+
+Acceptance criteria:
+- a new user can run `tools/ai/run_checks.py` in an unfamiliar repo without arbitrary doc text executing
+- unsafe command text appears as a finding, not a subprocess
+- generated target guidance distinguishes confirmed commands from commands that still need human verification
+
+### 4.0 Step 4: Packaging, CI, And Release Confidence
+Objective:
+- prove that the packaged command works outside the source checkout and keep release expectations aligned with CI
+
+Files to change:
+- `.github/workflows/validate.yml`
+- `docs/ai/release.md`
+- `README.md`
+- `pyproject.toml`
+- `MANIFEST.in`
+- `codex_enhancer/package_assets.py`, only if asset lookup changes
+- `tests/test_packaging.py`
+- installer or CLI tests as needed for wheel smoke fixtures
+
+Files deliberately not added or changed:
+- no automatic release publisher
+- no package runtime dependencies unless a future implementation earns them
+- no committed build artifacts
+- no PyPI claim until publication actually exists
+
+Implementation steps:
+1. Add a CI job or deterministic script that builds wheel and source distribution artifacts.
+2. Install the built wheel into a fresh virtual environment and smoke `codex-enhancer list-packs`.
+3. Preview a basic install from the wheel-installed command to prove packaged assets are available.
+4. Preview the optional helper bundle from the wheel-installed command without running external Spec Kit bootstrap.
+5. Keep README, release checklist, package metadata, Python version support, and CI matrix in agreement.
+6. Either document Python `3.13+` as required everywhere or broaden support with a tested matrix before changing `requires-python`.
+
+Validation:
+- package build smoke in CI
+- fresh virtualenv console-script smoke
+- packaged asset mirror tests
+- no generated `build/`, `dist/`, or `*.egg-info/` committed
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- release checks become slow or flaky if they depend on network installs; keep package smoke local and avoid external Spec Kit downloads in CI.
+
+Acceptance criteria:
+- CI proves the built wheel exposes `codex-enhancer` and can find scaffold assets
+- release docs and automated checks agree on the package smoke path
+- README and `pyproject.toml` state the same Python support policy
+
+### 4.0 Step 5: Spec Kit Bridge Stabilization
+Objective:
+- make Spec Kit bootstrap and bridge management predictable, reproducible, and recoverable
+
+Files to change:
+- `scripts/spec_kit_bridge.py`
+- `scripts/install_enhancer.py`
+- `scripts/codex_enhancer_cli.py`
+- `scripts/install_enhancer_gui.py`
+- `docs/ai/spec-kit-bridge.md`
+- `docs/ai/migration-v3.md`
+- `README.md`
+- Spec Kit bridge and installer tests
+
+Files deliberately not added or changed:
+- no vendored Spec Kit files
+- no rewrite of `.specify/`, `specs/`, `.github/prompts/`, `.github/agents/`, or official Spec Kit skills
+- no network bootstrap during dry-runs
+- no semantic Spec Kit drift engine in this step
+
+Implementation steps:
+1. Document `uv`/`uvx` as a bootstrap prerequisite and make the `--spec-kit-exe` fallback easy to find.
+2. Replace silent default bootstrap from moving `main` with either a tested pinned ref or an explicit moving-ref warning in preview, manifest state, and docs.
+3. Add preflight checks for bootstrap executable availability where possible without performing downloads.
+4. Make bootstrap partial-failure recovery explicit: what may have been written by official Spec Kit, what enhancer files were not yet written, and which command to rerun.
+5. Add bridge status diagnostics that distinguish absent, attached, bootstrapped, mixed command surfaces, and source-repo-only Spec Kit footprints.
+6. Keep external bootstrap execution visibly separated from enhancer-owned writes in CLI and GUI previews.
+
+Validation:
+- tests for default pinned or warning behavior
+- tests for `--spec-kit-exe` command rendering and error handling
+- tests for partial external-step failure messaging
+- tests that official Spec Kit-owned paths are not written by enhancer flows
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- making Spec Kit support look owned by the enhancer; every preview and doc should continue to say official Spec Kit files remain externally owned.
+
+Acceptance criteria:
+- a user can tell before apply whether bootstrap needs `uvx`, a local executable, network access, or a moving/pinned ref decision
+- failed bootstrap leaves clear recovery guidance
+- bridge diagnostics explain current state without touching official Spec Kit files
+
+### 4.0 Step 6: Machine-Readable Planning And Integrations
+Objective:
+- let wrappers, CI jobs, and future GUI surfaces consume installer plans without parsing human prose
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `scripts/codex_enhancer_cli.py`
+- `scripts/install_enhancer_gui.py`, if it can share the schema
+- `scripts/enhancer_spec.py`
+- `README.md`
+- tests for plan serialization and error output
+
+Files deliberately not added or changed:
+- no hidden state store
+- no remote API
+- no MCP server just to expose local plans
+- no JSON-only replacement for the human preview
+
+Implementation steps:
+1. Add `--json` output for install, upgrade, refresh, manage-packs, bridge management, Spec Kit reports, and error diagnostics where practical.
+2. Define a stable plan schema for operation, target, mode, selected packs, pack evidence, bridge state, Utility Harness state, planned writes, proposal paths, overwrite paths, external steps, `.gitignore` changes, diagnostics, and next steps.
+3. Include schema versioning for JSON output separately from the enhancer manifest schema.
+4. Ensure JSON mode never performs writes without `--write`.
+5. Add tests that verify JSON output is parseable, stable, and free of human-only formatting.
+
+Validation:
+- JSON schema snapshot or structural tests for every major operation
+- parse tests for expected error output
+- existing human-output tests remain meaningful
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- overcommitting to a schema before wrappers exist; keep the first schema small, explicit, versioned, and limited to data the installer already owns.
+
+Acceptance criteria:
+- a CI job can preview an install or upgrade and make decisions from JSON without scraping text
+- the human preview remains the default interface
+- JSON output has a documented schema version and tests that catch accidental breaking changes
+
+### 4.0 Step 7: Utility Harness And Dependency Rationalization
+Objective:
+- keep the Utility Harness useful without making target repos install a large, unclear helper dependency bundle
+
+Files to change:
+- `scaffold/target-repo/requirements-codex.txt`
+- `scaffold/target-repo/docs/ai/utility-harness.md`
+- `scaffold/target-repo/tools/ai/read_any.py`, only if optional dependency grouping needs clearer runtime messages
+- `scripts/utility_harness.py`
+- `scripts/install_enhancer.py`
+- `scripts/enhancer_spec.py`
+- `scripts/enhancer_validator.py`
+- `README.md`
+- `docs/ai/utility-harness.md`
+- Utility Harness and installer tests
+
+Files deliberately not added or changed:
+- no automatic dependency installation
+- no production dependency integration
+- no background indexer, daemon, OCR pipeline, or broad code-analysis platform
+- no new helper dependency without a named tool and documented use
+
+Implementation steps:
+1. Split helper dependencies into documented groups such as minimal, document readers, spreadsheets/slides, and code-analysis extras, or keep one file with clear comments if multiple files create more friction than value.
+2. Document which helper needs each dependency and what still works without it.
+3. Improve `read_any.py` missing-dependency messages if grouped dependencies make remediation easier.
+4. Ensure installer previews and manifest state still make Utility Harness installation explicit and optional.
+5. Add validation that Utility Harness dependencies remain Codex/operator-only and do not appear in production dependency files.
+
+Validation:
+- Utility Harness resolver tests
+- scaffold validation tests for grouped dependency files or documented sections
+- tests for missing optional reader dependencies, if messages change
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- splitting dependencies could make setup harder; only split where it reduces real user burden, and keep a documented all-in helper path if needed.
+
+Acceptance criteria:
+- a user can see exactly why each optional helper dependency exists
+- a target repo can install only the helper dependency group it needs
+- no production dependency file is touched by Utility Harness setup
+
+### 4.0 Success Bar
+- a first-time technical user can complete a documented preview -> apply -> adapt -> validate loop without outside explanation
+- installed targets have a verifiable adaptation path instead of a vague "clean this up later" instruction
+- command execution defaults are safe for unfamiliar repos
+- package build and wheel smoke checks run in CI before release
+- Spec Kit bootstrap is explicit about prerequisites, version stability, and recovery
+- installer plans can be consumed by humans and machines without hidden state
+- Utility Harness dependencies are optional, explained, and scoped to Codex/operator use
