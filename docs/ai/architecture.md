@@ -10,7 +10,7 @@ This repository contains the enhancer itself, not an application stack. The work
 4. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, [v3 migration notes](./migration-v3.md), [release checklist](./release.md), the phased [design roadmap](./roadmap.md), the [Spec Kit bridge contract](./spec-kit-bridge.md), and the [Utility Harness contract](./utility-harness.md).
 5. [codex_enhancer/package_assets.py](../../codex_enhancer/package_assets.py): package asset lookup for scaffold inputs in both source checkouts and installed wheels.
 6. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
-7. [codex-enhancer](../../codex-enhancer), [codex-enhancer.bat](../../codex-enhancer.bat), and [scripts/codex_enhancer_cli.py](../../scripts/codex_enhancer_cli.py): thin source-checkout command facade over the installer core.
+7. [codex-enhancer](../../codex-enhancer), [codex-enhancer.bat](../../codex-enhancer.bat), and [scripts/codex_enhancer_cli.py](../../scripts/codex_enhancer_cli.py): thin source-checkout command facade over the installer core, including concise previews, adaptation audits, diff previews, and JSON output.
 8. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, pack management, upgrade/reconcile, and guided install or managed-output refresh flow.
 9. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus pack management, upgrade/reconcile, and safe generated-output refreshes.
 10. [scripts/stack_packs.py](../../scripts/stack_packs.py) and [scaffold/stack-packs/](../../scaffold/stack-packs/): file-based registry, loader, manifest-evidence collector, and renderer for optional stack packs.
@@ -69,6 +69,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - If release expectations change, keep [release.md](./release.md), packaging tests, and README build guidance aligned.
 - If the installer changes, keep the launcher, GUI, scaffold, shared spec, source validator, and tests aligned in the same patch.
 - If the command facade changes, keep [README.md](../../README.md), source validation requirements, and CLI tests aligned with the installer flags it delegates to.
+- If installer output modes change, keep human previews, JSON schema tests, README examples, and GUI-facing preview helpers aligned.
 - If a change introduces a new top-level workflow asset, update [AGENTS.md](../../AGENTS.md) so the repo map stays accurate.
 - If a lifecycle change affects installed-repo upgrade behavior, update [migration-v3.md](./migration-v3.md) with the operator-facing rule.
 - If a scaffold file gains or loses an enhancer-managed section marker, update the manifest renderer and validator expectations in the same patch.

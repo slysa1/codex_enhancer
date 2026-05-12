@@ -33,7 +33,7 @@ SPEC_KIT_BRIDGE_SKILLS = (
     "spec-review-bridge",
 )
 DEFAULT_BOOTSTRAP_COMMANDS = CORE_COMMAND_ORDER[:7]
-DEFAULT_SPEC_KIT_VERSION = "main"
+DEFAULT_SPEC_KIT_VERSION = "v0.8.3"
 FEATURE_CORE_FILES = ("spec.md", "plan.md", "tasks.md")
 FEATURE_SUPPORT_FILES = ("research.md", "data-model.md", "quickstart.md")
 TASK_CHECKBOX_PATTERN = re.compile(r"^\s*[-*]\s+\[(?P<state>[ xX])\]\s+")

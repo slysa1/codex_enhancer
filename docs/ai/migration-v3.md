@@ -24,8 +24,9 @@ V3 keeps the same thin, repo-local model. The major change is safer lifecycle ma
 3. Review the grouped reconcile plan before writing anything.
 4. Apply with `python scripts/install_enhancer.py --target <repo> --upgrade-enhancer --write`.
 5. Review `.codex/enhancer-proposals/` and manually merge any repo-owned scaffold changes you want.
-6. Run `python scripts/check.py` in the target repo.
-7. Run `python -m unittest discover -s tests -p "test_*.py" -v` in the target repo.
+6. Run `python scripts/codex_enhancer_cli.py audit <repo>` from the enhancer source checkout, or `codex-enhancer audit <repo>` from an installed CLI, to catch inherited generic guidance and unreviewed proposals.
+7. Run `python scripts/check.py` in the target repo.
+8. Run `python -m unittest discover -s tests -p "test_*.py" -v` in the target repo.
 
 ## Change Packs After Upgrade
 Use `--manage-packs` after the target reports as current:
@@ -81,6 +82,7 @@ Apply with `--write` after reviewing the proposed `requirements-codex.txt`, `too
 - Confirm the managed `AGENTS.md:spec-kit-bridge` section and `docs/ai/spec-kit-bridge.md` agree on bridge mode, command surface, and ownership.
 - Confirm generated outputs are treated as safe to regenerate, while repo-owned scaffold drift is reviewed from proposal files.
 - Confirm existing proposal files were not overwritten during upgrade or install planning.
+- Confirm the adaptation audit is clean or that any remaining inherited guidance is explicitly tracked for follow-up.
 
 ## Do Not Do
 - Do not reinstall over an existing repo just to upgrade it; use `--upgrade-enhancer`.

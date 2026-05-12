@@ -8,11 +8,16 @@ The Utility Harness is an optional integration that installs repo-local helper t
 - It is installed only when an operator explicitly passes `--utility-harness-mode install`.
 - The installer records state under `[integrations.utility_harness]` in `.codex/enhancer/manifest.toml`.
 - Harness files are normal visible repo files and remain reviewable through git diffs.
-- `requirements-codex.txt` is for Codex/operator helper dependencies only.
+- `requirements-codex.txt` and the `requirements-codex-*.txt` group files are for Codex/operator helper dependencies only.
 - The installer never installs those dependencies automatically.
+- The dependency files are split by purpose so operators can install only core helpers, richer readers, code-analysis extras, or CLI/config helpers as needed.
 
 ## Installed Surface
 - `requirements-codex.txt`
+- `requirements-codex-minimal.txt`
+- `requirements-codex-readers.txt`
+- `requirements-codex-analysis.txt`
+- `requirements-codex-cli.txt`
 - `tools/ai/inspect_repo.py`
 - `tools/ai/read_any.py`
 - `tools/ai/summarize_tree.py`
@@ -34,4 +39,4 @@ The Utility Harness is an optional integration that installs repo-local helper t
 - no guessed validation commands
 
 ## Review Rule
-If the harness changes, reviewers should verify that helper dependencies stay isolated, scripts remain deterministic and bounded, and `run_checks.py` only runs commands recorded in visible repo files.
+If the harness changes, reviewers should verify that helper dependencies stay isolated, scripts remain deterministic and bounded, and `run_checks.py` lists prose-extracted commands without running them by default.

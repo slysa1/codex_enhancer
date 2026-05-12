@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("target", help="target repository path")
     add_mode_options(install)
     add_write_options(install, include_force=True)
+    add_output_options(install, include_plan_options=True)
     add_install_pack_options(install)
     add_spec_kit_options(install)
     add_utility_harness_options(install)
@@ -40,6 +41,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect.set_defaults(action="inspect")
     inspect.add_argument("target", help="target repository path")
+    add_output_options(inspect, include_plan_options=False)
+
+    audit = subparsers.add_parser(
+        "audit",
+        help="audit an installed target for inherited enhancer guidance",
+    )
+    audit.set_defaults(action="audit")
+    audit.add_argument("target", help="target repository path")
+    add_output_options(audit, include_plan_options=False)
 
     upgrade = subparsers.add_parser(
         "upgrade",
@@ -48,6 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     upgrade.set_defaults(action="upgrade")
     upgrade.add_argument("target", help="target repository path")
     add_write_options(upgrade, include_force=False)
+    add_output_options(upgrade, include_plan_options=True)
     add_spec_kit_options(upgrade)
     add_utility_harness_options(upgrade)
 
@@ -58,6 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     refresh.set_defaults(action="refresh")
     refresh.add_argument("target", help="target repository path")
     add_write_options(refresh, include_force=False)
+    add_output_options(refresh, include_plan_options=True)
 
     bridge = subparsers.add_parser(
         "bridge",
@@ -66,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     bridge.set_defaults(action="bridge")
     bridge.add_argument("target", help="target repository path")
     add_write_options(bridge, include_force=False)
+    add_output_options(bridge, include_plan_options=True)
     add_spec_kit_options(bridge)
 
     spec_report = subparsers.add_parser(
@@ -74,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     spec_report.set_defaults(action="spec_report")
     spec_report.add_argument("target", help="target repository path")
+    add_output_options(spec_report, include_plan_options=False)
     spec_report.add_argument(
         "--feature",
         "--spec-kit-feature",
@@ -87,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     spec_sync.set_defaults(action="spec_sync")
     spec_sync.add_argument("target", help="target repository path")
+    add_output_options(spec_sync, include_plan_options=False)
     spec_sync.add_argument(
         "--feature",
         "--spec-kit-feature",
@@ -115,6 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
     packs.set_defaults(action="packs")
     packs.add_argument("target", help="target repository path")
     add_write_options(packs, include_force=False)
+    add_output_options(packs, include_plan_options=True)
     packs.add_argument("--add", "--add-pack", action="append", default=[], dest="add_pack")
     packs.add_argument("--remove", "--remove-pack", action="append", default=[], dest="remove_pack")
     packs.add_argument("--set", "--set-pack", action="append", default=[], dest="set_pack")
@@ -126,6 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     list_packs.set_defaults(action="list_packs")
     list_packs.add_argument("target", nargs="?", help="optional target repository path")
     add_mode_options(list_packs)
+    add_output_options(list_packs, include_plan_options=False)
 
     gui = subparsers.add_parser(
         "gui",
@@ -152,6 +169,13 @@ def add_write_options(parser: argparse.ArgumentParser, *, include_force: bool) -
             action="store_true",
             help="overwrite colliding files instead of writing proposals",
         )
+
+
+def add_output_options(parser: argparse.ArgumentParser, *, include_plan_options: bool) -> None:
+    if include_plan_options:
+        parser.add_argument("--summary", action="store_true", help="print a concise plan preview")
+        parser.add_argument("--diff", action="store_true", help="include a unified diff preview")
+    parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
 
 
 def add_install_pack_options(parser: argparse.ArgumentParser) -> None:
@@ -251,6 +275,7 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         installer_args = ["--list-packs", "--mode", selected_mode(args)]
         if args.target:
             installer_args.extend(["--target", args.target])
+        append_output_args(installer_args, args)
         return installer_args
 
     installer_args = ["--target", args.target]
@@ -267,18 +292,26 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
             installer_args.extend(["--pack", pack])
         for pack in args.no_pack:
             installer_args.extend(["--no-pack", pack])
+        append_output_args(installer_args, args)
         append_spec_kit_args(installer_args, args)
         append_utility_harness_args(installer_args, args)
         return installer_args
 
     if args.action == "inspect":
         installer_args.append("--inspect-install")
+        append_output_args(installer_args, args)
+        return installer_args
+
+    if args.action == "audit":
+        installer_args.append("--audit-adaptation")
+        append_output_args(installer_args, args)
         return installer_args
 
     if args.action == "upgrade":
         installer_args.append("--upgrade-enhancer")
         if args.write:
             installer_args.append("--write")
+        append_output_args(installer_args, args)
         append_spec_kit_args(installer_args, args)
         append_utility_harness_args(installer_args, args)
         return installer_args
@@ -287,23 +320,27 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         installer_args.append("--refresh-generated")
         if args.write:
             installer_args.append("--write")
+        append_output_args(installer_args, args)
         return installer_args
 
     if args.action == "bridge":
         installer_args.append("--manage-spec-kit-bridge")
         if args.write:
             installer_args.append("--write")
+        append_output_args(installer_args, args)
         append_spec_kit_args(installer_args, args)
         return installer_args
 
     if args.action == "spec_report":
         installer_args.append("--spec-kit-report")
+        append_output_args(installer_args, args)
         if args.spec_kit_feature:
             installer_args.extend(["--spec-kit-feature", args.spec_kit_feature])
         return installer_args
 
     if args.action == "spec_sync":
         installer_args.append("--spec-kit-sync-report")
+        append_output_args(installer_args, args)
         if args.spec_kit_feature:
             installer_args.extend(["--spec-kit-feature", args.spec_kit_feature])
         for changed_path in args.spec_kit_changed_path:
@@ -316,6 +353,7 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         installer_args.append("--manage-packs")
         if args.write:
             installer_args.append("--write")
+        append_output_args(installer_args, args)
         for pack in args.add_pack:
             installer_args.extend(["--add-pack", pack])
         for pack in args.remove_pack:
@@ -338,6 +376,15 @@ def append_spec_kit_args(installer_args: list[str], args: argparse.Namespace) ->
         installer_args.extend(["--spec-kit-version", args.spec_kit_version])
     if args.spec_kit_exe:
         installer_args.extend(["--spec-kit-exe", args.spec_kit_exe])
+
+
+def append_output_args(installer_args: list[str], args: argparse.Namespace) -> None:
+    if getattr(args, "summary", False):
+        installer_args.append("--summary")
+    if getattr(args, "diff", False):
+        installer_args.append("--diff")
+    if getattr(args, "json", False):
+        installer_args.append("--json")
 
 
 def append_utility_harness_args(installer_args: list[str], args: argparse.Namespace) -> None:

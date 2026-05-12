@@ -22,6 +22,9 @@ class CodexEnhancerCliTests(unittest.TestCase):
                     "--recommended",
                     "--pack",
                     "python-service",
+                    "--summary",
+                    "--diff",
+                    "--json",
                     "--utility-harness",
                 ]
             ),
@@ -33,8 +36,22 @@ class CodexEnhancerCliTests(unittest.TestCase):
                 "--use-recommended-packs",
                 "--pack",
                 "python-service",
+                "--summary",
+                "--diff",
+                "--json",
                 "--utility-harness-mode",
                 "install",
+            ],
+        )
+
+    def test_audit_translates_to_adaptation_audit(self) -> None:
+        self.assertEqual(
+            self.translate(["audit", "../target", "--json"]),
+            [
+                "--target",
+                "../target",
+                "--audit-adaptation",
+                "--json",
             ],
         )
 

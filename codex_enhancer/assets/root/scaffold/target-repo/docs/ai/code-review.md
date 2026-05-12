@@ -15,7 +15,7 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 10. Confirm the manifest schema, lifecycle metadata, and pack evidence still look intentional before merging enhancer lifecycle changes.
 11. Confirm visible managed-section markers in `AGENTS.md` still wrap only the selected stack-pack summary.
 12. If official Spec Kit is present or bridge guidance changed, confirm [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), the managed Spec Kit bridge summary in [AGENTS.md](../../AGENTS.md), and the ownership boundary for `.specify/` or `specs/` still match.
-13. If the Utility Harness is installed, confirm `requirements-codex.txt` stays Codex/operator-only and `tools/ai/run_checks.py` runs only recorded validation commands.
+13. If the Utility Harness is installed, confirm `requirements-codex.txt` stays Codex/operator-only and `tools/ai/run_checks.py --list` shows command trust/source before anything is run.
 
 ## Review Priorities
 1. Wrong or stale instructions
@@ -40,3 +40,4 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 - If installer-managed ownership changed, call out which outputs remain safe to regenerate and which files still expect manual adaptation.
 - If the repo also uses official Spec Kit, call out what the enhancer owns versus what remains official Spec Kit state.
 - If Utility Harness files changed, call out whether the change affects helper tooling only or real repo validation behavior.
+- If `run_checks.py` found prose-extracted commands, call out whether they were intentionally skipped or reviewed with `--include-prose`.

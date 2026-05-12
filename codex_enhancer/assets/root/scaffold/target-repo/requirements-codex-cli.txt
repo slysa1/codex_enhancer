@@ -1,0 +1,7 @@
+# Codex/operator helper dependencies only.
+# Optional richer CLI/config helpers for local operator tooling.
+
+typer
+rich
+pydantic
+python-dotenv

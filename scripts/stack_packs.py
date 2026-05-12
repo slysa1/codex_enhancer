@@ -1097,6 +1097,14 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
                     "integrations.utility_harness.requirements_file",
                     raw_utility.get("requirements_file"),
                 ),
+                dependency_files=tuple(
+                    _manifest_string_list(
+                        target,
+                        TARGET_MANIFEST_PATH,
+                        "integrations.utility_harness.dependency_files",
+                        raw_utility.get("dependency_files", []),
+                    )
+                ),
                 docs_file=_manifest_optional_string(
                     target,
                     TARGET_MANIFEST_PATH,
@@ -1500,6 +1508,12 @@ def render_stack_pack_manifest(
         if utility_harness.requirements_file is not None:
             lines.append(
                 f"requirements_file = {_toml_string(utility_harness.requirements_file)}"
+            )
+        if utility_harness.dependency_files:
+            lines.append(
+                "dependency_files = ["
+                + ", ".join(_toml_string(path) for path in utility_harness.dependency_files)
+                + "]"
             )
         if utility_harness.docs_file is not None:
             lines.append(f"docs_file = {_toml_string(utility_harness.docs_file)}")

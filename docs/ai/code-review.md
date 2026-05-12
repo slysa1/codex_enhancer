@@ -15,11 +15,12 @@ Use this checklist when a change in this repository touches [AGENTS.md](../../AG
 10. If stack-pack generation or management changed, verify target `AGENTS.md`, `docs/ai/stack-guidance.md`, and `.codex/enhancer/manifest.toml` stay aligned with the selected packs.
 11. If output ownership rules changed, verify previews and the target manifest still distinguish safe-to-regenerate outputs from scaffold files that should usually be adapted manually.
 12. If the command facade changed, verify it still delegates to [scripts/install_enhancer.py](../../scripts/install_enhancer.py) and has focused translation tests.
-13. If the GUI installer changed, verify the overwrite preview, pack-selection controls, confirmation gate, progress updates, and README handoff still match the installer core.
-14. If lifecycle, upgrade, refresh, managed-section, or proposal behavior changed, confirm [docs/ai/migration-v3.md](./migration-v3.md) explains the operator-facing impact.
-15. If the Spec Kit bridge changed, verify [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), the target scaffold bridge doc, bridge skills, manifest section ids, CLI bridge/report commands, and visible `AGENTS.md` markers changed together.
-16. If the Utility Harness changed, verify [docs/ai/utility-harness.md](./utility-harness.md), target scaffold tools, `requirements-codex.txt`, CLI/GUI preview wording, manifest state, and validator expectations changed together.
-17. If roadmap or stack-pack design changed, confirm the phased roadmap in [roadmap.md](./roadmap.md) still matches the intended architecture.
+13. If installer output changed, verify full previews, `--summary`, `--diff`, `--json`, and adaptation audits are all covered by tests or documented as intentionally out of scope.
+14. If the GUI installer changed, verify the overwrite preview, pack-selection controls, confirmation gate, progress updates, and README handoff still match the installer core.
+15. If lifecycle, upgrade, refresh, managed-section, or proposal behavior changed, confirm [docs/ai/migration-v3.md](./migration-v3.md) explains the operator-facing impact.
+16. If the Spec Kit bridge changed, verify [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), the target scaffold bridge doc, bridge skills, manifest section ids, CLI bridge/report commands, and visible `AGENTS.md` markers changed together.
+17. If the Utility Harness changed, verify [docs/ai/utility-harness.md](./utility-harness.md), target scaffold tools, `requirements-codex.txt`, CLI/GUI preview wording, manifest state, and validator expectations changed together.
+18. If roadmap or stack-pack design changed, confirm the phased roadmap in [roadmap.md](./roadmap.md) still matches the intended architecture.
 
 ## Review Priorities
 1. Wrong or stale instructions

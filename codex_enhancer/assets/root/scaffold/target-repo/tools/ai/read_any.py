@@ -19,6 +19,16 @@ from xml.etree import ElementTree
 TEXT_SUFFIXES = {".txt", ".md", ".rst", ".py", ".js", ".ts", ".tsx", ".jsx", ".css", ".html", ".xml"}
 STRUCTURED_TEXT_SUFFIXES = {".json", ".toml", ".yaml", ".yml", ".csv"}
 RICH_SUFFIXES = {".pdf", ".docx", ".pptx", ".xlsx", ".odt", ".ods"}
+DEPENDENCY_GROUPS = {
+    "beautifulsoup4": "requirements-codex-readers.txt",
+    "openpyxl": "requirements-codex-readers.txt",
+    "pypdf": "requirements-codex-readers.txt",
+    "pypdf or PyMuPDF": "requirements-codex-readers.txt",
+    "PyMuPDF": "requirements-codex-readers.txt",
+    "python-docx": "requirements-codex-readers.txt",
+    "python-pptx": "requirements-codex-readers.txt",
+    "ruamel.yaml": "requirements-codex-readers.txt",
+}
 
 
 class TextHTMLParser(html.parser.HTMLParser):
@@ -41,7 +51,11 @@ def print_limited(text: str, *, max_chars: int) -> None:
 
 
 def dependency_message(package: str, purpose: str) -> None:
-    print(f"Optional dependency missing: install `{package}` from requirements-codex.txt to read {purpose}.")
+    group_file = DEPENDENCY_GROUPS.get(package, "requirements-codex.txt")
+    print(
+        f"Optional dependency missing: install `{package}` from {group_file} "
+        f"or the all-in requirements-codex.txt to read {purpose}."
+    )
 
 
 def decode_bytes(data: bytes) -> str:

@@ -8,6 +8,30 @@ This repository currently ships the enhancer itself. Installing the enhancer mea
 - installing a built wheel or source distribution that includes the scaffold assets, or
 - using the included installer to scaffold the enhancer into another repository and then adapting it to that repo's real commands and architecture
 
+## Start Here
+Use Codex Enhancer when you want a visible repo-local operating layer for Codex: concise instructions, narrow repeatable skills, deterministic checks, and review guidance that live in git. Do not use it when a single hand-written `AGENTS.md` is enough or when you want a hidden agent runtime.
+
+First successful target-repo workflow:
+1. Preview: `codex-enhancer init ../target-repo --existing --summary`.
+2. Inspect the full plan when needed: add `--diff` for planned file content changes or remove `--summary` for the full human preview.
+3. Apply only after review: rerun with `--write`.
+4. Adapt: run `codex-enhancer audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
+5. Validate in the target repo: run `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`.
+
+Before/after in practice:
+- Before: Codex sees scattered or missing repo instructions and you keep repeating commands, review rules, and "please inspect first" reminders in prompts.
+- Preview: the enhancer shows which workflow files it would create, overwrite, or propose, which stack packs were detected, whether Spec Kit or Utility Harness integrations are involved, and what to do next.
+- After apply and adaptation: Codex starts from a repo-specific `AGENTS.md`, deeper docs under `docs/ai/`, a validation command, optional skills, visible manifest state, and review notes that can be checked into git.
+
+### Choose The Right Tool
+| Situation | Best fit | Why |
+| --- | --- | --- |
+| One small repo only needs a few standing instructions. | Plain `AGENTS.md` | Less machinery, easier to maintain by hand. |
+| You want repo-local Codex guidance, validation, install/upgrade previews, and optional stack guidance. | Codex Enhancer | Visible scaffold plus deterministic checks and proposal-mode safety. |
+| You already use official Spec Kit for feature specs and tasks. | Spec Kit plus optional enhancer bridge | Spec Kit owns `.specify/` and `specs/`; the enhancer can add Codex operating guidance around it. |
+| Your team already standardizes on Claude Code conventions. | Claude Code conventions, optionally mirrored in enhancer docs | Do not duplicate workflows unless Codex needs the same repo-local guidance. |
+| You need a running agent service, background memory, or task orchestration. | Another tool | Codex Enhancer deliberately avoids hidden runtimes and persistent state. |
+
 ## What The Enhancer Gives You
 - A concise root [AGENTS.md](AGENTS.md) that acts as the main Codex operating layer
 - Distributable package metadata in [pyproject.toml](pyproject.toml) and [MANIFEST.in](MANIFEST.in)
@@ -43,10 +67,12 @@ Do not use it if you want a packaged agent runtime, hidden orchestration layer, 
 
 ## Prerequisites
 - Git
-- Python 3.13 recommended
+- Python 3.13 or newer
 - Codex or another environment that understands repo-local `AGENTS.md` and skills
 
 The current source-repo implementation has no runtime third-party Python dependencies. The optional Utility Harness can scaffold a target-repo `requirements-codex.txt` for Codex/operator helper tooling, but the installer never installs those packages automatically.
+
+Spec Kit bootstrap is the only normal path that expects an external executable. `--with-spec-kit` or `--spec-kit-mode bootstrap` uses `uvx` by default and pins the official bootstrap ref used by this enhancer release. Use `--spec-kit-exe <path>` when you already have a local `specify`-compatible executable or want to avoid `uvx`.
 
 ## Installation
 
@@ -74,7 +100,7 @@ To build distributable artifacts from a prepared packaging environment:
 
 ```bash
 python -m build
-python -m pip install dist/codex_enhancer-3.4.0-py3-none-any.whl
+python -m pip install dist/codex_enhancer-4.0.0-py3-none-any.whl
 codex-enhancer list-packs
 ```
 
@@ -114,15 +140,25 @@ For a shorter command surface from a source checkout, use [scripts/codex_enhance
 python scripts/codex_enhancer_cli.py list-packs
 python scripts/codex_enhancer_cli.py init ../my-new-repo --new --with-spec-kit --utility-harness
 python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --utility-harness
+python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --summary --diff
+python scripts/codex_enhancer_cli.py audit ../my-existing-repo
 python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --utility-harness --write
 python scripts/codex_enhancer_cli.py spec-report ../my-existing-repo --feature 001-login
 python scripts/codex_enhancer_cli.py spec-sync ../my-existing-repo --feature 001-login --changed src/auth.py
 python scripts/codex_enhancer_cli.py bridge ../my-existing-repo --attach-spec-kit
 ```
 
-The facade only translates friendly verbs such as `init`, `install`, `inspect`, `packs`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
+The facade only translates friendly verbs such as `init`, `install`, `inspect`, `audit`, `packs`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
 
 Use `--with-spec-kit` when you want Codex Enhancer to bootstrap official Spec Kit for Codex and install the bridge skills/guidance in the same flow. The preview shows the official bootstrap command first; the external Spec Kit download/setup only runs if you re-run with `--write`.
+
+Useful preview formats:
+- `--summary` prints the shortest install, upgrade, refresh, pack, or bridge plan.
+- `--diff` adds a unified diff preview for planned text writes, proposals, managed-section refreshes, and `.gitignore` merges.
+- `--json` emits a versioned machine-readable plan or report for wrappers and CI.
+- `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files.
+
+JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
 
 List the currently available stack packs:
 
@@ -233,6 +269,14 @@ Inspect an existing install before planning a later upgrade or reconcile:
 python scripts/install_enhancer.py --target ../my-existing-repo --inspect-install
 ```
 
+If you inspect this Codex Enhancer source checkout itself, it may report "not installed" because source repos and installed target repos are different shapes. The source repo is validated with `python scripts/check.py`; installed targets are identified by `.codex/enhancer/manifest.toml`.
+
+Audit an installed target after apply:
+
+```bash
+python scripts/codex_enhancer_cli.py audit ../my-existing-repo
+```
+
 Preview an upgrade/reconcile plan for an existing enhancer install:
 
 ```bash
@@ -251,6 +295,10 @@ The Utility Harness is optional and separate from stack packs and Spec Kit. It i
 
 ```text
 requirements-codex.txt
+requirements-codex-minimal.txt
+requirements-codex-readers.txt
+requirements-codex-analysis.txt
+requirements-codex-cli.txt
 tools/ai/inspect_repo.py
 tools/ai/read_any.py
 tools/ai/summarize_tree.py
@@ -270,7 +318,7 @@ Apply it after reviewing the plan:
 python scripts/install_enhancer.py --target ../my-existing-repo --mode existing --utility-harness-mode install --write
 ```
 
-The harness does not install dependencies, run in the background, index the repo, or add production dependencies. If richer readers are needed, install `requirements-codex.txt` manually in a local helper environment and keep it out of runtime, test, and deployment dependency flows. The resolved state is recorded under `[integrations.utility_harness]` in `.codex/enhancer/manifest.toml`.
+The harness does not install dependencies, run in the background, index the repo, or add production dependencies. Install helper dependencies manually in a local helper environment and keep them out of runtime, test, and deployment dependency flows. Use `requirements-codex-minimal.txt`, `requirements-codex-readers.txt`, `requirements-codex-analysis.txt`, or `requirements-codex-cli.txt` when you only need one helper group; use `requirements-codex.txt` for the all-in bundle. The resolved state is recorded under `[integrations.utility_harness]` in `.codex/enhancer/manifest.toml`.
 
 For an existing repo with conflicting files:
 - by default, conflicting files are written as proposals under `.codex/enhancer-proposals/`
@@ -349,6 +397,11 @@ Bridge-specific flags:
 - `--spec-kit-exe <path>` uses a local `specify`-compatible executable instead of `uvx` for bootstrap
 - `--spec-kit-changed-path <path>` adds a path to the read-only sync report and can be repeated
 - `--spec-kit-base <ref>` asks local `git diff --name-only <ref>...HEAD` for changed paths in the sync report
+
+Bootstrap notes:
+- The default bootstrap ref is pinned by this enhancer release rather than silently following a moving branch.
+- If `uvx` is missing during apply, install `uv`/`uvx` or pass `--spec-kit-exe <path>`.
+- External Spec Kit bootstrap runs before enhancer-owned files are written. If it fails, inspect any official Spec Kit files it may have created, fix the bootstrap problem, and rerun the same enhancer command.
 
 Use the bridge when:
 - the repo already has an official Spec Kit install and you want the enhancer to help Codex use the resulting artifacts well
@@ -534,6 +587,7 @@ python scripts/install_enhancer.py --list-packs
 python scripts/codex_enhancer_cli.py list-packs
 python scripts/install_enhancer.py --target ../my-existing-repo --inspect-install
 python scripts/codex_enhancer_cli.py inspect ../my-existing-repo
+python scripts/codex_enhancer_cli.py audit ../my-existing-repo
 python scripts/install_enhancer.py --target ../my-existing-repo --spec-kit-report
 python scripts/codex_enhancer_cli.py spec-report ../my-existing-repo --feature 001-login
 python scripts/install_enhancer.py --target ../my-existing-repo --spec-kit-sync-report --spec-kit-feature 001-login --spec-kit-changed-path src/auth.py
@@ -544,6 +598,7 @@ python scripts/install_enhancer.py --target ../my-existing-repo --manage-packs -
 python scripts/codex_enhancer_cli.py packs ../my-existing-repo --add python-service
 python scripts/install_enhancer.py --target ../my-new-repo --mode new
 python scripts/codex_enhancer_cli.py init ../my-new-repo --new
+python scripts/codex_enhancer_cli.py init ../my-new-repo --new --summary --diff
 python scripts/codex_enhancer_cli.py init ../my-new-repo --new --with-spec-kit --utility-harness
 python scripts/install_enhancer.py --target ../my-existing-repo --mode existing --utility-harness-mode install
 python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --utility-harness
@@ -556,6 +611,8 @@ What they do:
 - `python -m unittest discover -s tests -p "test_*.py" -v`: tests the validator itself
 - `python scripts/codex_enhancer_cli.py ...`: provides short subcommands over the same installer core
 - `python scripts/install_enhancer.py --list-packs`: prints the available stack packs
+- `python scripts/codex_enhancer_cli.py audit ...`: reports inherited generic guidance, placeholders, and unreviewed proposal files after install
+- `--summary`, `--diff`, and `--json`: switch installer previews between concise human output, text diffs, and machine-readable plans
 - `python scripts/install_enhancer.py --target ... --spec-kit-report`: prints a read-only Spec Kit feature-artifact report
 - `python scripts/install_enhancer.py --target ... --spec-kit-sync-report`: prints a read-only changed-path sync report for existing Spec Kit artifacts
 - `python scripts/install_enhancer.py --target ... --manage-spec-kit-bridge --spec-kit-mode <mode>`: previews a bridge-mode update for an installed target
@@ -580,7 +637,7 @@ It is a map, not a dump of every durable rule.
 
 Use docs when guidance needs more explanation. Use `AGENTS.md` when guidance must be visible immediately.
 
-For the current planned evolution of the enhancer, see [docs/ai/roadmap.md](docs/ai/roadmap.md). It records the shipped `2.x` and `3.x` design history plus the planned `4.0` product-maturity roadmap for first-time-user clarity, safer command handling, release confidence, and integration hardening.
+For the current enhancer evolution record, see [docs/ai/roadmap.md](docs/ai/roadmap.md). It records the shipped `2.x` and `3.x` design history plus the completed `4.0` product-maturity roadmap for first-time-user clarity, safer command handling, release confidence, and integration hardening.
 
 For upgrading existing installed repos, see [docs/ai/migration-v3.md](docs/ai/migration-v3.md). It gives the operator checklist for inspect, upgrade, pack management, refresh, proposal review, and validation.
 
@@ -773,6 +830,11 @@ python -m unittest discover -s tests -p "test_*.py" -v
 If a test fails after changing the enhancer shape, either:
 - fix the implementation, or
 - update the fixture expectations in [tests/test_check.py](tests/test_check.py) if the new behavior is intentional
+
+### Local generated files make searches noisy
+The repo ignores normal generated artifacts such as `__pycache__/`, `*.py[cod]`, `tests/_tmp/`, `build/`, `dist/`, and `*.egg-info/`. They may still exist in a local checkout after tests, package builds, or smoke runs.
+
+When auditing the tree, prefer normal `rg --files` or explicitly exclude `tests/_tmp/` instead of searching ignored fixture output. Do not commit generated build artifacts unless a future release process explicitly asks for them.
 
 ### Codex ignores the intended workflow
 Check:

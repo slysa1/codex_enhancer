@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ENHANCER_VERSION = "3.4.0"
+ENHANCER_VERSION = "4.0.0"
 ENHANCER_MANIFEST_SCHEMA_VERSION = 3
 SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, ENHANCER_MANIFEST_SCHEMA_VERSION})
 
@@ -128,6 +128,10 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("scaffold/target-repo/.codex/skills/spec-sync-check/SKILL.md"),
         Path("scaffold/target-repo/.codex/skills/spec-review-bridge/SKILL.md"),
         Path("scaffold/target-repo/requirements-codex.txt"),
+        Path("scaffold/target-repo/requirements-codex-minimal.txt"),
+        Path("scaffold/target-repo/requirements-codex-readers.txt"),
+        Path("scaffold/target-repo/requirements-codex-analysis.txt"),
+        Path("scaffold/target-repo/requirements-codex-cli.txt"),
         Path("scaffold/target-repo/tools/ai/inspect_repo.py"),
         Path("scaffold/target-repo/tools/ai/read_any.py"),
         Path("scaffold/target-repo/tools/ai/summarize_tree.py"),
@@ -181,7 +185,12 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "docs/ai/roadmap.md",
             "docs/ai/release.md",
             "docs/ai/utility-harness.md",
+            "requirements-codex-readers.txt",
             "--utility-harness-mode",
+            "--summary",
+            "--diff",
+            "--json",
+            "audit",
             "spec-report",
             "spec-sync",
             "bridge",
@@ -203,6 +212,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "docs/ai/spec-kit-bridge.md",
             "docs/ai/utility-harness.md",
             ".codex/skills/",
+            "audit",
             "spec-sync",
             "scripts/utility_harness.py",
             "tests/",
@@ -236,14 +246,18 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "--spec-kit-report",
             "--spec-kit-sync-report",
             "--refresh-generated",
+            "audit",
         ),
         Path("docs/ai/release.md"): (
             "python -m build",
             "codex-enhancer list-packs",
             "requirements-codex.txt",
+            "requirements-codex-readers.txt",
             "codex_enhancer/assets/root/",
         ),
         Path("docs/ai/spec-kit-bridge.md"): (
+            "uvx",
+            "--spec-kit-exe",
             "spec-report",
             "spec-sync",
             "bridge",
@@ -368,6 +382,22 @@ OPTIONAL_UTILITY_HARNESS_COPY_ASSETS = (
     CopyAsset(
         source_path=Path("scaffold/target-repo/requirements-codex.txt"),
         destination=Path("requirements-codex.txt"),
+    ),
+    CopyAsset(
+        source_path=Path("scaffold/target-repo/requirements-codex-minimal.txt"),
+        destination=Path("requirements-codex-minimal.txt"),
+    ),
+    CopyAsset(
+        source_path=Path("scaffold/target-repo/requirements-codex-readers.txt"),
+        destination=Path("requirements-codex-readers.txt"),
+    ),
+    CopyAsset(
+        source_path=Path("scaffold/target-repo/requirements-codex-analysis.txt"),
+        destination=Path("requirements-codex-analysis.txt"),
+    ),
+    CopyAsset(
+        source_path=Path("scaffold/target-repo/requirements-codex-cli.txt"),
+        destination=Path("requirements-codex-cli.txt"),
     ),
     CopyAsset(
         source_path=Path("scaffold/target-repo/tools/ai/inspect_repo.py"),

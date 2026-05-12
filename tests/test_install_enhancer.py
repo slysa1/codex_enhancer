@@ -14,6 +14,7 @@ from pathlib import Path
 from scripts import install_enhancer
 from scripts.install_enhancer import (
     apply_install_plan,
+    audit_adaptation,
     build_install_plan,
     build_overwrite_confirmation_message,
     build_pack_management_plan,
@@ -794,6 +795,171 @@ class InstallEnhancerTests(unittest.TestCase):
                 output,
             )
 
+    def test_summary_and_diff_preview_are_available_for_plans(self) -> None:
+        with repo_fixture("summary_diff") as install_target:
+            write_file(install_target, "AGENTS.md", "# Existing\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--summary", "--diff"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Plan summary:", output)
+            self.assertIn("Diff preview:", output)
+            self.assertIn("--- AGENTS.md", output)
+            self.assertIn("+++ .codex/enhancer-proposals/AGENTS", output)
+
+    def test_json_plan_output_is_machine_readable(self) -> None:
+        with repo_fixture("json_plan") as install_target:
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--json"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["kind"], "install-plan")
+            self.assertEqual(payload["operation"], "install")
+            self.assertFalse(payload["write"])
+            self.assertIn("writes", payload)
+            self.assertIn("schema_version", payload)
+            self.assertIn("next_steps", payload)
+
+    def test_json_output_covers_read_only_reports_and_errors(self) -> None:
+        exit_code, output = run_installer(["--list-packs", "--json"])
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(json.loads(output)["kind"], "pack-catalog")
+
+        exit_code, output = run_installer(["--mode", "new", "--json"])
+        self.assertEqual(exit_code, 1)
+        error_payload = json.loads(output)
+        self.assertEqual(error_payload["kind"], "error")
+        self.assertIn("Missing required --target", error_payload["message"])
+
+        with repo_fixture("json_readonly") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--inspect-install", "--json"]
+            )
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(json.loads(output)["kind"], "install-inspection")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--spec-kit-report", "--json"]
+            )
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(json.loads(output)["kind"], "spec-kit-report")
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--spec-kit-sync-report",
+                    "--spec-kit-changed-path",
+                    "README.md",
+                    "--json",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(json.loads(output)["kind"], "spec-kit-sync-report")
+
+    def test_json_output_covers_management_plan_operations(self) -> None:
+        with repo_fixture("json_management") as install_target:
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+            self.assertEqual(exit_code, 0)
+            write_file(
+                install_target,
+                ".specify/integration.json",
+                '{\n  "integration": "codex",\n  "version": "0.8.3"\n}\n',
+            )
+            write_file(
+                install_target,
+                ".specify/init-options.json",
+                '{\n  "integration": "codex",\n  "script": "ps",\n  "speckit_version": "0.8.3"\n}\n',
+            )
+            write_file(install_target, ".agents/skills/speckit-plan/SKILL.md", "# Plan\n")
+
+            operations = (
+                (
+                    "manage-packs",
+                    [
+                        "--target",
+                        str(install_target),
+                        "--manage-packs",
+                        "--add-pack",
+                        "python-service",
+                        "--json",
+                    ],
+                ),
+                (
+                    "manage-spec-kit-bridge",
+                    [
+                        "--target",
+                        str(install_target),
+                        "--manage-spec-kit-bridge",
+                        "--spec-kit-mode",
+                        "attach",
+                        "--json",
+                    ],
+                ),
+                (
+                    "refresh-generated",
+                    ["--target", str(install_target), "--refresh-generated", "--json"],
+                ),
+                (
+                    "upgrade-enhancer",
+                    ["--target", str(install_target), "--upgrade-enhancer", "--json"],
+                ),
+            )
+
+            for operation, arguments in operations:
+                with self.subTest(operation=operation):
+                    exit_code, output = run_installer(arguments)
+                    self.assertEqual(exit_code, 0)
+                    payload = json.loads(output)
+                    self.assertEqual(payload["kind"], "install-plan")
+                    self.assertEqual(payload["operation"], operation)
+
+    def test_audit_adaptation_reports_inherited_guidance(self) -> None:
+        with repo_fixture("adapt_audit") as install_target:
+            plan = build_install_plan(install_target, mode="new")
+            apply_install_plan(plan)
+
+            findings = audit_adaptation(install_target)
+            messages = "\n".join(finding.message for finding in findings)
+
+            self.assertIn("inherited generic guidance", messages)
+
+    def test_audit_adaptation_can_emit_json(self) -> None:
+        with repo_fixture("adapt_json") as install_target:
+            plan = build_install_plan(install_target, mode="new")
+            apply_install_plan(plan)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--audit-adaptation", "--json"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["kind"], "adaptation-audit")
+            self.assertGreater(payload["finding_count"], 0)
+
+    def test_audit_adaptation_can_pass_clean_target(self) -> None:
+        with repo_fixture("adapt_clean") as install_target:
+            write_file(install_target, "AGENTS.md", "# Demo\n\nRun `python scripts/check.py`.\n")
+            write_file(install_target, "docs/ai/architecture.md", "# Architecture\n\nDemo-specific notes.\n")
+            write_file(install_target, "docs/ai/code-review.md", "# Review\n\nDemo-specific checks.\n")
+            write_file(install_target, ".codex/enhancer/manifest.toml", "schema_version = 1\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--audit-adaptation"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("no obvious inherited placeholders", output)
+
     def test_dry_run_reports_detected_stack_packs(self) -> None:
         with repo_fixture("install_pack_preview") as install_target:
             write_file(install_target, "package.json", '{"name": "demo"}\n')
@@ -1124,6 +1290,10 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("Utility Harness:", output)
             self.assertTrue((install_target / "requirements-codex.txt").exists())
+            self.assertTrue((install_target / "requirements-codex-minimal.txt").exists())
+            self.assertTrue((install_target / "requirements-codex-readers.txt").exists())
+            self.assertTrue((install_target / "requirements-codex-analysis.txt").exists())
+            self.assertTrue((install_target / "requirements-codex-cli.txt").exists())
             self.assertTrue((install_target / "tools/ai/inspect_repo.py").exists())
             self.assertTrue((install_target / "tools/ai/read_any.py").exists())
             self.assertTrue((install_target / "tools/ai/summarize_tree.py").exists())
@@ -1135,6 +1305,7 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("[integrations.utility_harness]", manifest)
             self.assertIn('mode = "install"', manifest)
             self.assertIn('state = "installed"', manifest)
+            self.assertIn('"requirements-codex-readers.txt"', manifest)
             self.assertIn('"tools/ai/run_checks.py"', manifest)
             self.assertIn("Codex Utility Harness is installed", agents)
             self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
@@ -1149,7 +1320,88 @@ class InstallEnhancerTests(unittest.TestCase):
             )
             self.assertEqual(listed_checks.returncode, 0)
             self.assertIn("enhancer:check", listed_checks.stdout)
+            self.assertIn("trust=confirmed", listed_checks.stdout)
             self.assertNotIn("tools/ai/run_checks.py", listed_checks.stdout)
+
+    def test_utility_harness_run_checks_does_not_execute_prose_commands_by_default(self) -> None:
+        with repo_fixture("utility_prose_safety") as install_target:
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "new",
+                    "--utility-harness-mode",
+                    "install",
+                    "--write",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            agents = install_target / "AGENTS.md"
+            agents.write_text(
+                agents.read_text(encoding="utf-8")
+                + '\nUnsafe example: `python -c "open(\'ran.txt\',\'w\').write(\'x\')" test`\n',
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [sys.executable, "-B", "tools/ai/run_checks.py", "--only", "agents"],
+                cwd=install_target,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn("Prose-extracted commands were not run by default", completed.stdout)
+            self.assertFalse((install_target / "ran.txt").exists())
+
+    def test_utility_harness_run_checks_requires_shell_opt_in_for_manifest_commands(self) -> None:
+        with repo_fixture("utility_manifest_shell_safety") as install_target:
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "new",
+                    "--utility-harness-mode",
+                    "install",
+                    "--write",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            manifest = install_target / ".codex/enhancer/manifest.toml"
+            manifest.write_text(
+                manifest.read_text(encoding="utf-8")
+                + '\n[commands]\ncheck_command = "python -c \\"from pathlib import Path; Path(\'ran.txt\').write_text(\'x\')\\" test && echo done"\n',
+                encoding="utf-8",
+            )
+
+            listed = subprocess.run(
+                [sys.executable, "-B", "tools/ai/run_checks.py", "--list", "--only", "manifest"],
+                cwd=install_target,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(listed.returncode, 0)
+            self.assertIn("trust=confirmed", listed.stdout)
+            self.assertIn("requires-shell", listed.stdout)
+
+            completed = subprocess.run(
+                [sys.executable, "-B", "tools/ai/run_checks.py", "--only", "manifest"],
+                cwd=install_target,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0)
+            self.assertIn("skipped: command contains shell control characters", completed.stdout)
+            self.assertFalse((install_target / "ran.txt").exists())
 
     def test_utility_harness_dry_run_does_not_write_helper_files(self) -> None:
         with repo_fixture("install_utility_preview") as install_target:
@@ -1169,6 +1421,7 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Utility Harness:", output)
             self.assertIn("Codex Utility Harness is installed", output)
             self.assertIn("- create: requirements-codex.txt", output)
+            self.assertIn("- create: requirements-codex-readers.txt", output)
             self.assertFalse((install_target / "requirements-codex.txt").exists())
 
     def test_refresh_generated_preserves_utility_harness_state(self) -> None:
@@ -1967,6 +2220,16 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
                     self.assertEqual(commands["install"], expected_install)
                     self.assertEqual(commands["build"], expected_build)
                     self.assertEqual(commands["test"], expected_test)
+
+    def test_python_tests_directory_does_not_guess_pytest(self) -> None:
+        with repo_fixture("python_no_pytest_guess") as install_target:
+            write_file(install_target, "pyproject.toml", "[project]\nname = \"demo\"\n")
+            write_file(install_target, "tests/test_demo.py", "def test_demo():\n    pass\n")
+
+            commands = discover_commands(install_target)
+
+            self.assertEqual(commands["install"], "pip install -e .")
+            self.assertNotIn("test", commands)
 
     def test_apply_install_plan_reports_progress(self) -> None:
         with repo_fixture("install_progress") as parent:

@@ -53,6 +53,8 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - `python -m pip install -e . --no-deps` - install the local `codex-enhancer` command from this checkout.
 - `python -m build` - build wheel and source distribution artifacts when packaging tooling is available.
 - `python scripts/codex_enhancer_cli.py init <path>` - friendly preview command for installing into a target repo.
+- `python scripts/codex_enhancer_cli.py init <path> --summary --diff` - concise preview plus planned text diffs.
+- `python scripts/codex_enhancer_cli.py audit <path>` - inspect an installed target for inherited generic guidance and proposal files.
 - `python scripts/codex_enhancer_cli.py init <path> --with-spec-kit --utility-harness` - preview the full Codex helper bundle.
 - `python scripts/codex_enhancer_cli.py spec-report <path>` - summarize existing Spec Kit feature artifacts without editing them.
 - `python scripts/codex_enhancer_cli.py spec-sync <path> --feature <feature> --changed <path>` - compare changed paths against existing Spec Kit feature artifacts without editing them.

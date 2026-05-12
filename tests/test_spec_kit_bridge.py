@@ -169,6 +169,13 @@ class SpecKitBridgeTests(unittest.TestCase):
                 ),
             )
 
+    def test_resolve_spec_kit_bridge_bootstrap_uses_pinned_default_version(self) -> None:
+        with repo_fixture("spec_kit_bootstrap_default") as root:
+            bridge = resolve_spec_kit_bridge(root, mode="bootstrap", script_type="sh")
+
+            self.assertEqual(bridge.cli_version, "v0.8.3")
+            self.assertIn("git+https://github.com/github/spec-kit.git@v0.8.3", bridge.bootstrap_command)
+
     def test_feature_report_summarizes_artifacts_and_task_state(self) -> None:
         with repo_fixture("spec_kit_features") as root:
             write_file(root, ".specify/memory/constitution.md", "# Constitution\n")

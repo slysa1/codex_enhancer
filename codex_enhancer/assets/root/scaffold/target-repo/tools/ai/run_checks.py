@@ -7,6 +7,7 @@ import argparse
 import ast
 import json
 import re
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -30,6 +31,10 @@ class Command:
     label: str
     command: str
     source: str
+    trust: str
+
+
+SHELL_TOKENS = ("&&", "||", ";", "|", ">", "<", "&")
 
 
 def package_manager(root: Path) -> str:
@@ -79,6 +84,7 @@ def commands_from_package_json(root: Path) -> list[Command]:
                     label=f"package:{name}",
                     command=package_script_command(manager, name),
                     source="package.json scripts",
+                    trust="confirmed",
                 )
             )
     return commands
@@ -107,7 +113,14 @@ def commands_from_enhancer_spec(root: Path) -> list[Command]:
     for label, constant in (("enhancer:check", "CHECK_COMMAND"), ("enhancer:test", "TEST_COMMAND")):
         command = parse_assignment_string(spec, constant)
         if command:
-            commands.append(Command(label=label, command=command, source="scripts/enhancer_spec.py"))
+            commands.append(
+                Command(
+                    label=label,
+                    command=command,
+                    source="scripts/enhancer_spec.py",
+                    trust="confirmed",
+                )
+            )
     return commands
 
 
@@ -129,7 +142,14 @@ def commands_from_makefiles(root: Path) -> list[Command]:
         targets = parse_make_like_targets(root / file_name)
         for name in VALIDATION_NAMES:
             if name in targets:
-                commands.append(Command(label=f"{runner}:{name}", command=f"{runner} {name}", source=file_name))
+                commands.append(
+                    Command(
+                        label=f"{runner}:{name}",
+                        command=f"{runner} {name}",
+                        source=file_name,
+                        trust="confirmed",
+                    )
+                )
     return commands
 
 
@@ -151,7 +171,14 @@ def commands_from_agents(root: Path) -> list[Command]:
     for match in re.finditer(r"`([^`\n]+)`", text):
         command = match.group(1).strip()
         if looks_like_validation_command(command):
-            commands.append(Command(label=f"agents:{len(commands) + 1}", command=command, source="AGENTS.md"))
+            commands.append(
+                Command(
+                    label=f"agents:{len(commands) + 1}",
+                    command=command,
+                    source="AGENTS.md",
+                    trust="prose",
+                )
+            )
     return commands
 
 
@@ -188,6 +215,7 @@ def commands_from_manifest(root: Path) -> list[Command]:
                     label=f"manifest:{len(commands) + 1}",
                     command=command,
                     source=".codex/enhancer/manifest.toml",
+                    trust="confirmed",
                 )
             )
     return commands
@@ -221,14 +249,32 @@ def print_commands(commands: list[Command]) -> None:
         print("No recorded validation commands were found.")
         return
     for command in commands:
-        print(f"- {command.label}: `{command.command}` ({command.source})")
+        flags: list[str] = [command.source, f"trust={command.trust}"]
+        if command_requires_shell(command.command):
+            flags.append("requires-shell")
+        print(f"- {command.label}: `{command.command}` ({', '.join(flags)})")
 
 
-def run_command(root: Path, command: Command, index: int, total: int) -> int:
+def command_requires_shell(command: str) -> bool:
+    return any(token in command for token in SHELL_TOKENS)
+
+
+def command_argv(command: str) -> list[str]:
+    return shlex.split(command, posix=True)
+
+
+def run_command(root: Path, command: Command, index: int, total: int, *, allow_shell: bool) -> int:
     print(f"\n=== [{index}/{total}] {command.label}")
     print(f"source: {command.source}")
+    print(f"trust: {command.trust}")
     print(f"command: {command.command}")
-    completed = subprocess.run(command.command, cwd=root, shell=True)
+    if command_requires_shell(command.command):
+        if not allow_shell:
+            print("skipped: command contains shell control characters; rerun with --allow-shell after review")
+            return 0
+        completed = subprocess.run(command.command, cwd=root, shell=True)
+    else:
+        completed = subprocess.run(command_argv(command.command), cwd=root, shell=False)
     print(f"exit code: {completed.returncode}")
     return completed.returncode
 
@@ -238,6 +284,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("root", nargs="?", default=".", help="repository root")
     parser.add_argument("--list", action="store_true", help="list discovered commands and exit")
     parser.add_argument("--dry-run", action="store_true", help="show commands without running them")
+    parser.add_argument(
+        "--include-prose",
+        action="store_true",
+        help="allow commands extracted from AGENTS.md prose to run after review",
+    )
+    parser.add_argument(
+        "--allow-shell",
+        action="store_true",
+        help="allow commands containing shell control characters to run after review",
+    )
     parser.add_argument("--only", action="append", default=[], help="run labels containing this text; repeatable")
     parser.add_argument("--fail-fast", action="store_true", help="stop after the first failing command")
     args = parser.parse_args(argv)
@@ -263,9 +319,19 @@ def main(argv: list[str] | None = None) -> int:
         print_commands(commands)
         return 1
 
+    skipped_prose = [command for command in commands if command.trust == "prose" and not args.include_prose]
+    commands = [command for command in commands if command.trust != "prose" or args.include_prose]
+    if skipped_prose:
+        print("Prose-extracted commands were not run by default:")
+        print_commands(skipped_prose)
+        print("Rerun with --include-prose after reviewing them if you intentionally want them executed.")
+    if not commands:
+        print("No confirmed validation commands were selected to run.")
+        return 1
+
     failures = 0
     for index, command in enumerate(commands, start=1):
-        return_code = run_command(root, command, index, len(commands))
+        return_code = run_command(root, command, index, len(commands), allow_shell=args.allow_shell)
         if return_code != 0:
             failures += 1
             if args.fail_fast:

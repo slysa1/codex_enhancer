@@ -4,7 +4,11 @@
 The Utility Harness is an optional Codex/operator toolbox for inspecting this repository. It is installed only when the enhancer installer is run with `--utility-harness-mode install`.
 
 ## Installed Files
-- [requirements-codex.txt](../../requirements-codex.txt): optional helper dependencies for Codex/operator use only.
+- [requirements-codex.txt](../../requirements-codex.txt): all-in optional helper dependency bundle for Codex/operator use only.
+- [requirements-codex-minimal.txt](../../requirements-codex-minimal.txt): minimal inspection helpers.
+- [requirements-codex-readers.txt](../../requirements-codex-readers.txt): PDF, Office, spreadsheet, HTML, Markdown, YAML, and TOML reader helpers.
+- [requirements-codex-analysis.txt](../../requirements-codex-analysis.txt): optional code-analysis helpers.
+- [requirements-codex-cli.txt](../../requirements-codex-cli.txt): optional richer CLI/config helpers.
 - [tools/ai/inspect_repo.py](../../tools/ai/inspect_repo.py): compact repository inspection report.
 - [tools/ai/read_any.py](../../tools/ai/read_any.py): text extraction for common source, data, document, slide, spreadsheet, and PDF formats.
 - [tools/ai/summarize_tree.py](../../tools/ai/summarize_tree.py): bounded project tree printer.
@@ -13,10 +17,26 @@ The Utility Harness is an optional Codex/operator toolbox for inspecting this re
 ## Dependency Rule
 Do not add these packages to production dependency files unless the application itself genuinely needs them. `requirements-codex.txt` is for local Codex/operator helper environments, not runtime, test, or deploy environments.
 
-Install helper dependencies manually only when needed:
+The dependency files are grouped by purpose:
+- `requirements-codex-minimal.txt` for core inspection helpers
+- `requirements-codex-readers.txt` for richer readers used by `tools/ai/read_any.py`
+- `requirements-codex-analysis.txt` for optional code-analysis helpers
+- `requirements-codex-cli.txt` for optional richer CLI/config helpers
+- `requirements-codex.txt` as the all-in helper environment
+
+Install helper dependencies manually only when needed. For a full local helper environment:
 
 ```bash
 python -m pip install -r requirements-codex.txt
+```
+
+For a narrower environment:
+
+```bash
+python -m pip install -r requirements-codex-minimal.txt
+python -m pip install -r requirements-codex-readers.txt
+python -m pip install -r requirements-codex-analysis.txt
+python -m pip install -r requirements-codex-cli.txt
 ```
 
 ## Common Commands
@@ -32,5 +52,6 @@ python tools/ai/run_checks.py --dry-run
 - Prefer these tools for repeatable inspection before falling back to ad hoc shell commands.
 - Keep output bounded so it can be pasted into Codex context safely.
 - Treat `.gitignore` and common junk directories as first-class ignore signals.
-- Use `run_checks.py` only for commands already recorded in repo guidance, manifests, package scripts, or the enhancer validation spec.
+- Use `run_checks.py --list` first. By default, prose-extracted commands are listed but not run; use `--include-prose` only after reviewing them.
+- Use `run_checks.py --allow-shell` only after reviewing commands that contain shell control operators.
 - Do not add OCR, background indexing, daemon behavior, or automatic dependency installation.

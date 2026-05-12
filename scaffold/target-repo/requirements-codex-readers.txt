@@ -1,0 +1,13 @@
+# Codex/operator helper dependencies only.
+# Rich readers for tools/ai/read_any.py.
+
+pypdf
+PyMuPDF
+python-docx
+python-pptx
+openpyxl
+beautifulsoup4
+lxml
+markdown-it-py
+ruamel.yaml
+tomli-w

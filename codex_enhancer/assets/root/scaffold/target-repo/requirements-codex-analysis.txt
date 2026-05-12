@@ -1,0 +1,8 @@
+# Codex/operator helper dependencies only.
+# Optional code-analysis helpers for local inspection workflows.
+
+libcst
+tree-sitter
+tree-sitter-language-pack
+radon
+vulture

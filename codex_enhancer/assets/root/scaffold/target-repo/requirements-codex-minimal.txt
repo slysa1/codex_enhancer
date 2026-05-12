@@ -1,0 +1,5 @@
+# Codex/operator helper dependencies only.
+# Minimal inspection helpers used by the Utility Harness.
+
+pathspec
+charset-normalizer

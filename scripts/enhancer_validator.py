@@ -15,6 +15,7 @@ from scripts.enhancer_spec import (
 from scripts.spec_kit_bridge import SPEC_KIT_BRIDGE_SKILLS
 from scripts.utility_harness import (
     UTILITY_HARNESS_DEPENDENCY_POLICY,
+    UTILITY_HARNESS_DEPENDENCY_FILES,
     UTILITY_HARNESS_REQUIRED_FILES,
     UTILITY_HARNESS_TOOL_FILES,
 )
@@ -842,6 +843,23 @@ def check_utility_harness_outputs(root: Path, manifest: dict[str, object], error
     if state != "installed":
         return
 
+    dependency_files = raw_utility.get("dependency_files", [])
+    if not isinstance(dependency_files, list) or any(not isinstance(item, str) for item in dependency_files):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.utility_harness.dependency_files must be a list of strings",
+            "Record the all-in and group-specific Utility Harness dependency files explicitly.",
+        )
+        dependency_files = []
+
+    expected_dependency_files = {path.as_posix() for path in UTILITY_HARNESS_DEPENDENCY_FILES}
+    if expected_dependency_files - set(dependency_files):
+        add_error(
+            errors,
+            ".codex/enhancer/manifest.toml integrations.utility_harness.dependency_files is missing installed dependency group files",
+            "Regenerate the manifest or restore the missing Utility Harness dependency file records.",
+        )
+
     expected_tools = {path.as_posix() for path in UTILITY_HARNESS_TOOL_FILES}
     if expected_tools - set(tool_files):
         add_error(
@@ -864,6 +882,7 @@ def check_utility_harness_outputs(root: Path, manifest: dict[str, object], error
         docs_text = load_text(docs_path)
         for snippet in (
             "requirements-codex.txt",
+            "requirements-codex-readers.txt",
             "tools/ai/inspect_repo.py",
             "Do not add these packages to production dependency files",
         ):

@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -75,6 +77,7 @@ from scripts.utility_harness import (
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 PROPOSAL_ROOT = Path(".codex/enhancer-proposals")
+PLAN_JSON_SCHEMA_VERSION = 1
 
 COMMON_GUIDANCE_PATHS = (
     Path("AGENTS.md"),
@@ -83,6 +86,26 @@ COMMON_GUIDANCE_PATHS = (
     Path(".cursor/rules"),
     Path(".github/copilot-instructions.md"),
 )
+
+ADAPTATION_AUDIT_PATHS = (
+    Path("AGENTS.md"),
+    Path("docs/ai/architecture.md"),
+    Path("docs/ai/code-review.md"),
+    Path("docs/ai/spec-kit-bridge.md"),
+    Path("docs/ai/utility-harness.md"),
+)
+
+INHERITED_GUIDANCE_PATTERNS = (
+    ("inherited generic guidance", "Replace inherited generic guidance with target-specific rules or explicitly document why it still applies."),
+    ("bootstrapped by Codex Enhancer", "Rewrite bootstrap status into this repo's real current state."),
+    ("starting point, not final truth", "Finish adaptation so the target repo guidance reads as maintained project guidance."),
+    ("Replace guessed commands", "Verify commands from manifests, scripts, or CI and record only confirmed commands."),
+    ("No install/build/lint/test/check/dev commands were auto-confirmed yet", "Inspect the repo and replace the empty discovered-command section with confirmed commands or an explicit no-command note."),
+    ("Remove skills, docs, or checks that do not solve a real problem here", "Delete or adapt unused inherited workflow assets."),
+    ("Inspect the repo's real build, lint, test, and dev commands", "Complete the immediate follow-up checklist after install."),
+)
+
+PLACEHOLDER_PATTERNS = ("{{", "}}", "TODO", "TBD", "FIXME")
 
 
 @dataclass(frozen=True)
@@ -106,6 +129,14 @@ class ExternalStep:
     cwd: Path
     label: str
     source_label: str
+
+
+@dataclass(frozen=True)
+class AdaptationFinding:
+    severity: str
+    path: Path
+    message: str
+    recommendation: str
 
 
 @dataclass(frozen=True)
@@ -424,6 +455,127 @@ def format_install_inspection(inspection: InstallInspection) -> str:
     return "\n".join(lines)
 
 
+def looks_like_source_repo(target: Path) -> bool:
+    return all(
+        (target / path).exists()
+        for path in (
+            Path("scripts/install_enhancer.py"),
+            Path("docs/ai/roadmap.md"),
+            Path("scaffold/target-repo/AGENTS.md"),
+        )
+    )
+
+
+def _relative_display(target: Path, path: Path) -> Path:
+    try:
+        return path.relative_to(target)
+    except ValueError:
+        return path
+
+
+def audit_adaptation(target: Path) -> tuple[AdaptationFinding, ...]:
+    resolved_target = target.resolve()
+    if not resolved_target.exists():
+        raise ValueError(f"Target {resolved_target} does not exist yet.")
+    if not resolved_target.is_dir():
+        raise ValueError(f"Target {resolved_target} exists but is not a directory.")
+
+    findings: list[AdaptationFinding] = []
+    manifest = resolved_target / ".codex/enhancer/manifest.toml"
+    if not manifest.exists():
+        severity = "info" if looks_like_source_repo(resolved_target) else "high"
+        recommendation = (
+            "This appears to be the Codex Enhancer source repo, not an installed target; use source validation here."
+            if severity == "info"
+            else "Run an install preview before using target adaptation checks."
+        )
+        findings.append(
+            AdaptationFinding(
+                severity=severity,
+                path=Path(".codex/enhancer/manifest.toml"),
+                message="No installed enhancer manifest was found.",
+                recommendation=recommendation,
+            )
+        )
+
+    proposals_root = resolved_target / PROPOSAL_ROOT
+    if proposals_root.exists():
+        proposal_files = sorted(path for path in proposals_root.rglob("*") if path.is_file())
+        if proposal_files:
+            findings.append(
+                AdaptationFinding(
+                    severity="medium",
+                    path=PROPOSAL_ROOT,
+                    message=f"{len(proposal_files)} proposal file(s) still need review.",
+                    recommendation="Merge or discard proposal files before treating the enhancer install as fully adapted.",
+                )
+            )
+
+    for relative_path in ADAPTATION_AUDIT_PATHS:
+        path = resolved_target / relative_path
+        if not path.exists() or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for pattern in PLACEHOLDER_PATTERNS:
+            if pattern in text:
+                findings.append(
+                    AdaptationFinding(
+                        severity="high",
+                        path=relative_path,
+                        message=f"Placeholder marker `{pattern}` is still present.",
+                        recommendation="Replace template placeholders with repo-specific guidance before handoff.",
+                    )
+                )
+                break
+        lowered = text.lower()
+        for pattern, recommendation in INHERITED_GUIDANCE_PATTERNS:
+            if pattern.lower() in lowered:
+                findings.append(
+                    AdaptationFinding(
+                        severity="medium",
+                        path=relative_path,
+                        message=f"Inherited guidance remains: {pattern}.",
+                        recommendation=recommendation,
+                    )
+                )
+
+    return tuple(findings)
+
+
+def format_adaptation_audit(target: Path) -> str:
+    resolved_target = target.resolve()
+    findings = audit_adaptation(resolved_target)
+    lines = [f"Codex Enhancer adaptation audit for {resolved_target}"]
+    if not findings:
+        lines.extend(
+            [
+                "- Status: no obvious inherited placeholders, proposal files, or generic install guidance were found.",
+                "- Next step: run the target repo validation commands and review the workflow docs normally.",
+            ]
+        )
+        return "\n".join(lines)
+
+    severity_order = {"high": 0, "medium": 1, "low": 2, "info": 3}
+    sorted_findings = sorted(
+        findings,
+        key=lambda finding: (severity_order.get(finding.severity, 99), finding.path.as_posix(), finding.message),
+    )
+    lines.append(f"- Findings: {len(sorted_findings)}")
+    for finding in sorted_findings:
+        lines.append(
+            f"- [{finding.severity}] `{finding.path.as_posix()}`: {finding.message} "
+            f"Recommendation: {finding.recommendation}"
+        )
+    lines.extend(
+        [
+            "",
+            "Next step:",
+            "- Resolve high and medium findings, then rerun this audit before treating the install as adapted.",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def parse_make_like_targets(path: Path) -> set[str]:
     if not path.exists():
         return set()
@@ -522,7 +674,7 @@ def discover_commands(target: Path) -> dict[str, str]:
             maybe_set_command(commands, "install", "pip install -e .")
 
         tool = pyproject_data.get("tool", {})
-        if "pytest" in tool or "pytest.ini_options" in tool.get("pytest", {}) or (target / "tests").exists():
+        if "pytest" in tool or "pytest.ini_options" in tool.get("pytest", {}):
             maybe_set_command(commands, "test", "python -m pytest")
         if "ruff" in tool:
             maybe_set_command(commands, "lint", "ruff check .")
@@ -1677,7 +1829,10 @@ def format_plan_lines(plan: InstallPlan) -> list[str]:
     if plan.external_steps:
         lines.append("External steps:")
         for step in plan.external_steps:
+            executable_found = bool(step.argv and (Path(step.argv[0]).exists() or shutil.which(step.argv[0])))
+            status = "found" if executable_found else "not found on PATH"
             lines.append("- run: " + " ".join(step.argv))
+            lines.append(f"  executable: `{step.argv[0]}` {status}")
         lines.append("")
     ownership_lines = format_output_ownership_lines(plan)
     if ownership_lines:
@@ -2042,8 +2197,234 @@ def format_pack_catalog(target: Path | None = None) -> str:
     return "\n".join(lines)
 
 
-def format_plan_report(plan: InstallPlan, write: bool) -> str:
-    lines = [format_plan_header(plan, write), *format_plan_lines(plan)]
+def _path_text(path: Path) -> str:
+    return path.as_posix()
+
+
+def _bridge_to_dict(bridge: SpecKitBridgeConfig | None) -> dict[str, object] | None:
+    if bridge is None:
+        return None
+    return {
+        "mode": bridge.mode,
+        "state": bridge.state,
+        "origin": bridge.origin,
+        "integration_key": bridge.integration_key,
+        "managed_by": bridge.managed_by,
+        "script_type": bridge.script_type,
+        "command_surface": bridge.command_surface,
+        "command_label": bridge.command_label,
+        "cli_version": bridge.cli_version,
+        "available_commands": list(bridge.available_commands),
+        "evidence": list(bridge.evidence),
+        "bootstrap_command": list(bridge.bootstrap_command),
+    }
+
+
+def _utility_to_dict(utility_harness: UtilityHarnessConfig | None) -> dict[str, object] | None:
+    if utility_harness is None:
+        return None
+    return {
+        "mode": utility_harness.mode,
+        "state": utility_harness.state,
+        "enabled": utility_harness.enabled,
+        "requirements_file": utility_harness.requirements_file,
+        "dependency_files": list(utility_harness.dependency_files),
+        "tool_files": list(utility_harness.tool_files),
+    }
+
+
+def _pack_selection_to_dict(selection: PackSelection) -> dict[str, object]:
+    return {
+        "name": selection.pack.name,
+        "label": selection.pack.label,
+        "selected": selection.selected,
+        "detected": selection.detected,
+        "recommended": selection.recommended,
+        "selection_source": selection.selection_source,
+        "reasons": list(selection.reasons),
+    }
+
+
+def _planned_write_to_dict(write: PlannedWrite) -> dict[str, object]:
+    return {
+        "destination": _path_text(write.destination),
+        "write_path": _path_text(write.write_path),
+        "source_label": write.source_label,
+        "action": write.action,
+    }
+
+
+def _gitignore_to_dict(gitignore: GitignorePlan | None) -> dict[str, object] | None:
+    if gitignore is None:
+        return None
+    return {
+        "destination": _path_text(gitignore.destination),
+        "missing_lines": list(gitignore.missing_lines),
+    }
+
+
+def plan_to_dict(plan: InstallPlan, *, write: bool) -> dict[str, object]:
+    selected_names = selected_pack_names(plan.pack_selections)
+    summary = summarize_conflicts(plan)
+    return {
+        "schema_version": PLAN_JSON_SCHEMA_VERSION,
+        "kind": "install-plan",
+        "operation": plan.operation,
+        "target": str(plan.target),
+        "mode": plan.mode,
+        "write": write,
+        "force": plan.force,
+        "selected_packs": list(selected_names),
+        "pack_selections": [_pack_selection_to_dict(selection) for selection in plan.pack_selections],
+        "spec_kit_bridge": _bridge_to_dict(plan.spec_kit_bridge),
+        "utility_harness": _utility_to_dict(plan.utility_harness),
+        "writes": [_planned_write_to_dict(write_item) for write_item in plan.writes],
+        "write_counts": {
+            "create": sum(1 for item in plan.writes if item.action == "create"),
+            "overwrite": sum(1 for item in plan.writes if item.action == "overwrite"),
+            "proposal": sum(1 for item in plan.writes if item.action == "proposal"),
+        },
+        "conflicts": {
+            "critical_proposals": [_path_text(path) for path in summary.critical_proposals],
+            "standard_proposals": [_path_text(path) for path in summary.standard_proposals],
+            "critical_overwrites": [_path_text(path) for path in summary.critical_overwrites],
+            "standard_overwrites": [_path_text(path) for path in summary.standard_overwrites],
+        },
+        "gitignore": _gitignore_to_dict(plan.gitignore),
+        "external_steps": [
+            {
+                "label": step.label,
+                "source_label": step.source_label,
+                "argv": list(step.argv),
+                "cwd": str(step.cwd),
+                "executable_found": bool(step.argv and (Path(step.argv[0]).exists() or shutil.which(step.argv[0]))),
+            }
+            for step in plan.external_steps
+        ],
+        "next_steps": format_next_steps(plan, write=write),
+    }
+
+
+def inspection_to_dict(inspection: InstallInspection) -> dict[str, object]:
+    state = inspection.install_state
+    return {
+        "schema_version": PLAN_JSON_SCHEMA_VERSION,
+        "kind": "install-inspection",
+        "target": str(inspection.target),
+        "manifest_path": _path_text(inspection.manifest_path.relative_to(inspection.target)),
+        "source_version": inspection.source_version,
+        "target_version": inspection.target_version,
+        "status": inspection.status,
+        "manifest_schema": None if state is None else state.schema_version,
+        "selected_packs": [] if state is None else list(state.selected_packs),
+        "safe_to_regenerate": [] if state is None else list(state.safe_to_regenerate),
+        "adapt_manually": [] if state is None else list(state.adapt_manually),
+        "spec_kit_bridge": _bridge_to_dict(inspection.spec_kit_bridge),
+        "utility_harness": _utility_to_dict(inspection.utility_harness),
+    }
+
+
+def adaptation_audit_to_dict(target: Path) -> dict[str, object]:
+    findings = audit_adaptation(target)
+    return {
+        "schema_version": PLAN_JSON_SCHEMA_VERSION,
+        "kind": "adaptation-audit",
+        "target": str(target.resolve()),
+        "finding_count": len(findings),
+        "findings": [
+            {
+                "severity": finding.severity,
+                "path": _path_text(finding.path),
+                "message": finding.message,
+                "recommendation": finding.recommendation,
+            }
+            for finding in findings
+        ],
+    }
+
+
+def format_json(data: dict[str, object]) -> str:
+    return json.dumps(data, indent=2, sort_keys=True)
+
+
+def format_plan_summary_lines(plan: InstallPlan) -> list[str]:
+    selected_names = selected_pack_names(plan.pack_selections)
+    summary = summarize_conflicts(plan)
+    lines = [
+        "Plan summary:",
+        f"- Operation: `{plan.operation}`",
+        f"- Target: `{plan.target}`",
+        f"- Mode: `{plan.mode}`",
+        f"- Force: `{plan.force}`",
+        "- Selected packs: "
+        + (", ".join(f"`{name}`" for name in selected_names) if selected_names else "none"),
+        f"- Writes: {len(plan.writes)} total; "
+        f"{sum(1 for item in plan.writes if item.action == 'create')} create, "
+        f"{sum(1 for item in plan.writes if item.action == 'overwrite')} overwrite, "
+        f"{sum(1 for item in plan.writes if item.action == 'proposal')} proposal",
+    ]
+    if plan.gitignore is not None:
+        gitignore_note = (
+            ", ".join(plan.gitignore.missing_lines)
+            if plan.gitignore.missing_lines
+            else "already aligned"
+        )
+        lines.append(f"- .gitignore: {gitignore_note}")
+    if plan.spec_kit_bridge is not None:
+        lines.append(f"- Spec Kit bridge: `{plan.spec_kit_bridge.mode}` / `{plan.spec_kit_bridge.state}`")
+    if plan.utility_harness is not None:
+        lines.append(f"- Utility Harness: `{plan.utility_harness.mode}` / `{plan.utility_harness.state}`")
+    if plan.external_steps:
+        lines.append(f"- External steps: {len(plan.external_steps)}")
+    if summary.critical_proposals or summary.critical_overwrites:
+        critical = len(summary.critical_proposals) + len(summary.critical_overwrites)
+        lines.append(f"- Critical conflicts: {critical}")
+    return lines
+
+
+def _existing_file_lines(path: Path) -> list[str]:
+    if not path.exists() or not path.is_file():
+        return []
+    return path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+
+
+def format_plan_diff_lines(plan: InstallPlan) -> list[str]:
+    lines: list[str] = []
+    for write_item in plan.writes:
+        existing = _existing_file_lines(plan.target / write_item.destination)
+        planned = write_item.content.splitlines(keepends=True)
+        if existing == planned:
+            continue
+        fromfile = write_item.destination.as_posix()
+        tofile = write_item.write_path.as_posix()
+        diff = difflib.unified_diff(existing, planned, fromfile=fromfile, tofile=tofile, lineterm="")
+        rendered = list(diff)
+        if rendered:
+            lines.extend(rendered)
+            if lines[-1] != "":
+                lines.append("")
+    if plan.gitignore is not None and plan.gitignore.missing_lines:
+        lines.append(f"# .gitignore merge adds: {', '.join(plan.gitignore.missing_lines)}")
+    if not lines:
+        return ["- No planned text diffs."]
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def format_plan_report(
+    plan: InstallPlan,
+    write: bool,
+    *,
+    summary: bool = False,
+    include_diff: bool = False,
+) -> str:
+    lines = [
+        format_plan_header(plan, write),
+        *(format_plan_summary_lines(plan) if summary else format_plan_lines(plan)),
+    ]
+    if include_diff:
+        lines.extend(["", "Diff preview:", *format_plan_diff_lines(plan)])
     if plan.operation == "upgrade-enhancer":
         lines.extend(["", *format_next_steps(plan, write=write)])
         return "\n".join(lines)
@@ -2096,6 +2477,7 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
             lines.append("- Review `docs/ai/spec-kit-bridge.md` and any installed bridge skills before feature work.")
         if utility_enabled:
             lines.append("- Review `docs/ai/utility-harness.md` before installing or running Codex helper dependencies.")
+        lines.append("- Run `codex-enhancer audit <target>` from an installed CLI, or `python scripts/codex_enhancer_cli.py audit <target>` from the enhancer source checkout.")
         lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
         lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
         return lines
@@ -2168,6 +2550,7 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
         lines.append("- Review `docs/ai/spec-kit-bridge.md` and the bridge skills before using Spec Kit-driven feature branches.")
     if utility_enabled:
         lines.append("- Review `docs/ai/utility-harness.md` and keep `requirements-codex.txt` out of production dependency flows.")
+    lines.append("- Run `codex-enhancer audit <target>` from an installed CLI, or `python scripts/codex_enhancer_cli.py audit <target>` from the enhancer source checkout.")
     lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
     lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
     return lines
@@ -2195,21 +2578,37 @@ def proposal_paths(plan: InstallPlan) -> tuple[Path, ...]:
 
 
 def run_external_step(step: ExternalStep) -> None:
-    completed = subprocess.run(
-        step.argv,
-        cwd=step.cwd,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            step.argv,
+            cwd=step.cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as error:
+        executable = step.argv[0] if step.argv else step.label
+        hint = (
+            "Install uv/uvx or pass --spec-kit-exe with a local specify-compatible executable."
+            if executable == "uvx"
+            else "Verify the executable path and rerun the same command."
+        )
+        raise RuntimeError(
+            f"{step.label} failed before enhancer-owned files were written because `{executable}` was not found. "
+            f"{hint}"
+        ) from error
     if completed.returncode == 0:
         return
 
     output_parts = [part.strip() for part in (completed.stdout, completed.stderr) if part.strip()]
     details = "\n".join(output_parts)
+    recovery = (
+        "Recovery: inspect the target for any files written by the external tool, fix the bootstrap problem, "
+        "then rerun the same enhancer command. Enhancer-owned files are written only after external steps succeed."
+    )
     if details:
-        raise RuntimeError(f"{step.label} failed.\n{details}")
-    raise RuntimeError(f"{step.label} failed with exit code {completed.returncode}.")
+        raise RuntimeError(f"{step.label} failed.\n{details}\n{recovery}")
+    raise RuntimeError(f"{step.label} failed with exit code {completed.returncode}.\n{recovery}")
 
 
 def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | None = None) -> None:
@@ -2279,6 +2678,11 @@ def main(argv: list[str]) -> int:
         help="inspect source-vs-target enhancer install state without planning writes",
     )
     parser.add_argument(
+        "--audit-adaptation",
+        action="store_true",
+        help="audit an installed target for inherited generic guidance, placeholders, and proposal files",
+    )
+    parser.add_argument(
         "--spec-kit-report",
         action="store_true",
         help="print a read-only report of detected Spec Kit feature artifacts",
@@ -2327,6 +2731,21 @@ def main(argv: list[str]) -> int:
         "--write",
         action="store_true",
         help="apply the install or refresh instead of only printing a dry-run plan",
+    )
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="print a concise plan summary instead of the full human preview",
+    )
+    parser.add_argument(
+        "--diff",
+        action="store_true",
+        help="include a unified diff preview for planned text writes",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON for reports, inspections, audits, and plans",
     )
     parser.add_argument(
         "--refresh-generated",
@@ -2405,13 +2824,20 @@ def main(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
+    def emit(text: str, data: dict[str, object] | None = None) -> None:
+        print(format_json(data) if args.json and data is not None else text)
+
+    def fail(message: str) -> int:
+        emit(message, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "error", "message": message})
+        return 1
+
     if args.list_packs and args.target is None:
-        print(format_pack_catalog())
+        catalog = format_pack_catalog()
+        emit(catalog, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "pack-catalog", "target": None, "text": catalog})
         return 0
 
     if args.target is None:
-        print("Missing required --target. Use --list-packs to inspect available stack packs without a target repo.")
-        return 1
+        return fail("Missing required --target. Use --list-packs to inspect available stack packs without a target repo.")
 
     target = Path(args.target).resolve()
 
@@ -2419,25 +2845,23 @@ def main(argv: list[str]) -> int:
         try:
             validate_mode(target, args.mode)
         except ValueError as error:
-            print(str(error))
-            return 1
-        print(format_pack_catalog(target))
+            return fail(str(error))
+        catalog = format_pack_catalog(target)
+        emit(catalog, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "pack-catalog", "target": str(target), "text": catalog})
         return 0
 
     if args.spec_kit_report and args.spec_kit_sync_report:
-        print("--spec-kit-report and --spec-kit-sync-report are separate read-only reports.")
-        return 1
+        return fail("--spec-kit-report and --spec-kit-sync-report are separate read-only reports.")
 
     if args.spec_kit_feature and not (args.spec_kit_report or args.spec_kit_sync_report):
-        print("--spec-kit-feature requires --spec-kit-report or --spec-kit-sync-report.")
-        return 1
+        return fail("--spec-kit-feature requires --spec-kit-report or --spec-kit-sync-report.")
 
     if (args.spec_kit_changed_path or args.spec_kit_base) and not args.spec_kit_sync_report:
-        print("--spec-kit-changed-path and --spec-kit-base require --spec-kit-sync-report.")
-        return 1
+        return fail("--spec-kit-changed-path and --spec-kit-base require --spec-kit-sync-report.")
 
     if (args.spec_kit_report or args.spec_kit_sync_report) and (
         args.inspect_install
+        or args.audit_adaptation
         or args.upgrade_enhancer
         or args.manage_packs
         or args.manage_spec_kit_bridge
@@ -2457,28 +2881,59 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_exe
         or args.utility_harness_mode
     ):
-        print("Spec Kit reports are read-only and cannot be combined with install, write, bridge, utility, or pack-selection flags.")
-        return 1
+        return fail("Spec Kit reports are read-only and cannot be combined with install, write, bridge, utility, or pack-selection flags.")
 
     if args.spec_kit_report:
         if not target.exists() or not target.is_dir():
-            print(f"Target {target} does not exist or is not a directory.")
-            return 1
-        print(render_spec_kit_feature_report(target, feature=args.spec_kit_feature))
+            return fail(f"Target {target} does not exist or is not a directory.")
+        report = render_spec_kit_feature_report(target, feature=args.spec_kit_feature)
+        emit(report, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "spec-kit-report", "target": str(target), "feature": args.spec_kit_feature, "text": report})
         return 0
 
     if args.spec_kit_sync_report:
         if not target.exists() or not target.is_dir():
-            print(f"Target {target} does not exist or is not a directory.")
-            return 1
-        print(
-            render_spec_kit_sync_report(
-                target,
-                feature=args.spec_kit_feature,
-                changed_paths=tuple(args.spec_kit_changed_path),
-                git_base=args.spec_kit_base,
-            )
+            return fail(f"Target {target} does not exist or is not a directory.")
+        report = render_spec_kit_sync_report(
+            target,
+            feature=args.spec_kit_feature,
+            changed_paths=tuple(args.spec_kit_changed_path),
+            git_base=args.spec_kit_base,
         )
+        emit(report, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "spec-kit-sync-report", "target": str(target), "feature": args.spec_kit_feature, "changed_paths": list(args.spec_kit_changed_path), "git_base": args.spec_kit_base, "text": report})
+        return 0
+
+    if args.audit_adaptation and (
+        args.inspect_install
+        or args.upgrade_enhancer
+        or args.manage_packs
+        or args.manage_spec_kit_bridge
+        or args.write
+        or args.force
+        or args.refresh_generated
+        or args.use_recommended_packs
+        or args.pack
+        or args.no_pack
+        or args.add_pack
+        or args.remove_pack
+        or args.set_pack
+        or args.spec_kit_mode
+        or args.spec_kit_script != "auto"
+        or args.spec_kit_command_surface != "auto"
+        or args.spec_kit_version
+        or args.spec_kit_exe
+        or args.utility_harness_mode
+        or args.summary
+        or args.diff
+    ):
+        return fail("--audit-adaptation only inspects the target repo and cannot be combined with write, refresh, force, bridge, utility, summary, diff, or pack-selection flags.")
+
+    if args.audit_adaptation:
+        try:
+            audit_text = format_adaptation_audit(target)
+            audit_data = adaptation_audit_to_dict(target)
+        except ValueError as error:
+            return fail(str(error))
+        emit(audit_text, audit_data)
         return 0
 
     if args.inspect_install and (
@@ -2506,17 +2961,17 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_changed_path
         or args.spec_kit_base
         or args.utility_harness_mode
+        or args.summary
+        or args.diff
     ):
-        print("--inspect-install only inspects the target repo and cannot be combined with write, refresh, force, or pack-selection flags.")
-        return 1
+        return fail("--inspect-install only inspects the target repo and cannot be combined with write, refresh, force, summary, diff, or pack-selection flags.")
 
     if args.inspect_install:
         try:
             inspection = inspect_install(target)
         except ValueError as error:
-            print(str(error))
-            return 1
-        print(format_install_inspection(inspection))
+            return fail(str(error))
+        emit(format_install_inspection(inspection), inspection_to_dict(inspection))
         return 0
 
     if args.upgrade_enhancer and (
@@ -2531,13 +2986,11 @@ def main(argv: list[str]) -> int:
         or args.remove_pack
         or args.set_pack
     ):
-        print("--upgrade-enhancer keeps the installed pack selection and cannot be combined with refresh, force, or pack-selection flags.")
-        return 1
+        return fail("--upgrade-enhancer keeps the installed pack selection and cannot be combined with refresh, force, or pack-selection flags.")
 
     if args.upgrade_enhancer:
         if args.mode == "new":
-            print("--upgrade-enhancer only works with --mode existing or --mode auto.")
-            return 1
+            return fail("--upgrade-enhancer only works with --mode existing or --mode auto.")
         try:
             plan = build_upgrade_plan(
                 target,
@@ -2549,11 +3002,16 @@ def main(argv: list[str]) -> int:
                 utility_harness_mode=args.utility_harness_mode,
             )
         except ValueError as error:
-            print(str(error))
-            return 1
-        print(format_plan_report(plan, write=args.write))
+            return fail(str(error))
+        emit(
+            format_plan_report(plan, write=args.write, summary=args.summary, include_diff=args.diff),
+            plan_to_dict(plan, write=args.write),
+        )
         if args.write:
-            apply_install_plan(plan)
+            try:
+                apply_install_plan(plan)
+            except RuntimeError as error:
+                return fail(str(error))
         return 0
 
     if args.manage_spec_kit_bridge and (
@@ -2568,13 +3026,11 @@ def main(argv: list[str]) -> int:
         or args.set_pack
         or args.utility_harness_mode
     ):
-        print("--manage-spec-kit-bridge updates bridge state and cannot be combined with force, refresh, Utility Harness, or pack-selection flags.")
-        return 1
+        return fail("--manage-spec-kit-bridge updates bridge state and cannot be combined with force, refresh, Utility Harness, or pack-selection flags.")
 
     if args.manage_spec_kit_bridge:
         if args.mode == "new":
-            print("--manage-spec-kit-bridge only works with --mode existing or --mode auto.")
-            return 1
+            return fail("--manage-spec-kit-bridge only works with --mode existing or --mode auto.")
         try:
             plan = build_spec_kit_bridge_management_plan(
                 target,
@@ -2586,16 +3042,20 @@ def main(argv: list[str]) -> int:
                 require_changes=True,
             )
         except ValueError as error:
-            print(str(error))
-            return 1
-        print(format_plan_report(plan, write=args.write))
+            return fail(str(error))
+        emit(
+            format_plan_report(plan, write=args.write, summary=args.summary, include_diff=args.diff),
+            plan_to_dict(plan, write=args.write),
+        )
         if args.write:
-            apply_install_plan(plan)
+            try:
+                apply_install_plan(plan)
+            except RuntimeError as error:
+                return fail(str(error))
         return 0
 
     if (args.add_pack or args.remove_pack or args.set_pack) and not args.manage_packs:
-        print("--add-pack, --remove-pack, and --set-pack require --manage-packs.")
-        return 1
+        return fail("--add-pack, --remove-pack, and --set-pack require --manage-packs.")
 
     if args.manage_packs and (
         args.force
@@ -2611,13 +3071,11 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_exe
         or args.utility_harness_mode
     ):
-        print("--manage-packs updates installed pack selection and cannot be combined with install-time Spec Kit, Utility Harness, or pack-selection flags.")
-        return 1
+        return fail("--manage-packs updates installed pack selection and cannot be combined with install-time Spec Kit, Utility Harness, or pack-selection flags.")
 
     if args.manage_packs:
         if args.mode == "new":
-            print("--manage-packs only works with --mode existing or --mode auto.")
-            return 1
+            return fail("--manage-packs only works with --mode existing or --mode auto.")
         try:
             plan = build_pack_management_plan(
                 target,
@@ -2627,20 +3085,23 @@ def main(argv: list[str]) -> int:
                 require_changes=True,
             )
         except ValueError as error:
-            print(str(error))
-            return 1
-        print(format_plan_report(plan, write=args.write))
+            return fail(str(error))
+        emit(
+            format_plan_report(plan, write=args.write, summary=args.summary, include_diff=args.diff),
+            plan_to_dict(plan, write=args.write),
+        )
         if args.write:
-            apply_install_plan(plan)
+            try:
+                apply_install_plan(plan)
+            except RuntimeError as error:
+                return fail(str(error))
         return 0
 
     if args.refresh_generated and args.force:
-        print("--refresh-generated only updates safe managed outputs and does not accept --force.")
-        return 1
+        return fail("--refresh-generated only updates safe managed outputs and does not accept --force.")
 
     if args.refresh_generated and args.mode == "new":
-        print("--refresh-generated only works with --mode existing or --mode auto.")
-        return 1
+        return fail("--refresh-generated only works with --mode existing or --mode auto.")
 
     if args.refresh_generated and (
         args.use_recommended_packs
@@ -2657,11 +3118,10 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_exe
         or args.utility_harness_mode
     ):
-        print(
+        return fail(
             "--refresh-generated uses the target repo's existing manifest selection and bridge state; "
             "do not combine it with pack-selection, Spec Kit override, or Utility Harness flags."
         )
-        return 1
 
     try:
         plan = build_install_plan(
@@ -2680,13 +3140,18 @@ def main(argv: list[str]) -> int:
             utility_harness_mode=args.utility_harness_mode,
         )
     except ValueError as error:
-        print(str(error))
-        return 1
+        return fail(str(error))
 
-    print(format_plan_report(plan, write=args.write))
+    emit(
+        format_plan_report(plan, write=args.write, summary=args.summary, include_diff=args.diff),
+        plan_to_dict(plan, write=args.write),
+    )
 
     if args.write:
-        apply_install_plan(plan)
+        try:
+            apply_install_plan(plan)
+        except RuntimeError as error:
+            return fail(str(error))
     return 0
 
 

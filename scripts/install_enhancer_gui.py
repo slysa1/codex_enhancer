@@ -140,6 +140,8 @@ def operation_label(plan: InstallPlan) -> str:
         return "Refresh managed outputs"
     if plan.operation == "manage-packs":
         return "Manage stack packs"
+    if plan.operation == "manage-spec-kit-bridge":
+        return "Manage Spec Kit bridge"
     if plan.operation == "upgrade-enhancer":
         return "Upgrade or reconcile existing install"
     return "Install or update scaffold"
@@ -150,6 +152,8 @@ def action_verb(plan: InstallPlan) -> str:
         return "refresh"
     if plan.operation == "manage-packs":
         return "manage packs"
+    if plan.operation == "manage-spec-kit-bridge":
+        return "manage Spec Kit bridge"
     if plan.operation == "upgrade-enhancer":
         return "upgrade"
     return "install"

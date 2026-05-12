@@ -3,7 +3,7 @@
 ## Purpose
 This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the implemented `3.x` lifecycle, Spec Kit bridge, Utility Harness, and packaging-readiness work. The core idea remains optional, visible, repo-local workflow guidance that improves Codex use without turning the enhancer into an agent runtime, package manager, or hidden orchestration layer.
 
-Sections through `3.4` are retained as design history and implementation context. The forward-looking product work starts at `4.0` and is based on a first-time-user audit that found the enhancer usable for technical Codex-heavy users, but not yet polished enough for broad daily use.
+Sections through `3.4` are retained as design history and implementation context. The `4.0` product maturity work is retained as the completed audit-backed roadmap for first-time-user polish, safer command execution, packaging confidence, and integration-ready installer output.
 
 ## V2 Goals
 - Keep the root enhancer simple and readable.
@@ -1062,9 +1062,18 @@ Make the packaged `codex-enhancer` command more useful for Spec Kit repos after 
 - source validation and packaging tests enforce the release checklist and packaged asset mirror
 - release builds remain normal Python wheel/sdist artifacts with no hidden downloader behavior
 
-## Proposed 4.0 Product Maturity Roadmap
+## 4.0 Product Maturity Roadmap
 
-Status: planned. Use this section to sequence audit-backed improvements that move Codex Enhancer from an early-alpha workflow scaffold toward a trustworthy daily-use tool.
+Status: completed. This section now records the completed audit-backed maturity pass that moved Codex Enhancer from an early-alpha workflow scaffold toward a more trustworthy daily-use tool. Future 4.x work should treat these steps as regression expectations and only add follow-up items when real usage exposes gaps beyond the acceptance criteria below.
+
+Completed implementation:
+- README first-run productization, before/after walkthrough, positioning guidance, cross-platform paths, and source-versus-target inspection clarity
+- guided adaptation audit, concise preview mode, full diff preview, JSON output, and stronger failure/recovery diagnostics
+- safer target-side `tools/ai/run_checks.py` command discovery and execution defaults
+- CI package build plus wheel-installed console-script smoke coverage
+- pinned Spec Kit bootstrap default, prerequisite/fallback documentation, executable diagnostics, and partial-failure guidance
+- machine-readable plan/report surfaces for installer, bridge, pack, inspection, and Spec Kit reporting commands
+- installable Utility Harness dependency groups scoped to Codex/operator use
 
 ### Goal
 Make the enhancer clear, safe, and confidence-building for a technically capable first-time user without changing the project's thin, repo-local architecture.

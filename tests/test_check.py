@@ -34,14 +34,17 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Build distributable artifacts with `python -m build`.
         Run `python scripts/codex_enhancer_cli.py list-packs` or `codex-enhancer.bat`.
         Preview bundled installs with `--with-spec-kit`.
+        Use `--summary`, `--diff`, and `--json` for alternate previews.
+        Run `python scripts/codex_enhancer_cli.py audit ../repo`.
         Run `python scripts/codex_enhancer_cli.py spec-report ../repo`,
         `python scripts/codex_enhancer_cli.py spec-sync ../repo --changed src/app.py`,
         and `python scripts/codex_enhancer_cli.py bridge ../repo --attach-spec-kit`.
         Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_gui.py`.
         Read [docs/ai/migration-v3.md](docs/ai/migration-v3.md) before upgrading existing installs.
-        See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the next planned evolution.
+        See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the completed product maturity roadmap.
         See [docs/ai/release.md](docs/ai/release.md) before building packages.
         See [docs/ai/utility-harness.md](docs/ai/utility-harness.md) for the optional harness.
+        Use requirements-codex-readers.txt for rich helper readers.
         Preview with `--utility-harness-mode install`.
         """,
         "AGENTS.md": f"""
@@ -51,6 +54,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Local package metadata lives in `pyproject.toml` and package assets live in `codex_enhancer/package_assets.py`.
         Use `scripts/codex_enhancer_cli.py` and `codex-enhancer.bat` for the friendly command facade.
         Use `--with-spec-kit` only when the user explicitly wants official Spec Kit bootstrapped.
+        Use `audit` for installed target adaptation checks.
         Use `spec-sync` for read-only Spec Kit changed-path sync cues.
         Use `install_enhancer.bat` for the Windows GUI installer.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the enhancer roadmap.
@@ -124,13 +128,14 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         Use `--inspect-install`, `--upgrade-enhancer`, `--manage-packs`,
         `--manage-spec-kit-bridge`, `--spec-kit-report`, `--spec-kit-sync-report`,
-        and `--refresh-generated`.
+        `--refresh-generated`, and `audit`.
         """,
         "docs/ai/release.md": """
         # Release Checklist
 
         Run `python -m build`, smoke `codex-enhancer list-packs`,
         keep requirements-codex.txt out of production dependencies, and
+        keep requirements-codex-readers.txt scoped to helper environments.
         mirror `codex_enhancer/assets/root/`.
         """,
         "docs/ai/roadmap.md": """
@@ -142,6 +147,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         # Spec Kit Bridge
 
         Treat official Spec Kit files as separately owned.
+        Bootstrap may use `uvx` or `--spec-kit-exe`.
         Use spec-report and spec-sync for read-only summaries and bridge for bridge mode changes.
         """,
         "docs/ai/utility-harness.md": """
@@ -302,7 +308,22 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         - Do not use when the change was not driven by Spec Kit artifacts.
         """,
         "scaffold/target-repo/requirements-codex.txt": """
+        -r requirements-codex-minimal.txt
+        -r requirements-codex-readers.txt
+        """,
+        "scaffold/target-repo/requirements-codex-minimal.txt": """
         pathspec
+        charset-normalizer
+        """,
+        "scaffold/target-repo/requirements-codex-readers.txt": """
+        pypdf
+        python-docx
+        """,
+        "scaffold/target-repo/requirements-codex-analysis.txt": """
+        libcst
+        """,
+        "scaffold/target-repo/requirements-codex-cli.txt": """
+        rich
         """,
         "scaffold/target-repo/tools/ai/inspect_repo.py": """
         # utility harness inspect repo tool

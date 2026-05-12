@@ -47,9 +47,11 @@ This repository uses a Codex-native workflow layer so Codex can understand the r
 5. After changes, run `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`.
 6. Before handing a patch off for review, use the `review-prep` skill in [.codex/skills/review-prep/](.codex/skills/review-prep/).
 7. If this bootstrap layer still contains inherited generic guidance, use [.codex/skills/adapt-enhancer/](.codex/skills/adapt-enhancer/) to make it repo-specific.
+8. After adaptation, run `codex-enhancer audit <this-repo>` from the enhancer CLI when available, or ask Codex to inspect inherited guidance and proposal files manually.
 
 ## Engineering Rules
 - Replace guessed commands with commands confirmed from the repo.
+- Treat commands marked as prose-extracted by `tools/ai/run_checks.py` as review findings, not default executable commands.
 - Prefer `AGENTS.md`, concise docs, narrow skills, and small scripts over packages, daemons, or hidden state.
 - Add nested `AGENTS.md` files only when a subtree has materially different rules.
 - Add repo-local skills only for repeated, narrow procedures with clear triggers and explicit non-goals.
