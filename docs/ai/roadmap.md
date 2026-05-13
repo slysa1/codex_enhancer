@@ -3,19 +3,24 @@
 ## Purpose
 This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the implemented `3.x` lifecycle, Spec Kit bridge, Utility Harness, and packaging-readiness work. The core idea remains optional, visible, repo-local workflow guidance that improves Codex use without turning the enhancer into an agent runtime, package manager, or hidden orchestration layer.
 
-Sections through `3.4` are retained as design history and implementation context. The `4.0` product maturity work is retained as the completed audit-backed roadmap for first-time-user polish, safer command execution, packaging confidence, and integration-ready installer output. The `4.1` section is the active follow-up plan from a first-time-user product audit and should be treated as the next implementation contract.
+Sections through `3.4` are retained as design history and implementation context. The `4.0` product maturity work is retained as the completed audit-backed roadmap for first-time-user polish, safer command execution, packaging confidence, and integration-ready installer output. The `4.1` section is retained as the completed follow-up baseline from the first-time-user product audit.
 
 ## Roadmap Status At A Glance
-The active implementation contract is the `4.1` audit-derived follow-up plan. Sections before `4.0` are historical design records, and `4.0` is a completed baseline whose acceptance criteria should be preserved rather than re-implemented.
+There is no active broad implementation contract after the completed `4.1` follow-up pass. Sections before `4.0` are historical design records, and `4.0` plus `4.1` are completed baselines whose acceptance criteria should be preserved rather than re-implemented. Start a new `4.2` section only when a user report, repeated maintainer friction, or focused audit identifies a concrete follow-up.
 
 | Section | Status | How to read it |
 |---------|--------|----------------|
 | `2.x` through `3.4` | Historical design record | Use for architecture context, shipped rationale, and regression expectations. Do not treat these sections as current TODOs. |
 | `4.0` | Completed baseline | Use as the product-maturity bar that the enhancer should not regress below. |
-| `4.1` | Active follow-up plan | Use as the current ordered implementation contract for audit-derived improvements. |
+| `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
+
+## Current Priorities
+- Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
+- Treat `4.1 Step 7` candidates as deferred. Do not start install profiles, transactional writes, dependency regrouping, license strategy, or richer GUI QA without fresh evidence that the smaller completed work is not enough.
+- When a new follow-up is justified, add a focused `4.2` section with objective, scope, non-goals, file set, validation, risks, and acceptance criteria before implementation.
 
 ## Historical Design Record: 2.x Through 3.4
-The following `2.x`, `3.0`, `3.1`, `3.3`, and `3.4` sections describe shipped or superseded design work. Keep them for context, but prefer the `4.1` plan for current implementation choices.
+The following `2.x`, `3.0`, `3.1`, `3.3`, and `3.4` sections describe shipped or superseded design work. Keep them for context, but use the current priorities above plus the completed `4.0` and `4.1` baselines for future implementation choices.
 
 ## V2 Goals
 - Keep the root enhancer simple and readable.
@@ -1433,9 +1438,9 @@ Acceptance criteria:
 - installer plans can be consumed by humans and machines without hidden state
 - Utility Harness dependencies are optional, explained, and scoped to Codex/operator use
 
-## Active 4.1 Audit-Derived Improvement Instructions
+## Completed 4.1 Audit-Derived Improvement Instructions
 
-Status: active. This section converts the first-time-user product audit into implementation instructions. Implement these steps in order unless a user report or regression makes a later step more urgent: first-run clarity, write-safety guardrails, external-action transparency, roadmap hygiene, cross-platform release confidence, auditability/trust surfaces, and deferred larger follow-ups only when evidence justifies them.
+Status: completed baseline. This section records the first-time-user product-audit follow-up that added first-run clarity, write-safety guardrails, external-action transparency, roadmap hygiene, cross-platform release confidence, and auditability/trust surfaces. Preserve these outcomes as regression expectations. Only the larger follow-ups in `4.1 Step 7` remain intentionally deferred until fresh evidence justifies one of them.
 
 ### Goal
 Turn the audit findings into small, evidence-backed improvements that strengthen onboarding, write safety, roadmap clarity, packaging confidence, and real-world Codex workflow value without changing the enhancer's repo-local architecture.
