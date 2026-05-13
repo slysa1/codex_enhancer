@@ -10,6 +10,7 @@ import unittest
 import uuid
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts import install_enhancer
 from scripts.install_enhancer import (
@@ -921,7 +922,74 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("schema_version", payload)
             self.assertIn("spec_kit_detection", payload)
             self.assertFalse(payload["spec_kit_detection"]["detected"])
+            self.assertEqual(payload["diagnostics"], [])
             self.assertIn("next_steps", payload)
+
+    def test_write_plan_warns_about_existing_git_changes(self) -> None:
+        with repo_fixture("write_safety_dirty") as install_target:
+            write_file(install_target, ".git/HEAD", "ref: refs/heads/main\n")
+            write_file(install_target, "README.md", "# Existing local work\n")
+            git_status = subprocess.CompletedProcess(
+                args=("git", "status", "--short"),
+                returncode=0,
+                stdout="?? README.md\n",
+                stderr="",
+            )
+
+            with (
+                patch.object(install_enhancer.shutil, "which", return_value="git"),
+                patch.object(install_enhancer.subprocess, "run", return_value=git_status),
+            ):
+                exit_code, output = run_installer(
+                    [
+                        "--target",
+                        str(install_target),
+                        "--mode",
+                        "existing",
+                        "--write",
+                        "--force",
+                        "--summary",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Write safety:", output)
+            self.assertIn("Target git worktree already has 1 local change(s)", output)
+            self.assertIn("Review `git status --short`", output)
+            self.assertIn("?? README.md", output)
+
+    def test_write_plan_json_includes_git_change_diagnostics(self) -> None:
+        with repo_fixture("write_safety_json") as install_target:
+            write_file(install_target, ".git/HEAD", "ref: refs/heads/main\n")
+            write_file(install_target, "README.md", "# Existing local work\n")
+            git_status = subprocess.CompletedProcess(
+                args=("git", "status", "--short"),
+                returncode=0,
+                stdout="?? README.md\n",
+                stderr="",
+            )
+
+            with (
+                patch.object(install_enhancer.shutil, "which", return_value="git"),
+                patch.object(install_enhancer.subprocess, "run", return_value=git_status),
+            ):
+                exit_code, output = run_installer(
+                    [
+                        "--target",
+                        str(install_target),
+                        "--mode",
+                        "existing",
+                        "--write",
+                        "--force",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["diagnostics"][0]["severity"], "warning")
+            self.assertEqual(payload["diagnostics"][0]["code"], "dirty-git-worktree")
+            self.assertIn("?? README.md", payload["diagnostics"][0]["details"])
 
     def test_json_output_covers_read_only_reports_and_errors(self) -> None:
         exit_code, output = run_installer(["--list-packs", "--json"])
@@ -2342,6 +2410,34 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertEqual(events[0], (0, len(plan.writes) + 1, "Preparing install..."))
             self.assertEqual(events[-1][0], events[-1][1])
             self.assertIn(".gitignore", events[-1][2])
+
+    def test_write_failure_reports_partial_apply_recovery(self) -> None:
+        with repo_fixture("install_write_failure") as parent:
+            install_target = parent / "repo"
+            real_write_text_file = install_enhancer.write_text_file
+            write_attempts: list[Path] = []
+
+            def fail_after_first_write(path: Path, content: str) -> None:
+                write_attempts.append(path)
+                if len(write_attempts) == 2:
+                    raise OSError("simulated disk full")
+                real_write_text_file(path, content)
+
+            with patch.object(
+                install_enhancer,
+                "write_text_file",
+                side_effect=fail_after_first_write,
+            ):
+                exit_code, output = run_installer(
+                    ["--target", str(install_target), "--mode", "new", "--write"]
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("Failed while writing", output)
+            self.assertIn("simulated disk full", output)
+            self.assertIn("Codex Enhancer does not roll back partial writes", output)
+            self.assertIn("Likely enhancer-owned files already touched", output)
+            self.assertIn("AGENTS.md", output)
 
     def test_gui_plan_preview_lists_overwrites(self) -> None:
         with repo_fixture("install_preview") as install_target:

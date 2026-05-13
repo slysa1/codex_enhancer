@@ -15,7 +15,7 @@ First successful target-repo workflow:
 1. Check orientation: `codex-enhancer doctor ../target-repo`.
 2. Preview: `codex-enhancer init ../target-repo --existing --summary`. Preview is the default; `--dry-run` is accepted when you want to say that explicitly.
 3. Inspect the full plan when needed: add `--diff` for planned file content changes, add `--diff-full` only when you need untruncated large diffs, or remove `--summary` for the full human preview.
-4. Apply only after review: rerun with `--write`.
+4. Apply only after review: rerun with `--write`. If the target repo already has local git changes, the apply plan prints a write-safety warning before any enhancer files are touched.
 5. Adapt: run `codex-enhancer audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
 6. Validate in the target repo: run `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`.
 
@@ -163,9 +163,11 @@ Useful preview formats:
 - `--dry-run` makes the default preview behavior explicit for scripts and cautious first runs.
 - `--diff` adds a unified diff preview for planned text writes, proposals, managed-section refreshes, and `.gitignore` merges. Large per-file diffs are truncated by default; use `--diff-full` when you need the entire diff.
 - `--json` emits a versioned machine-readable plan or report for wrappers and CI.
+- `--write` checks the target repo's own git worktree first and warns when `git status --short` already reports local changes.
+- If an apply fails while writing files, the error names the failed path, lists enhancer-owned paths likely touched in that run, and gives recovery steps.
 - `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files.
 
-JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
+JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `diagnostics`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
 
 List the currently available stack packs:
 

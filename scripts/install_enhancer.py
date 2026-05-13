@@ -81,6 +81,7 @@ PROPOSAL_ROOT = Path(".codex/enhancer-proposals")
 PLAN_JSON_SCHEMA_VERSION = 1
 DEFAULT_DIFF_FILE_LINE_LIMIT = 240
 EXTERNAL_STEP_TIMEOUT_SECONDS = 600
+GIT_STATUS_TIMEOUT_SECONDS = 10
 
 COMMON_GUIDANCE_PATHS = (
     Path("AGENTS.md"),
@@ -188,6 +189,14 @@ class ConflictSummary:
     standard_proposals: tuple[Path, ...]
     critical_overwrites: tuple[Path, ...]
     standard_overwrites: tuple[Path, ...]
+
+
+@dataclass(frozen=True)
+class WriteSafetyDiagnostic:
+    severity: str
+    code: str
+    message: str
+    details: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -2305,6 +2314,15 @@ def _path_text(path: Path) -> str:
     return path.as_posix()
 
 
+def _write_safety_to_dict(diagnostic: WriteSafetyDiagnostic) -> dict[str, object]:
+    return {
+        "severity": diagnostic.severity,
+        "code": diagnostic.code,
+        "message": diagnostic.message,
+        "details": list(diagnostic.details),
+    }
+
+
 def _bridge_to_dict(bridge: SpecKitBridgeConfig | None) -> dict[str, object] | None:
     if bridge is None:
         return None
@@ -2396,7 +2414,12 @@ def _gitignore_to_dict(gitignore: GitignorePlan | None) -> dict[str, object] | N
     }
 
 
-def plan_to_dict(plan: InstallPlan, *, write: bool) -> dict[str, object]:
+def plan_to_dict(
+    plan: InstallPlan,
+    *,
+    write: bool,
+    diagnostics: tuple[WriteSafetyDiagnostic, ...] = (),
+) -> dict[str, object]:
     selected_names = selected_pack_names(plan.pack_selections)
     summary = summarize_conflicts(plan)
     return {
@@ -2425,6 +2448,7 @@ def plan_to_dict(plan: InstallPlan, *, write: bool) -> dict[str, object]:
             "standard_overwrites": [_path_text(path) for path in summary.standard_overwrites],
         },
         "gitignore": _gitignore_to_dict(plan.gitignore),
+        "diagnostics": [_write_safety_to_dict(diagnostic) for diagnostic in diagnostics],
         "external_steps": [
             {
                 "label": step.label,
@@ -2581,6 +2605,102 @@ def format_plan_diff_lines(
     return lines
 
 
+def _truncated_status_details(status_lines: tuple[str, ...], *, limit: int = 8) -> tuple[str, ...]:
+    if len(status_lines) <= limit:
+        return status_lines
+    hidden = len(status_lines) - limit
+    return (*status_lines[:limit], f"... {hidden} more local change(s) not shown.")
+
+
+def collect_write_safety_diagnostics(target: Path) -> tuple[WriteSafetyDiagnostic, ...]:
+    if not target.exists() or not target.is_dir() or not (target / ".git").exists():
+        return ()
+
+    git = shutil.which("git")
+    if git is None:
+        return (
+            WriteSafetyDiagnostic(
+                severity="warning",
+                code="git-status-unavailable",
+                message="Target has .git metadata, but `git` was not found; review local changes before applying.",
+                details=("Install Git or inspect the target manually before rerunning with --write.",),
+            ),
+        )
+
+    try:
+        completed = subprocess.run(
+            [git, "-C", str(target), "status", "--short", "--untracked-files=normal"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_STATUS_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as error:
+        return (
+            WriteSafetyDiagnostic(
+                severity="warning",
+                code="git-status-unavailable",
+                message="Target has .git metadata, but `git status --short` could not run.",
+                details=(str(error),),
+            ),
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            WriteSafetyDiagnostic(
+                severity="warning",
+                code="git-status-timeout",
+                message=(
+                    f"`git status --short` timed out after {GIT_STATUS_TIMEOUT_SECONDS} seconds; "
+                    "review local changes before applying."
+                ),
+                details=("Run `git status --short` in the target repo, then rerun the enhancer command.",),
+            ),
+        )
+
+    if completed.returncode != 0:
+        details = tuple(
+            line.strip()
+            for line in (completed.stderr or completed.stdout).splitlines()
+            if line.strip()
+        )
+        return (
+            WriteSafetyDiagnostic(
+                severity="warning",
+                code="git-status-failed",
+                message="Target has .git metadata, but `git status --short` failed; review local changes before applying.",
+                details=details or (f"git exited with code {completed.returncode}",),
+            ),
+        )
+
+    status_lines = tuple(line for line in completed.stdout.splitlines() if line.strip())
+    if not status_lines:
+        return ()
+
+    return (
+        WriteSafetyDiagnostic(
+            severity="warning",
+            code="dirty-git-worktree",
+            message=(
+                f"Target git worktree already has {len(status_lines)} local change(s) before enhancer apply. "
+                "Review `git status --short` or commit/stash unrelated work first."
+            ),
+            details=_truncated_status_details(status_lines),
+        ),
+    )
+
+
+def format_write_safety_lines(diagnostics: tuple[WriteSafetyDiagnostic, ...]) -> list[str]:
+    if not diagnostics:
+        return []
+
+    lines = ["Write safety:"]
+    for diagnostic in diagnostics:
+        lines.append(f"- {diagnostic.severity}: {diagnostic.message}")
+        for detail in diagnostic.details:
+            lines.append(f"  {detail}")
+    return lines
+
+
 def format_plan_report(
     plan: InstallPlan,
     write: bool,
@@ -2588,11 +2708,15 @@ def format_plan_report(
     summary: bool = False,
     include_diff: bool = False,
     diff_full: bool = False,
+    diagnostics: tuple[WriteSafetyDiagnostic, ...] = (),
 ) -> str:
     lines = [
         format_plan_header(plan, write),
         *(format_plan_summary_lines(plan) if summary else format_plan_lines(plan)),
     ]
+    write_safety_lines = format_write_safety_lines(diagnostics)
+    if write_safety_lines:
+        lines.extend(["", *write_safety_lines])
     if include_diff:
         lines.extend(["", "Diff preview:", *format_plan_diff_lines(plan, full=diff_full)])
     if plan.operation == "upgrade-enhancer":
@@ -2800,9 +2924,42 @@ def run_external_step(step: ExternalStep) -> None:
     raise RuntimeError(f"{step.label} failed with exit code {completed.returncode}.\n{recovery}")
 
 
+def _format_limited_paths(paths: tuple[Path, ...], *, limit: int = 8) -> list[str]:
+    rendered = [f"  - {path.as_posix()}" for path in paths[:limit]]
+    hidden = len(paths) - limit
+    if hidden > 0:
+        rendered.append(f"  - ... {hidden} more path(s) not shown.")
+    return rendered
+
+
+def build_apply_failure_message(
+    plan: InstallPlan,
+    *,
+    action: str,
+    failed_path: Path,
+    error: OSError,
+    completed_paths: tuple[Path, ...],
+) -> str:
+    relative_failed = failed_path.relative_to(plan.target) if failed_path.is_relative_to(plan.target) else failed_path
+    lines = [
+        f"Failed while {action} `{relative_failed.as_posix()}`: {error}",
+        "Recovery:",
+        "- Inspect the target repo before rerunning; Codex Enhancer does not roll back partial writes automatically.",
+        f"- Failed write target: `{relative_failed.as_posix()}`.",
+    ]
+    if completed_paths:
+        lines.append("- Likely enhancer-owned files already touched in this run:")
+        lines.extend(_format_limited_paths(completed_paths))
+    else:
+        lines.append("- No enhancer-owned file writes completed before this failure.")
+    lines.append("- Fix the permission, lock, or path conflict, then rerun the same enhancer command.")
+    return "\n".join(lines)
+
+
 def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | None = None) -> None:
     total_steps = len(plan.external_steps) + len(plan.writes) + (1 if plan.gitignore is not None else 0)
     current_step = 0
+    completed_paths: list[Path] = []
 
     if progress_callback:
         if plan.operation == "upgrade-enhancer":
@@ -2829,7 +2986,20 @@ def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | 
             progress_callback(current_step, total_steps, external_step.label)
 
     for planned_write in plan.writes:
-        write_text_file(plan.target / planned_write.write_path, planned_write.content)
+        absolute_write_path = plan.target / planned_write.write_path
+        try:
+            write_text_file(absolute_write_path, planned_write.content)
+        except OSError as error:
+            raise RuntimeError(
+                build_apply_failure_message(
+                    plan,
+                    action="writing",
+                    failed_path=absolute_write_path,
+                    error=error,
+                    completed_paths=tuple(completed_paths),
+                )
+            ) from error
+        completed_paths.append(planned_write.write_path)
         current_step += 1
         if progress_callback:
             progress_callback(
@@ -2839,7 +3009,20 @@ def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | 
             )
 
     if plan.gitignore is not None:
-        apply_gitignore_update(plan.target / plan.gitignore.destination, plan.gitignore.missing_lines)
+        absolute_gitignore_path = plan.target / plan.gitignore.destination
+        try:
+            apply_gitignore_update(absolute_gitignore_path, plan.gitignore.missing_lines)
+        except OSError as error:
+            raise RuntimeError(
+                build_apply_failure_message(
+                    plan,
+                    action="updating",
+                    failed_path=absolute_gitignore_path,
+                    error=error,
+                    completed_paths=tuple(completed_paths),
+                )
+            ) from error
+        completed_paths.append(plan.gitignore.destination)
         current_step += 1
         if progress_callback:
             message = (
@@ -3049,6 +3232,20 @@ def main(argv: list[str]) -> int:
     def fail(message: str) -> int:
         emit(message, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "error", "message": message})
         return 1
+
+    def emit_plan(plan: InstallPlan) -> None:
+        diagnostics = collect_write_safety_diagnostics(plan.target) if args.write else ()
+        emit(
+            format_plan_report(
+                plan,
+                write=args.write,
+                summary=args.summary,
+                include_diff=args.diff,
+                diff_full=args.diff_full,
+                diagnostics=diagnostics,
+            ),
+            plan_to_dict(plan, write=args.write, diagnostics=diagnostics),
+        )
 
     if args.doctor:
         if (
@@ -3268,16 +3465,7 @@ def main(argv: list[str]) -> int:
             )
         except ValueError as error:
             return fail(str(error))
-        emit(
-            format_plan_report(
-                plan,
-                write=args.write,
-                summary=args.summary,
-                include_diff=args.diff,
-                diff_full=args.diff_full,
-            ),
-            plan_to_dict(plan, write=args.write),
-        )
+        emit_plan(plan)
         if args.write:
             try:
                 apply_install_plan(plan)
@@ -3314,16 +3502,7 @@ def main(argv: list[str]) -> int:
             )
         except ValueError as error:
             return fail(str(error))
-        emit(
-            format_plan_report(
-                plan,
-                write=args.write,
-                summary=args.summary,
-                include_diff=args.diff,
-                diff_full=args.diff_full,
-            ),
-            plan_to_dict(plan, write=args.write),
-        )
+        emit_plan(plan)
         if args.write:
             try:
                 apply_install_plan(plan)
@@ -3363,16 +3542,7 @@ def main(argv: list[str]) -> int:
             )
         except ValueError as error:
             return fail(str(error))
-        emit(
-            format_plan_report(
-                plan,
-                write=args.write,
-                summary=args.summary,
-                include_diff=args.diff,
-                diff_full=args.diff_full,
-            ),
-            plan_to_dict(plan, write=args.write),
-        )
+        emit_plan(plan)
         if args.write:
             try:
                 apply_install_plan(plan)
@@ -3425,16 +3595,7 @@ def main(argv: list[str]) -> int:
     except ValueError as error:
         return fail(str(error))
 
-    emit(
-        format_plan_report(
-            plan,
-            write=args.write,
-            summary=args.summary,
-            include_diff=args.diff,
-            diff_full=args.diff_full,
-        ),
-        plan_to_dict(plan, write=args.write),
-    )
+    emit_plan(plan)
 
     if args.write:
         try:
