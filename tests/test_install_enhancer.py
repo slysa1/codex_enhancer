@@ -253,6 +253,19 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Integration: `copilot`", output)
             self.assertIn("Likely command surface: .github/prompts and .github/agents.", output)
 
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--inspect-install", "--json"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertTrue(payload["spec_kit_detection"]["detected"])
+            self.assertEqual(payload["spec_kit_detection"]["integration"], "copilot")
+            self.assertEqual(
+                payload["spec_kit_detection"]["command_label"],
+                ".github/prompts and .github/agents",
+            )
+
     def test_inspect_install_reports_utility_harness_state(self) -> None:
         with repo_fixture("inspect_utility") as install_target:
             write_file(install_target, "README.md", "# Demo\n")
@@ -795,6 +808,18 @@ class InstallEnhancerTests(unittest.TestCase):
                 output,
             )
 
+    def test_dry_run_alias_keeps_preview_behavior_explicit(self) -> None:
+        with repo_fixture("install_parent_alias") as parent:
+            target = parent / "new_repo"
+
+            exit_code, output = run_installer(
+                ["--target", str(target), "--mode", "new", "--dry-run"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertFalse(target.exists())
+            self.assertIn("Planned Codex Enhancer install", output)
+
     def test_summary_and_diff_preview_are_available_for_plans(self) -> None:
         with repo_fixture("summary_diff") as install_target:
             write_file(install_target, "AGENTS.md", "# Existing\n")
@@ -808,6 +833,22 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Diff preview:", output)
             self.assertIn("--- AGENTS.md", output)
             self.assertIn("+++ .codex/enhancer-proposals/AGENTS", output)
+            self.assertNotIn("--- AGENTS.md\n\n+++ ", output)
+
+    def test_diff_preview_truncates_large_files_unless_full_is_requested(self) -> None:
+        with repo_fixture("summary_diff_truncated") as install_target:
+            write_file(install_target, "AGENTS.md", "# Existing\n")
+            plan = build_install_plan(install_target, mode="existing")
+
+            truncated = "\n".join(
+                install_enhancer.format_plan_diff_lines(plan, file_line_limit=4)
+            )
+            full = "\n".join(
+                install_enhancer.format_plan_diff_lines(plan, file_line_limit=4, full=True)
+            )
+
+            self.assertIn("diff truncated after 4 lines", truncated)
+            self.assertNotIn("diff truncated after 4 lines", full)
 
     def test_json_plan_output_is_machine_readable(self) -> None:
         with repo_fixture("json_plan") as install_target:
@@ -822,6 +863,8 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertFalse(payload["write"])
             self.assertIn("writes", payload)
             self.assertIn("schema_version", payload)
+            self.assertIn("spec_kit_detection", payload)
+            self.assertFalse(payload["spec_kit_detection"]["detected"])
             self.assertIn("next_steps", payload)
 
     def test_json_output_covers_read_only_reports_and_errors(self) -> None:
@@ -2596,6 +2639,18 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
 
             self.assertIn("Tracked enhancer files will be updated in place:", message)
             self.assertIn("- docs/ai/stack-guidance.md", message)
+
+    def test_external_step_fails_before_subprocess_when_executable_is_missing(self) -> None:
+        missing_executable = f"missing-codex-enhancer-{uuid.uuid4().hex}"
+        step = install_enhancer.ExternalStep(
+            argv=(missing_executable,),
+            cwd=TEMP_ROOT,
+            label="Bootstrap official Spec Kit",
+            source_label="official Spec Kit bootstrap",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "was not found"):
+            install_enhancer.run_external_step(step)
 
 
 if __name__ == "__main__":

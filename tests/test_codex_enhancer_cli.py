@@ -44,6 +44,30 @@ class CodexEnhancerCliTests(unittest.TestCase):
             ],
         )
 
+    def test_init_alias_translates_explicit_dry_run_and_full_diff(self) -> None:
+        self.assertEqual(
+            self.translate(
+                [
+                    "init",
+                    "../target",
+                    "--existing",
+                    "--dry-run",
+                    "--summary",
+                    "--diff",
+                    "--diff-full",
+                ]
+            ),
+            [
+                "--target",
+                "../target",
+                "--mode",
+                "existing",
+                "--summary",
+                "--diff",
+                "--diff-full",
+            ],
+        )
+
     def test_audit_translates_to_adaptation_audit(self) -> None:
         self.assertEqual(
             self.translate(["audit", "../target", "--json"]),

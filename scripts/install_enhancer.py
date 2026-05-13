@@ -36,6 +36,7 @@ from scripts.spec_kit_bridge import (
     SPEC_KIT_BRIDGE_SKILLS,
     SpecKitBridgeConfig,
     SpecKitDetection,
+    SpecKitPaths,
     detect_spec_kit,
     render_spec_kit_bridge_doc_command_surface,
     render_spec_kit_bridge_doc_skills,
@@ -78,6 +79,8 @@ from scripts.utility_harness import (
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 PROPOSAL_ROOT = Path(".codex/enhancer-proposals")
 PLAN_JSON_SCHEMA_VERSION = 1
+DEFAULT_DIFF_FILE_LINE_LIMIT = 240
+EXTERNAL_STEP_TIMEOUT_SECONDS = 600
 
 COMMON_GUIDANCE_PATHS = (
     Path("AGENTS.md"),
@@ -2220,6 +2223,35 @@ def _bridge_to_dict(bridge: SpecKitBridgeConfig | None) -> dict[str, object] | N
     }
 
 
+def _spec_kit_paths_to_dict(paths: SpecKitPaths) -> dict[str, object]:
+    return {
+        "specify_root": paths.specify_root,
+        "specs_root": paths.specs_root,
+        "prompts_root": paths.prompts_root,
+        "agents_root": paths.agents_root,
+        "codex_skills_root": paths.codex_skills_root,
+        "context_file": paths.context_file,
+        "constitution": paths.constitution,
+    }
+
+
+def _detection_to_dict(detection: SpecKitDetection | None) -> dict[str, object] | None:
+    if detection is None:
+        return None
+    return {
+        "detected": detection.detected,
+        "integration": detection.integration,
+        "command_surface": detection.command_surface,
+        "command_label": detection.command_label,
+        "script_type": detection.script_type,
+        "version": detection.version,
+        "commands": list(detection.commands),
+        "evidence": list(detection.evidence),
+        "paths": _spec_kit_paths_to_dict(detection.paths),
+        "has_git_extension": detection.has_git_extension,
+    }
+
+
 def _utility_to_dict(utility_harness: UtilityHarnessConfig | None) -> dict[str, object] | None:
     if utility_harness is None:
         return None
@@ -2277,6 +2309,7 @@ def plan_to_dict(plan: InstallPlan, *, write: bool) -> dict[str, object]:
         "selected_packs": list(selected_names),
         "pack_selections": [_pack_selection_to_dict(selection) for selection in plan.pack_selections],
         "spec_kit_bridge": _bridge_to_dict(plan.spec_kit_bridge),
+        "spec_kit_detection": _detection_to_dict(plan.spec_kit_detection),
         "utility_harness": _utility_to_dict(plan.utility_harness),
         "writes": [_planned_write_to_dict(write_item) for write_item in plan.writes],
         "write_counts": {
@@ -2320,6 +2353,7 @@ def inspection_to_dict(inspection: InstallInspection) -> dict[str, object]:
         "safe_to_regenerate": [] if state is None else list(state.safe_to_regenerate),
         "adapt_manually": [] if state is None else list(state.adapt_manually),
         "spec_kit_bridge": _bridge_to_dict(inspection.spec_kit_bridge),
+        "spec_kit_detection": _detection_to_dict(inspection.spec_kit_detection),
         "utility_harness": _utility_to_dict(inspection.utility_harness),
     }
 
@@ -2385,20 +2419,40 @@ def format_plan_summary_lines(plan: InstallPlan) -> list[str]:
 def _existing_file_lines(path: Path) -> list[str]:
     if not path.exists() or not path.is_file():
         return []
-    return path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+    return path.read_text(encoding="utf-8", errors="replace").splitlines()
 
 
-def format_plan_diff_lines(plan: InstallPlan) -> list[str]:
+def _truncate_diff_lines(
+    rendered: list[str],
+    *,
+    limit: int,
+    full: bool,
+) -> list[str]:
+    if full or limit <= 0 or len(rendered) <= limit:
+        return rendered
+    hidden = len(rendered) - limit
+    return [
+        *rendered[:limit],
+        f"... diff truncated after {limit} lines; {hidden} more lines hidden. Re-run with --diff-full to show everything.",
+    ]
+
+
+def format_plan_diff_lines(
+    plan: InstallPlan,
+    *,
+    full: bool = False,
+    file_line_limit: int = DEFAULT_DIFF_FILE_LINE_LIMIT,
+) -> list[str]:
     lines: list[str] = []
     for write_item in plan.writes:
         existing = _existing_file_lines(plan.target / write_item.destination)
-        planned = write_item.content.splitlines(keepends=True)
+        planned = write_item.content.splitlines()
         if existing == planned:
             continue
         fromfile = write_item.destination.as_posix()
         tofile = write_item.write_path.as_posix()
         diff = difflib.unified_diff(existing, planned, fromfile=fromfile, tofile=tofile, lineterm="")
-        rendered = list(diff)
+        rendered = _truncate_diff_lines(list(diff), limit=file_line_limit, full=full)
         if rendered:
             lines.extend(rendered)
             if lines[-1] != "":
@@ -2418,13 +2472,14 @@ def format_plan_report(
     *,
     summary: bool = False,
     include_diff: bool = False,
+    diff_full: bool = False,
 ) -> str:
     lines = [
         format_plan_header(plan, write),
         *(format_plan_summary_lines(plan) if summary else format_plan_lines(plan)),
     ]
     if include_diff:
-        lines.extend(["", "Diff preview:", *format_plan_diff_lines(plan)])
+        lines.extend(["", "Diff preview:", *format_plan_diff_lines(plan, full=diff_full)])
     if plan.operation == "upgrade-enhancer":
         lines.extend(["", *format_next_steps(plan, write=write)])
         return "\n".join(lines)
@@ -2578,16 +2633,10 @@ def proposal_paths(plan: InstallPlan) -> tuple[Path, ...]:
 
 
 def run_external_step(step: ExternalStep) -> None:
-    try:
-        completed = subprocess.run(
-            step.argv,
-            cwd=step.cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError as error:
-        executable = step.argv[0] if step.argv else step.label
+    if not step.argv:
+        raise RuntimeError(f"{step.label} failed because no command was configured.")
+    executable = step.argv[0]
+    if not Path(executable).exists() and shutil.which(executable) is None:
         hint = (
             "Install uv/uvx or pass --spec-kit-exe with a local specify-compatible executable."
             if executable == "uvx"
@@ -2596,6 +2645,31 @@ def run_external_step(step: ExternalStep) -> None:
         raise RuntimeError(
             f"{step.label} failed before enhancer-owned files were written because `{executable}` was not found. "
             f"{hint}"
+        )
+    try:
+        completed = subprocess.run(
+            step.argv,
+            cwd=step.cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=EXTERNAL_STEP_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as error:
+        hint = (
+            "Install uv/uvx or pass --spec-kit-exe with a local specify-compatible executable."
+            if executable == "uvx"
+            else "Verify the executable path and rerun the same command."
+        )
+        raise RuntimeError(
+            f"{step.label} failed before enhancer-owned files were written because `{executable}` was not found. "
+            f"{hint}"
+        ) from error
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(
+            f"{step.label} timed out after {EXTERNAL_STEP_TIMEOUT_SECONDS} seconds.\n"
+            "Recovery: inspect the target for any files written by the external tool, fix the executable, "
+            "version, or network problem, then rerun the same enhancer command."
         ) from error
     if completed.returncode == 0:
         return
@@ -2662,7 +2736,17 @@ def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | 
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "Common previews:\n"
+            "  python scripts/install_enhancer.py --target ../repo --mode existing --summary\n"
+            "  python scripts/install_enhancer.py --target ../repo --mode existing --summary --diff\n"
+            "  python scripts/install_enhancer.py --target ../repo --inspect-install --json\n\n"
+            "Preview is the default. Use --write only after reviewing the plan."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "--target",
         help="path to the new or existing repository that should receive the enhancer scaffold",
@@ -2727,11 +2811,20 @@ def main(argv: list[str]) -> int:
         default="auto",
         help="treat the target as a new repo, an existing repo, or infer automatically",
     )
-    parser.add_argument(
+    write_mode = parser.add_mutually_exclusive_group()
+    write_mode.add_argument(
         "--write",
+        dest="write",
         action="store_true",
-        help="apply the install or refresh instead of only printing a dry-run plan",
+        help="apply the install or refresh instead of only printing a preview plan",
     )
+    write_mode.add_argument(
+        "--dry-run",
+        dest="write",
+        action="store_false",
+        help="preview the plan without writing files; this is the default",
+    )
+    parser.set_defaults(write=False)
     parser.add_argument(
         "--summary",
         action="store_true",
@@ -2741,6 +2834,11 @@ def main(argv: list[str]) -> int:
         "--diff",
         action="store_true",
         help="include a unified diff preview for planned text writes",
+    )
+    parser.add_argument(
+        "--diff-full",
+        action="store_true",
+        help="show full per-file diffs instead of truncating large --diff output",
     )
     parser.add_argument(
         "--json",
@@ -2880,6 +2978,9 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_version
         or args.spec_kit_exe
         or args.utility_harness_mode
+        or args.summary
+        or args.diff
+        or args.diff_full
     ):
         return fail("Spec Kit reports are read-only and cannot be combined with install, write, bridge, utility, or pack-selection flags.")
 
@@ -2924,6 +3025,7 @@ def main(argv: list[str]) -> int:
         or args.utility_harness_mode
         or args.summary
         or args.diff
+        or args.diff_full
     ):
         return fail("--audit-adaptation only inspects the target repo and cannot be combined with write, refresh, force, bridge, utility, summary, diff, or pack-selection flags.")
 
@@ -2963,6 +3065,7 @@ def main(argv: list[str]) -> int:
         or args.utility_harness_mode
         or args.summary
         or args.diff
+        or args.diff_full
     ):
         return fail("--inspect-install only inspects the target repo and cannot be combined with write, refresh, force, summary, diff, or pack-selection flags.")
 
@@ -3004,7 +3107,13 @@ def main(argv: list[str]) -> int:
         except ValueError as error:
             return fail(str(error))
         emit(
-            format_plan_report(plan, write=args.write, summary=args.summary, include_diff=args.diff),
+            format_plan_report(
+                plan,
+                write=args.write,
+                summary=args.summary,
+                include_diff=args.diff,
+                diff_full=args.diff_full,
+            ),
             plan_to_dict(plan, write=args.write),
         )
         if args.write:
@@ -3044,7 +3153,13 @@ def main(argv: list[str]) -> int:
         except ValueError as error:
             return fail(str(error))
         emit(
-            format_plan_report(plan, write=args.write, summary=args.summary, include_diff=args.diff),
+            format_plan_report(
+                plan,
+                write=args.write,
+                summary=args.summary,
+                include_diff=args.diff,
+                diff_full=args.diff_full,
+            ),
             plan_to_dict(plan, write=args.write),
         )
         if args.write:
@@ -3087,7 +3202,13 @@ def main(argv: list[str]) -> int:
         except ValueError as error:
             return fail(str(error))
         emit(
-            format_plan_report(plan, write=args.write, summary=args.summary, include_diff=args.diff),
+            format_plan_report(
+                plan,
+                write=args.write,
+                summary=args.summary,
+                include_diff=args.diff,
+                diff_full=args.diff_full,
+            ),
             plan_to_dict(plan, write=args.write),
         )
         if args.write:
@@ -3143,7 +3264,13 @@ def main(argv: list[str]) -> int:
         return fail(str(error))
 
     emit(
-        format_plan_report(plan, write=args.write, summary=args.summary, include_diff=args.diff),
+        format_plan_report(
+            plan,
+            write=args.write,
+            summary=args.summary,
+            include_diff=args.diff,
+            diff_full=args.diff_full,
+        ),
         plan_to_dict(plan, write=args.write),
     )
 

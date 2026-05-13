@@ -41,6 +41,9 @@ This document defines how Codex Enhancer should coexist with official GitHub Spe
 - Dry-runs show the external bootstrap command but never download or execute it.
 - During apply, official Spec Kit bootstrap runs before enhancer-owned files are written. If bootstrap fails, inspect any official Spec Kit files it may have created, fix the executable/version/network problem, and rerun the same enhancer command.
 
+## Source Repo Footprint
+This source repo can have official Spec Kit files checked in for its own development, including `.specify/`, `.github/prompts/`, and `.github/agents/`. That does not mean Codex Enhancer vendors Spec Kit into target repos. Target repos receive only enhancer-owned bridge guidance unless the operator explicitly chooses attach or bootstrap mode.
+
 ## Friendly CLI Shortcuts
 - `python scripts/codex_enhancer_cli.py init <repo> --with-spec-kit`: preview bootstrapping official Spec Kit for Codex together with the enhancer scaffold.
 - `python scripts/codex_enhancer_cli.py init <repo> --with-spec-kit --write`: run the official Spec Kit bootstrap, then write enhancer-owned bridge guidance and skills.

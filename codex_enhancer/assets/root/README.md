@@ -12,8 +12,8 @@ This repository currently ships the enhancer itself. Installing the enhancer mea
 Use Codex Enhancer when you want a visible repo-local operating layer for Codex: concise instructions, narrow repeatable skills, deterministic checks, and review guidance that live in git. Do not use it when a single hand-written `AGENTS.md` is enough or when you want a hidden agent runtime.
 
 First successful target-repo workflow:
-1. Preview: `codex-enhancer init ../target-repo --existing --summary`.
-2. Inspect the full plan when needed: add `--diff` for planned file content changes or remove `--summary` for the full human preview.
+1. Preview: `codex-enhancer init ../target-repo --existing --summary`. Preview is the default; `--dry-run` is accepted when you want to say that explicitly.
+2. Inspect the full plan when needed: add `--diff` for planned file content changes, add `--diff-full` only when you need untruncated large diffs, or remove `--summary` for the full human preview.
 3. Apply only after review: rerun with `--write`.
 4. Adapt: run `codex-enhancer audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
 5. Validate in the target repo: run `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`.
@@ -106,6 +106,8 @@ codex-enhancer list-packs
 
 The wheel and source distribution include package-owned copies of the scaffold and stack-pack assets so the installed `codex-enhancer` command can plan installs without a source checkout. Packaging still does not vendor Spec Kit, install Utility Harness helper packages, publish releases, or download target-repo dependencies automatically. See [docs/ai/release.md](docs/ai/release.md) before building or publishing release artifacts.
 
+This source checkout may contain official Spec Kit files such as `.specify/`, `.github/prompts/`, and `.github/agents/` for developing the enhancer itself. Those files are not part of the enhancer scaffold copied into target repos; the package only plans or runs official Spec Kit bootstrap when you choose that option.
+
 ### Option 2: Install The Enhancer Into Another Repository
 Use the installer to scaffold the enhancer into a new or existing repository.
 
@@ -154,11 +156,12 @@ Use `--with-spec-kit` when you want Codex Enhancer to bootstrap official Spec Ki
 
 Useful preview formats:
 - `--summary` prints the shortest install, upgrade, refresh, pack, or bridge plan.
-- `--diff` adds a unified diff preview for planned text writes, proposals, managed-section refreshes, and `.gitignore` merges.
+- `--dry-run` makes the default preview behavior explicit for scripts and cautious first runs.
+- `--diff` adds a unified diff preview for planned text writes, proposals, managed-section refreshes, and `.gitignore` merges. Large per-file diffs are truncated by default; use `--diff-full` when you need the entire diff.
 - `--json` emits a versioned machine-readable plan or report for wrappers and CI.
 - `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files.
 
-JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
+JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
 
 List the currently available stack packs:
 

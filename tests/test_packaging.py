@@ -50,7 +50,7 @@ class PackagingMetadataTests(unittest.TestCase):
 
         for source_root in source_roots:
             for source_path in source_root.rglob("*"):
-                if source_path.is_dir():
+                if source_path.is_dir() or "__pycache__" in source_path.parts or source_path.suffix == ".pyc":
                     continue
                 relative_path = source_path.relative_to(root)
                 packaged_path = packaged_root / relative_path

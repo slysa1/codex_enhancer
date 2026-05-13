@@ -18,6 +18,14 @@ def build_parser() -> argparse.ArgumentParser:
             "Run Codex Enhancer installer workflows with short subcommands. "
             "This command delegates to scripts/install_enhancer.py."
         ),
+        epilog=(
+            "First useful commands:\n"
+            "  codex-enhancer init ../my-repo --existing --summary\n"
+            "  codex-enhancer init ../my-repo --existing --summary --diff\n"
+            "  codex-enhancer inspect ../my-repo\n\n"
+            "Preview is the default. Add --write only after the plan looks right."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -162,7 +170,15 @@ def add_mode_options(parser: argparse.ArgumentParser) -> None:
 
 
 def add_write_options(parser: argparse.ArgumentParser, *, include_force: bool) -> None:
-    parser.add_argument("--write", action="store_true", help="apply the planned change")
+    write_mode = parser.add_mutually_exclusive_group()
+    write_mode.add_argument("--write", dest="write", action="store_true", help="apply the planned change")
+    write_mode.add_argument(
+        "--dry-run",
+        dest="write",
+        action="store_false",
+        help="preview the plan without writing files; this is the default",
+    )
+    parser.set_defaults(write=False)
     if include_force:
         parser.add_argument(
             "--force",
@@ -175,6 +191,11 @@ def add_output_options(parser: argparse.ArgumentParser, *, include_plan_options:
     if include_plan_options:
         parser.add_argument("--summary", action="store_true", help="print a concise plan preview")
         parser.add_argument("--diff", action="store_true", help="include a unified diff preview")
+        parser.add_argument(
+            "--diff-full",
+            action="store_true",
+            help="show full per-file diffs instead of truncating large --diff output",
+        )
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
 
 
@@ -383,6 +404,8 @@ def append_output_args(installer_args: list[str], args: argparse.Namespace) -> N
         installer_args.append("--summary")
     if getattr(args, "diff", False):
         installer_args.append("--diff")
+    if getattr(args, "diff_full", False):
+        installer_args.append("--diff-full")
     if getattr(args, "json", False):
         installer_args.append("--json")
 
