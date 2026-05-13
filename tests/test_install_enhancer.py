@@ -119,6 +119,25 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertIn("node-api-service", output)
         self.assertIn("library-package", output)
 
+    def test_list_packs_with_target_explains_detection_audit(self) -> None:
+        with repo_fixture("list_packs_audit") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, output = run_installer(["--list-packs", "--target", str(install_target)])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Detection audit:", output)
+            self.assertIn("Evidence is local only", output)
+            self.assertIn("This report does not select packs", output)
+            self.assertIn("Signals checked:", output)
+            self.assertIn("required files: package.json", output)
+            self.assertIn("optional detection signals: globs tsconfig*.json", output)
+            self.assertIn("False-positive boundary:", output)
+            self.assertIn("javascript-typescript-app", output)
+            self.assertIn("status: recommended", output)
+            self.assertIn("evidence: found package.json; matched tsconfig.json", output)
+
     def test_doctor_reports_plain_repo_first_run_path(self) -> None:
         with repo_fixture("doctor_plain") as install_target:
             write_file(install_target, "README.md", "# Demo\n")
@@ -1157,7 +1176,10 @@ class InstallEnhancerTests(unittest.TestCase):
     def test_json_output_covers_read_only_reports_and_errors(self) -> None:
         exit_code, output = run_installer(["--list-packs", "--json"])
         self.assertEqual(exit_code, 0)
-        self.assertEqual(json.loads(output)["kind"], "pack-catalog")
+        pack_catalog = json.loads(output)
+        self.assertEqual(pack_catalog["kind"], "pack-catalog")
+        self.assertIn("packs", pack_catalog)
+        self.assertIn("detection_signals", pack_catalog["packs"][0])
 
         exit_code, output = run_installer(["--mode", "new", "--json"])
         self.assertEqual(exit_code, 1)
@@ -1192,6 +1214,31 @@ class InstallEnhancerTests(unittest.TestCase):
             )
             self.assertEqual(exit_code, 0)
             self.assertEqual(json.loads(output)["kind"], "spec-kit-sync-report")
+
+    def test_json_pack_catalog_with_target_includes_structured_detection_evidence(self) -> None:
+        with repo_fixture("json_pack_catalog_target") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, output = run_installer(["--list-packs", "--target", str(install_target), "--json"])
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["kind"], "pack-catalog")
+            self.assertEqual(payload["target"], str(install_target.resolve()))
+            self.assertIn("Detection uses only local", payload["notes"][0])
+
+            javascript_pack = next(
+                pack for pack in payload["packs"] if pack["name"] == "javascript-typescript-app"
+            )
+            self.assertEqual(javascript_pack["status"], "recommended")
+            self.assertTrue(javascript_pack["detected"])
+            self.assertTrue(javascript_pack["recommended"])
+            self.assertEqual(javascript_pack["detection_signals"]["all_files"], ["package.json"])
+            self.assertIn("tsconfig*.json", javascript_pack["detection_signals"]["any_globs"])
+            self.assertIn("found package.json", javascript_pack["evidence"])
+            self.assertIn("matched tsconfig.json", javascript_pack["evidence"])
+            self.assertIn("package.json exists only", javascript_pack["guidance"]["skip_when"][0])
 
     def test_json_output_covers_management_plan_operations(self) -> None:
         with repo_fixture("json_management") as install_target:

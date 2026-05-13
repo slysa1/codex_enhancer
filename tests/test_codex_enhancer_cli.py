@@ -100,6 +100,19 @@ class CodexEnhancerCliTests(unittest.TestCase):
             ],
         )
 
+    def test_list_packs_translates_optional_target_for_detection_audit(self) -> None:
+        self.assertEqual(
+            self.translate(["list-packs", "../target", "--json"]),
+            [
+                "--list-packs",
+                "--mode",
+                "auto",
+                "--target",
+                "../target",
+                "--json",
+            ],
+        )
+
     def test_install_translates_write_and_spec_kit_options(self) -> None:
         self.assertEqual(
             self.translate(

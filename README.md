@@ -183,7 +183,9 @@ Useful preview formats:
 - If an apply fails while writing files, the error names the failed path, lists enhancer-owned paths likely touched in that run, and gives recovery steps.
 - `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files, then reports an adaptation status and severity summary.
 
-JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `diagnostics`, `external_steps`, and `next_steps`. Each `external_steps` item includes the exact command string, argv list, executable status/path when available, pinned ref, network flag, execution order, warnings, and recovery hint. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`; adaptation audits also include `status` and `severity_counts`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
+JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `diagnostics`, `external_steps`, and `next_steps`. Each `external_steps` item includes the exact command string, argv list, executable status/path when available, pinned ref, network flag, execution order, warnings, and recovery hint. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`; pack catalogs also include structured pack guidance, detection signals, status, and evidence when a target repo is provided. Adaptation audits also include `status` and `severity_counts`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
+
+Validation boundary: `python scripts/check.py` validates the enhancer's local files, managed markers, markdown links that resolve inside the repo, and skill metadata. It does not prove external URLs, external tool behavior, package-registry publication, or unofficial documentation facts. Treat external references as unverified unless a release note, issue, or PR summary records the check that verified them.
 
 List the currently available stack packs:
 
@@ -200,6 +202,8 @@ Current shipped packs:
 - `library-package`
 
 Stack-pack detection now combines conservative file/path signals with narrow manifest evidence from `package.json`, `packageManager` or lockfiles, and `pyproject.toml`. The `library-package` pack is intentionally conservative: it requires explicit reusable-package metadata such as `exports`, `types`, `files`, or `bin`, and it backs away when obvious app or service entrypoints are present.
+
+To audit pack detection for a real target without installing anything, run `python scripts/codex_enhancer_cli.py list-packs ../target-repo` or `codex-enhancer list-packs ../target-repo`. The report shows local evidence, missing or skipped signals, false-positive boundaries, and the exact detection inputs used by each pack. Use `--json` when a wrapper needs the same facts without parsing prose.
 
 ### Choosing Stack Packs
 

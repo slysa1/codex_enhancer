@@ -2482,6 +2482,88 @@ def format_pack_guidance_block(pack: StackPack, *, indent: str = "  ") -> list[s
     return lines
 
 
+def pack_detection_status(detection: PackDetection) -> str:
+    if detection.recommended:
+        return "recommended"
+    if detection.detected:
+        return "detected"
+    return "not detected"
+
+
+def _format_pack_signal_items(items: tuple[Path, ...] | tuple[str, ...]) -> str:
+    if not items:
+        return "none"
+    return ", ".join(item.as_posix() if isinstance(item, Path) else item for item in items)
+
+
+def format_pack_signal_lines(pack: StackPack, *, indent: str = "  ") -> list[str]:
+    optional_signals: list[str] = []
+    if pack.discovery.any_files:
+        optional_signals.append(f"files {_format_pack_signal_items(pack.discovery.any_files)}")
+    if pack.discovery.any_globs:
+        optional_signals.append(f"globs {_format_pack_signal_items(pack.discovery.any_globs)}")
+
+    lines = [
+        f"{indent}Signals checked:",
+        f"{indent}- required files: {_format_pack_signal_items(pack.discovery.all_files)}",
+        f"{indent}- required directories: {_format_pack_signal_items(pack.discovery.all_dirs)}",
+        f"{indent}- optional detection signals: {' or '.join(optional_signals) if optional_signals else 'none'}",
+        f"{indent}- exclusion files: {_format_pack_signal_items(pack.discovery.exclude_files)}",
+        f"{indent}False-positive boundary: {_first_guidance_item(pack.guidance.skip_when)}",
+    ]
+    return lines
+
+
+def pack_catalog_to_dict(target: Path | None = None) -> dict[str, object]:
+    packs = load_stack_packs()
+    detections_by_name: dict[str, PackDetection] = {}
+    if target is not None:
+        detections_by_name = {
+            detection.pack.name: detection
+            for detection in detect_stack_packs(target, packs=packs)
+        }
+
+    pack_entries: list[dict[str, object]] = []
+    for pack in packs:
+        detection = detections_by_name.get(pack.name)
+        pack_entries.append(
+            {
+                "name": pack.name,
+                "label": pack.label,
+                "description": pack.description,
+                "version": pack.version,
+                "guidance": {
+                    "use_when": list(pack.guidance.use_when),
+                    "adds": list(pack.guidance.adds),
+                    "skip_when": list(pack.guidance.skip_when),
+                },
+                "detection_signals": {
+                    "all_files": [path.as_posix() for path in pack.discovery.all_files],
+                    "any_files": [path.as_posix() for path in pack.discovery.any_files],
+                    "any_globs": list(pack.discovery.any_globs),
+                    "all_dirs": [path.as_posix() for path in pack.discovery.all_dirs],
+                    "exclude_files": [path.as_posix() for path in pack.discovery.exclude_files],
+                },
+                "status": None if detection is None else pack_detection_status(detection),
+                "detected": None if detection is None else detection.detected,
+                "recommended": None if detection is None else detection.recommended,
+                "evidence": [] if detection is None else list(detection.reasons),
+            }
+        )
+
+    notes = [
+        "Detection uses only local, visible repo evidence such as paths and narrow package metadata.",
+        "This report is read-only and does not select packs; use --use-recommended-packs or --pack in an install preview.",
+    ]
+    return {
+        "schema_version": PLAN_JSON_SCHEMA_VERSION,
+        "kind": "pack-catalog",
+        "target": None if target is None else str(target),
+        "notes": notes,
+        "packs": pack_entries,
+    }
+
+
 def format_pack_catalog(target: Path | None = None) -> str:
     packs = load_stack_packs()
     detections_by_name: dict[str, PackDetection] = {}
@@ -2492,13 +2574,25 @@ def format_pack_catalog(target: Path | None = None) -> str:
         }
 
     lines = ["Available stack packs:"]
+    if target is not None:
+        lines.extend(
+            [
+                "",
+                "Detection audit:",
+                f"- Target: `{target.resolve()}`",
+                "- Evidence is local only: visible paths plus narrow `package.json` and `pyproject.toml` metadata.",
+                "- This report does not select packs. Use `--use-recommended-packs` or `--pack <name>` in an install preview to opt in.",
+                "- Not detected means a required signal was missing, an optional signal did not match, or an exclusion/false-positive boundary applied.",
+                "",
+            ]
+        )
     for pack in packs:
         lines.append(f"- {pack.name}: {pack.label}")
         lines.extend(format_pack_guidance_block(pack, indent="  "))
+        lines.extend(format_pack_signal_lines(pack, indent="  "))
         if target is not None:
             detection = detections_by_name[pack.name]
-            status = "recommended" if detection.recommended else "detected" if detection.detected else "not detected"
-            lines.append(f"  status: {status}")
+            lines.append(f"  status: {pack_detection_status(detection)}")
             lines.append(f"  evidence: {format_detection_reason(detection)}")
     return "\n".join(lines)
 
@@ -3597,7 +3691,9 @@ def main(argv: list[str]) -> int:
 
     if args.list_packs and args.target is None:
         catalog = format_pack_catalog()
-        emit(catalog, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "pack-catalog", "target": None, "text": catalog})
+        catalog_data = pack_catalog_to_dict()
+        catalog_data["text"] = catalog
+        emit(catalog, catalog_data)
         return 0
 
     if args.target is None:
@@ -3611,7 +3707,9 @@ def main(argv: list[str]) -> int:
         except ValueError as error:
             return fail(str(error))
         catalog = format_pack_catalog(target)
-        emit(catalog, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "pack-catalog", "target": str(target), "text": catalog})
+        catalog_data = pack_catalog_to_dict(target)
+        catalog_data["text"] = catalog
+        emit(catalog, catalog_data)
         return 0
 
     if args.spec_kit_report and args.spec_kit_sync_report:
