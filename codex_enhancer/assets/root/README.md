@@ -8,21 +8,34 @@ This repository currently ships the enhancer itself. Installing the enhancer mea
 - installing a built wheel or source distribution that includes the scaffold assets, or
 - using the included installer to scaffold the enhancer into another repository and then adapting it to that repo's real commands and architecture
 
+Current distribution status: this README documents source-checkout use, editable installs, and locally built wheel or source-distribution artifacts. It does not claim a published package-registry release. If you were not handed a wheel, start from the source-checkout path.
+
 ## Start Here
 Use Codex Enhancer when you want a visible repo-local operating layer for Codex: concise instructions, narrow repeatable skills, deterministic checks, and review guidance that live in git. Do not use it when a single hand-written `AGENTS.md` is enough or when you want a hidden agent runtime.
 
-First successful target-repo workflow:
-1. Check orientation: `codex-enhancer doctor ../target-repo`.
-2. Preview: `codex-enhancer init ../target-repo --existing --summary`. Preview is the default; `--dry-run` is accepted when you want to say that explicitly.
-3. Inspect the full plan when needed: add `--diff` for planned file content changes, add `--diff-full` only when you need untruncated large diffs, or remove `--summary` for the full human preview.
-4. Apply only after review: rerun with `--write`. If the target repo already has local git changes, the apply plan prints a write-safety warning before any enhancer files are touched.
-5. Adapt: run `codex-enhancer audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
-6. Validate in the target repo: run `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`.
+### Five-Minute Path
+Choose one command lane first:
 
-Before/after in practice:
-- Before: Codex sees scattered or missing repo instructions and you keep repeating commands, review rules, and "please inspect first" reminders in prompts.
-- Preview: the enhancer shows which workflow files it would create, overwrite, or propose, which stack packs were detected, whether Spec Kit or Utility Harness integrations are involved, and what to do next.
-- After apply and adaptation: Codex starts from a repo-specific `AGENTS.md`, deeper docs under `docs/ai/`, a validation command, optional skills, visible manifest state, and review notes that can be checked into git.
+| Starting point | First read-only command | Then |
+| --- | --- | --- |
+| Fresh clone, no install yet | `python scripts/codex_enhancer_cli.py doctor .` | Run `python scripts/check.py`, then preview a target repo with `python scripts/codex_enhancer_cli.py init ../target-repo --existing --summary --diff`. |
+| Editable local CLI | `python -m pip install -e . --no-deps` | Run `codex-enhancer doctor .`, then `codex-enhancer init ../target-repo --existing --summary --diff`. |
+| Built artifact handed to you | `python -m pip install <wheel-or-sdist>` | Run `codex-enhancer list-packs`, then preview a target repo before using `--write`. |
+| Windows GUI | `install_enhancer.bat` | Pick a target folder, review the planned creates/proposals/overwrites, then apply only after the preview makes sense. |
+
+First successful target-repo workflow:
+1. Orient: run `doctor` on the enhancer checkout and on the target repo so you know whether each path is a source checkout, installed target, or plain repo.
+2. Preview: run `init ../target-repo --existing --summary --diff`. Preview is the default; `--dry-run` is accepted when you want to say that explicitly.
+3. Inspect detail only when needed: add `--diff-full` for untruncated large diffs or remove `--summary` for the full human preview.
+4. Apply only after review: rerun with `--write`. If the target repo already has local git changes, the apply plan prints a write-safety warning before any enhancer files are touched.
+5. Adapt: run `audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
+6. Validate in the target repo with the commands shown in its generated `AGENTS.md` and `docs/ai/`.
+
+Concrete before/after workflow:
+- Before: a small existing repo has a `README.md` and real test command, but no `AGENTS.md`, no durable Codex review rules, and no checked-in validation habit. Each Codex session needs repeated instructions such as "inspect first", "use this test command", and "summarize risks".
+- Preview: from this checkout, `python scripts/codex_enhancer_cli.py init ../small-repo --existing --summary --diff` shows the operation mode, selected or skipped stack packs, Spec Kit and Utility Harness state, planned creates/proposals/overwrites, `.gitignore` additions, and next commands without writing files.
+- Apply and adapt: after `--write`, the target repo contains a repo-local `AGENTS.md`, durable `docs/ai/` guidance, validation scaffolding, optional skills, a visible `.codex/enhancer/manifest.toml`, and proposal files for conflicts instead of silent overwrites.
+- Verify: `codex-enhancer audit ../small-repo` reports whether generic inherited guidance remains; the target repo validation then proves the workflow files, links, and commands stay coherent.
 
 ### Choose The Right Tool
 | Situation | Best fit | Why |
@@ -648,7 +661,7 @@ It is a map, not a dump of every durable rule.
 
 Use docs when guidance needs more explanation. Use `AGENTS.md` when guidance must be visible immediately.
 
-For the current enhancer evolution record, see [docs/ai/roadmap.md](docs/ai/roadmap.md). It records the shipped `2.x` and `3.x` design history plus the completed `4.0` product-maturity roadmap for first-time-user clarity, safer command handling, release confidence, and integration hardening.
+For the current enhancer evolution record, see [docs/ai/roadmap.md](docs/ai/roadmap.md). It records the shipped `2.x` and `3.x` design history, the completed `4.0` product-maturity roadmap, and the active `4.1` audit-derived follow-up plan for first-run clarity, write safety, release confidence, and trust surfaces.
 
 For upgrading existing installed repos, see [docs/ai/migration-v3.md](docs/ai/migration-v3.md). It gives the operator checklist for inspect, upgrade, pack management, refresh, proposal review, and validation.
 
