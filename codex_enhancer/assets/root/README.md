@@ -27,7 +27,7 @@ First successful target-repo workflow:
 1. Orient: run `doctor` on the enhancer checkout and on the target repo so you know whether each path is a source checkout, installed target, or plain repo.
 2. Preview: run `init ../target-repo --existing --summary --diff`. Preview is the default; `--dry-run` is accepted when you want to say that explicitly.
 3. Inspect detail only when needed: add `--diff-full` for untruncated large diffs or remove `--summary` for the full human preview.
-4. Apply only after review: rerun with `--write`. If the target repo already has local git changes, the apply plan prints a write-safety warning before any enhancer files are touched.
+4. Apply only after review: rerun with `--write`. If the target repo already has local git changes or looks like the enhancer source checkout, apply is blocked before any files are touched unless you explicitly pass the relevant override.
 5. Adapt: run `audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
 6. Validate in the target repo with the commands shown in its generated `AGENTS.md` and `docs/ai/`.
 
@@ -176,7 +176,8 @@ Useful preview formats:
 - `--dry-run` makes the default preview behavior explicit for scripts and cautious first runs.
 - `--diff` adds a unified diff preview for planned text writes, proposals, managed-section refreshes, and `.gitignore` merges. Large per-file diffs are truncated by default; use `--diff-full` when you need the entire diff.
 - `--json` emits a versioned machine-readable plan or report for wrappers and CI.
-- `--write` checks the target repo's own git worktree first and warns when `git status --short` already reports local changes.
+- `--write` checks the target repo's own git worktree first and blocks when `git status --short` already reports local changes or when clean state cannot be verified; use `--allow-dirty` only when applying over that state is deliberate.
+- `--write` also blocks when the target looks like the Codex Enhancer source checkout; use `--allow-source-target` only when that unusual target is deliberate.
 - If an apply fails while writing files, the error names the failed path, lists enhancer-owned paths likely touched in that run, and gives recovery steps.
 - `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files, then reports an adaptation status and severity summary.
 
