@@ -118,6 +118,62 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertIn("node-api-service", output)
         self.assertIn("library-package", output)
 
+    def test_doctor_reports_plain_repo_first_run_path(self) -> None:
+        with repo_fixture("doctor_plain") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(["--target", str(install_target), "--doctor"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Codex Enhancer doctor for", output)
+            self.assertIn("Repo kind: `plain-repo`", output)
+            self.assertIn("Safety: read-only check", output)
+            self.assertIn("codex-enhancer init", output)
+            self.assertIn("--existing --summary", output)
+            self.assertFalse((install_target / ".codex/enhancer/manifest.toml").exists())
+
+    def test_doctor_reports_source_checkout_validation_path(self) -> None:
+        with repo_fixture("doctor_source") as install_target:
+            write_file(install_target, "scripts/install_enhancer.py", "# placeholder\n")
+            write_file(install_target, "docs/ai/roadmap.md", "# Roadmap\n")
+            write_file(install_target, "scaffold/target-repo/AGENTS.md", "# Target\n")
+
+            exit_code, output = run_installer(["--target", str(install_target), "--doctor"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Repo kind: `source-checkout`", output)
+            self.assertIn("Source checkout: yes", output)
+            self.assertIn("python scripts/check.py", output)
+            self.assertIn("python -m unittest discover", output)
+
+    def test_doctor_json_reports_installed_target_state(self) -> None:
+        with repo_fixture("doctor_installed") as install_target:
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "new", "--write"]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(["--target", str(install_target), "--doctor", "--json"])
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["kind"], "doctor-report")
+            self.assertEqual(payload["repo_kind"], "installed-target")
+            self.assertEqual(payload["install_status"], "current")
+            self.assertEqual(payload["install"]["kind"], "install-inspection")
+            self.assertIn("next_steps", payload)
+
+    def test_doctor_rejects_write_flags(self) -> None:
+        with repo_fixture("doctor_invalid") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--doctor", "--write"]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("--doctor is read-only", output)
+
     def test_inspect_install_reports_repo_without_enhancer(self) -> None:
         with repo_fixture("inspect_missing") as install_target:
             write_file(install_target, "README.md", "# Demo\n")

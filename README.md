@@ -12,11 +12,12 @@ This repository currently ships the enhancer itself. Installing the enhancer mea
 Use Codex Enhancer when you want a visible repo-local operating layer for Codex: concise instructions, narrow repeatable skills, deterministic checks, and review guidance that live in git. Do not use it when a single hand-written `AGENTS.md` is enough or when you want a hidden agent runtime.
 
 First successful target-repo workflow:
-1. Preview: `codex-enhancer init ../target-repo --existing --summary`. Preview is the default; `--dry-run` is accepted when you want to say that explicitly.
-2. Inspect the full plan when needed: add `--diff` for planned file content changes, add `--diff-full` only when you need untruncated large diffs, or remove `--summary` for the full human preview.
-3. Apply only after review: rerun with `--write`.
-4. Adapt: run `codex-enhancer audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
-5. Validate in the target repo: run `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`.
+1. Check orientation: `codex-enhancer doctor ../target-repo`.
+2. Preview: `codex-enhancer init ../target-repo --existing --summary`. Preview is the default; `--dry-run` is accepted when you want to say that explicitly.
+3. Inspect the full plan when needed: add `--diff` for planned file content changes, add `--diff-full` only when you need untruncated large diffs, or remove `--summary` for the full human preview.
+4. Apply only after review: rerun with `--write`.
+5. Adapt: run `codex-enhancer audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
+6. Validate in the target repo: run `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`.
 
 Before/after in practice:
 - Before: Codex sees scattered or missing repo instructions and you keep repeating commands, review rules, and "please inspect first" reminders in prompts.
@@ -92,6 +93,7 @@ To expose the friendly CLI command from this source checkout, use an editable in
 
 ```bash
 python -m pip install -e . --no-deps
+codex-enhancer doctor .
 codex-enhancer list-packs
 codex-enhancer init ../my-new-repo --new --with-spec-kit --utility-harness
 ```
@@ -140,6 +142,7 @@ For a shorter command surface from a source checkout, use [scripts/codex_enhance
 
 ```bash
 python scripts/codex_enhancer_cli.py list-packs
+python scripts/codex_enhancer_cli.py doctor .
 python scripts/codex_enhancer_cli.py init ../my-new-repo --new --with-spec-kit --utility-harness
 python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --utility-harness
 python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --summary --diff
@@ -150,18 +153,19 @@ python scripts/codex_enhancer_cli.py spec-sync ../my-existing-repo --feature 001
 python scripts/codex_enhancer_cli.py bridge ../my-existing-repo --attach-spec-kit
 ```
 
-The facade only translates friendly verbs such as `init`, `install`, `inspect`, `audit`, `packs`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
+The facade only translates friendly verbs such as `doctor`, `init`, `install`, `inspect`, `audit`, `packs`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
 
 Use `--with-spec-kit` when you want Codex Enhancer to bootstrap official Spec Kit for Codex and install the bridge skills/guidance in the same flow. The preview shows the official bootstrap command first; the external Spec Kit download/setup only runs if you re-run with `--write`.
 
 Useful preview formats:
+- `doctor <repo>` or `--doctor --target <repo>` runs a read-only first-run diagnostic and prints the next useful commands for a source checkout, installed target, or plain repo.
 - `--summary` prints the shortest install, upgrade, refresh, pack, or bridge plan.
 - `--dry-run` makes the default preview behavior explicit for scripts and cautious first runs.
 - `--diff` adds a unified diff preview for planned text writes, proposals, managed-section refreshes, and `.gitignore` merges. Large per-file diffs are truncated by default; use `--diff-full` when you need the entire diff.
 - `--json` emits a versioned machine-readable plan or report for wrappers and CI.
 - `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files.
 
-JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
+JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
 
 List the currently available stack packs:
 
@@ -588,6 +592,7 @@ python scripts/check.py --verbose
 python -m unittest discover -s tests -p "test_*.py" -v
 python scripts/install_enhancer.py --list-packs
 python scripts/codex_enhancer_cli.py list-packs
+python scripts/codex_enhancer_cli.py doctor .
 python scripts/install_enhancer.py --target ../my-existing-repo --inspect-install
 python scripts/codex_enhancer_cli.py inspect ../my-existing-repo
 python scripts/codex_enhancer_cli.py audit ../my-existing-repo
@@ -614,6 +619,7 @@ What they do:
 - `python -m unittest discover -s tests -p "test_*.py" -v`: tests the validator itself
 - `python scripts/codex_enhancer_cli.py ...`: provides short subcommands over the same installer core
 - `python scripts/install_enhancer.py --list-packs`: prints the available stack packs
+- `python scripts/codex_enhancer_cli.py doctor ...`: reports whether a path looks like the enhancer source checkout, an installed target, or a plain repo, then prints the next useful commands
 - `python scripts/codex_enhancer_cli.py audit ...`: reports inherited generic guidance, placeholders, and unreviewed proposal files after install
 - `--summary`, `--diff`, and `--json`: switch installer previews between concise human output, text diffs, and machine-readable plans
 - `python scripts/install_enhancer.py --target ... --spec-kit-report`: prints a read-only Spec Kit feature-artifact report

@@ -20,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "First useful commands:\n"
+            "  codex-enhancer doctor .\n"
             "  codex-enhancer init ../my-repo --existing --summary\n"
             "  codex-enhancer init ../my-repo --existing --summary --diff\n"
             "  codex-enhancer inspect ../my-repo\n\n"
@@ -28,6 +29,14 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="run a read-only first-run diagnostic",
+    )
+    doctor.set_defaults(action="doctor")
+    doctor.add_argument("target", nargs="?", default=".", help="target repository path; defaults to the current directory")
+    add_output_options(doctor, include_plan_options=False)
 
     install = subparsers.add_parser(
         "install",
@@ -292,6 +301,11 @@ def selected_mode(args: argparse.Namespace) -> str:
 
 
 def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
+    if args.action == "doctor":
+        installer_args = ["--target", args.target, "--doctor"]
+        append_output_args(installer_args, args)
+        return installer_args
+
     if args.action == "list_packs":
         installer_args = ["--list-packs", "--mode", selected_mode(args)]
         if args.target:

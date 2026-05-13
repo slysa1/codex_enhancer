@@ -79,6 +79,27 @@ class CodexEnhancerCliTests(unittest.TestCase):
             ],
         )
 
+    def test_doctor_defaults_to_current_directory(self) -> None:
+        self.assertEqual(
+            self.translate(["doctor", "--json"]),
+            [
+                "--target",
+                ".",
+                "--doctor",
+                "--json",
+            ],
+        )
+
+    def test_doctor_translates_target_path(self) -> None:
+        self.assertEqual(
+            self.translate(["doctor", "../target"]),
+            [
+                "--target",
+                "../target",
+                "--doctor",
+            ],
+        )
+
     def test_install_translates_write_and_spec_kit_options(self) -> None:
         self.assertEqual(
             self.translate(

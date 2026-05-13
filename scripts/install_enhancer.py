@@ -173,6 +173,16 @@ class InstallInspection:
 
 
 @dataclass(frozen=True)
+class DoctorReport:
+    target: Path
+    repo_kind: str
+    source_checkout: bool
+    python_version: str
+    inspection: InstallInspection
+    next_steps: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ConflictSummary:
     critical_proposals: tuple[Path, ...]
     standard_proposals: tuple[Path, ...]
@@ -320,6 +330,63 @@ def inspect_install(target: Path) -> InstallInspection:
     )
 
 
+def build_doctor_report(target: Path) -> DoctorReport:
+    resolved_target = target.resolve()
+    inspection = inspect_install(resolved_target)
+    source_checkout = looks_like_source_repo(resolved_target)
+    installed = inspection.status != "not-installed"
+    if source_checkout:
+        repo_kind = "source-checkout"
+    elif installed:
+        repo_kind = "installed-target"
+    else:
+        repo_kind = "plain-repo"
+    return DoctorReport(
+        target=resolved_target,
+        repo_kind=repo_kind,
+        source_checkout=source_checkout,
+        python_version=f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        inspection=inspection,
+        next_steps=tuple(doctor_next_steps(resolved_target, repo_kind, inspection)),
+    )
+
+
+def _command_path(path: Path) -> str:
+    text = str(path)
+    return f'"{text}"' if any(character.isspace() for character in text) else text
+
+
+def doctor_next_steps(
+    target: Path,
+    repo_kind: str,
+    inspection: InstallInspection,
+) -> list[str]:
+    if repo_kind == "source-checkout":
+        return [
+            f"Run `{CHECK_COMMAND}` to validate the enhancer source checkout.",
+            f"Run `{TEST_COMMAND}` to exercise the full test suite.",
+            "Preview a target install with `python scripts/codex_enhancer_cli.py init ../target-repo --existing --summary`.",
+        ]
+
+    if repo_kind == "installed-target":
+        if inspection.status == "current":
+            status_step = "Run `codex-enhancer audit <target>` to check whether inherited guidance still needs adaptation."
+        else:
+            status_step = "Run `codex-enhancer upgrade <target> --summary` to preview reconcile work before applying it."
+        return [
+            status_step,
+            f"Run `{CHECK_COMMAND}` in the target repo.",
+            f"Run `{TEST_COMMAND}` in the target repo.",
+        ]
+
+    mode_flag = "--new" if infer_mode(target) == "new" else "--existing"
+    return [
+        f"Preview an install with `codex-enhancer init {_command_path(target)} {mode_flag} --summary`.",
+        "Add `--diff` if you want planned file content changes before applying.",
+        "Re-run with `--write` only after the preview looks right.",
+    ]
+
+
 def _format_string_list(values: tuple[str, ...]) -> str:
     if not values:
         return "none"
@@ -455,6 +522,40 @@ def format_install_inspection(inspection: InstallInspection) -> str:
             next_step,
         ]
     )
+    return "\n".join(lines)
+
+
+def format_doctor_report(report: DoctorReport) -> str:
+    inspection = report.inspection
+    lines = [
+        f"Codex Enhancer doctor for {report.target}",
+        "- Safety: read-only check; no files were changed.",
+        f"- Repo kind: `{report.repo_kind}`",
+        f"- Python: `{report.python_version}`",
+        f"- Source checkout: {'yes' if report.source_checkout else 'no'}",
+        f"- Install status: `{inspection.status}`",
+    ]
+    if inspection.target_version is not None:
+        lines.append(f"- Target enhancer version: `{inspection.target_version}`")
+    state = inspection.install_state
+    if state is not None:
+        lines.append(f"- Manifest schema: `{state.schema_version}`")
+        lines.append(f"- Selected packs: {_format_string_list(state.selected_packs)}")
+    lines.extend(
+        _format_spec_kit_lines(
+            inspection.spec_kit_bridge,
+            inspection.spec_kit_detection,
+            always_include=True,
+        )
+    )
+    lines.extend(
+        _format_utility_harness_lines(
+            inspection.utility_harness,
+            always_include=True,
+        )
+    )
+    lines.append("Next steps:")
+    lines.extend(f"- {step}" for step in report.next_steps)
     return "\n".join(lines)
 
 
@@ -2358,6 +2459,20 @@ def inspection_to_dict(inspection: InstallInspection) -> dict[str, object]:
     }
 
 
+def doctor_to_dict(report: DoctorReport) -> dict[str, object]:
+    return {
+        "schema_version": PLAN_JSON_SCHEMA_VERSION,
+        "kind": "doctor-report",
+        "target": str(report.target),
+        "repo_kind": report.repo_kind,
+        "source_checkout": report.source_checkout,
+        "python_version": report.python_version,
+        "install_status": report.inspection.status,
+        "install": inspection_to_dict(report.inspection),
+        "next_steps": list(report.next_steps),
+    }
+
+
 def adaptation_audit_to_dict(target: Path) -> dict[str, object]:
     findings = audit_adaptation(target)
     return {
@@ -2740,6 +2855,7 @@ def main(argv: list[str]) -> int:
         description=__doc__,
         epilog=(
             "Common previews:\n"
+            "  python scripts/install_enhancer.py --doctor --target ../repo\n"
             "  python scripts/install_enhancer.py --target ../repo --mode existing --summary\n"
             "  python scripts/install_enhancer.py --target ../repo --mode existing --summary --diff\n"
             "  python scripts/install_enhancer.py --target ../repo --inspect-install --json\n\n"
@@ -2755,6 +2871,11 @@ def main(argv: list[str]) -> int:
         "--list-packs",
         action="store_true",
         help="print the available stack packs and exit",
+    )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="run a read-only first-run diagnostic for a source checkout, installed target, or plain repo",
     )
     parser.add_argument(
         "--inspect-install",
@@ -2929,13 +3050,54 @@ def main(argv: list[str]) -> int:
         emit(message, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "error", "message": message})
         return 1
 
+    if args.doctor:
+        if (
+            args.list_packs
+            or args.inspect_install
+            or args.audit_adaptation
+            or args.spec_kit_report
+            or args.spec_kit_sync_report
+            or args.upgrade_enhancer
+            or args.manage_packs
+            or args.manage_spec_kit_bridge
+            or args.write
+            or args.force
+            or args.refresh_generated
+            or args.mode != "auto"
+            or args.use_recommended_packs
+            or args.pack
+            or args.no_pack
+            or args.add_pack
+            or args.remove_pack
+            or args.set_pack
+            or args.spec_kit_mode
+            or args.spec_kit_script != "auto"
+            or args.spec_kit_command_surface != "auto"
+            or args.spec_kit_version
+            or args.spec_kit_exe
+            or args.spec_kit_feature
+            or args.spec_kit_changed_path
+            or args.spec_kit_base
+            or args.utility_harness_mode
+            or args.summary
+            or args.diff
+            or args.diff_full
+        ):
+            return fail("--doctor is read-only and can only be combined with --target and --json.")
+        try:
+            report = build_doctor_report(Path(args.target or "."))
+        except ValueError as error:
+            return fail(str(error))
+        emit(format_doctor_report(report), doctor_to_dict(report))
+        return 0
+
     if args.list_packs and args.target is None:
         catalog = format_pack_catalog()
         emit(catalog, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "pack-catalog", "target": None, "text": catalog})
         return 0
 
     if args.target is None:
-        return fail("Missing required --target. Use --list-packs to inspect available stack packs without a target repo.")
+        return fail("Missing required --target. Use --doctor for a read-only check of the current directory or --list-packs to inspect available stack packs without a target repo.")
 
     target = Path(args.target).resolve()
 
