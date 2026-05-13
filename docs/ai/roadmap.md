@@ -3,7 +3,7 @@
 ## Purpose
 This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the implemented `3.x` lifecycle, Spec Kit bridge, Utility Harness, and packaging-readiness work. The core idea remains optional, visible, repo-local workflow guidance that improves Codex use without turning the enhancer into an agent runtime, package manager, or hidden orchestration layer.
 
-Sections through `3.4` are retained as design history and implementation context. The `4.0` product maturity work is retained as the completed audit-backed roadmap for first-time-user polish, safer command execution, packaging confidence, and integration-ready installer output.
+Sections through `3.4` are retained as design history and implementation context. The `4.0` product maturity work is retained as the completed audit-backed roadmap for first-time-user polish, safer command execution, packaging confidence, and integration-ready installer output. The `4.1` section is the active follow-up plan from a first-time-user product audit and should be treated as the next implementation contract.
 
 ## V2 Goals
 - Keep the root enhancer simple and readable.
@@ -1420,3 +1420,269 @@ Acceptance criteria:
 - Spec Kit bootstrap is explicit about prerequisites, version stability, and recovery
 - installer plans can be consumed by humans and machines without hidden state
 - Utility Harness dependencies are optional, explained, and scoped to Codex/operator use
+
+## 4.1 Audit-Derived Improvement Instructions
+
+Status: active. This section converts the first-time-user product audit into implementation instructions. The goal is not to add a large new feature surface; it is to make the existing enhancer easier to trust, harder to misuse, and clearer as a daily Codex workflow helper.
+
+### Goal
+Turn the audit findings into small, evidence-backed improvements that strengthen onboarding, write safety, roadmap clarity, packaging confidence, and real-world Codex workflow value without changing the enhancer's repo-local architecture.
+
+### Scope
+- shorten the first-run path and make source-checkout usage obvious before the installed command is shown
+- harden risky write flows so target repos cannot be modified on top of dirty worktrees without explicit operator intent
+- make external setup actions, especially Spec Kit bootstrap commands, visible in concise previews
+- add guardrails that prevent users from accidentally treating the enhancer source repo as an install target
+- clarify distribution status, Python support, POSIX shim behavior, and active versus historical roadmap material
+- add a concrete worked example showing how the enhancer changes a Codex-assisted workflow in practice
+- improve auditability for stack-pack detection, external links, and cross-platform release confidence
+
+### Non-Goals
+- no implementation of all audit findings in one patch
+- no hosted docs site, daemon, package manager, or background service
+- no AI-generated rewrite of target repo instructions
+- no automatic dependency install or network action in default dry-runs
+- no broad license change without an explicit project decision
+- no speculative metrics framework before there are stable real-world examples to measure
+
+### Existing Baseline To Preserve
+- dry-run-first installer behavior
+- proposal files for repo-owned conflicts
+- visible manifest ownership and managed sections
+- optional, evidence-backed stack packs
+- read-only Spec Kit reports and explicit bootstrap mode
+- Utility Harness dependencies isolated from production dependency files
+- zero third-party runtime dependencies for the enhancer command
+- canonical validation through `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`
+
+### 4.1 Step 1: First-Run Clarity And Proof Of Value
+Objective:
+- make a first-time user understand the install path, source-checkout commands, and practical value before they reach the reference sections
+
+Files to change:
+- `README.md`
+- `docs/ai/roadmap.md`
+- `docs/ai/architecture.md`, only if the product positioning changes
+- README mirror assets or packaging tests only if packaged documentation expectations change
+
+Files deliberately not added or changed:
+- no hosted documentation site
+- no new CLI behavior in this step
+- no new skill just to explain the enhancer
+
+Implementation steps:
+1. Add a 5-minute path near the top of the README with separate command lanes for source checkout, editable install, wheel install, and Windows GUI use.
+2. Move or link advanced material so the first screen answers: what this is, when to use it, when not to use it, and what a successful first workflow looks like.
+3. Add one concrete before/after walkthrough that shows a tiny target repo before install, the dry-run plan shape, the applied files, the adaptation audit, and the validation loop.
+4. Explain why the enhancer is useful compared with plain `AGENTS.md`, normal prompts, Claude Code conventions, official Spec Kit alone, and generic automation tools.
+5. Clarify distribution status so users know whether to install from source, a wheel artifact, or a published package channel.
+
+Validation:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- manual command audit for every command shown in the first-run path
+
+Main risk:
+- making the README longer without making it easier; solve by keeping the top path short and moving reference detail deeper.
+
+Acceptance criteria:
+- a new user can run a read-only first command from a fresh clone without first installing the console script
+- the README includes one evidence-backed before/after workflow
+- the README states the supported install channels and does not imply unverified publication
+
+### 4.1 Step 2: Write-Safety Guardrails
+Objective:
+- make `--write` safer for real projects by requiring explicit consent before modifying dirty target repos or source checkouts
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `scripts/codex_enhancer_cli.py`
+- `scripts/install_enhancer_gui.py`, if GUI parity is needed
+- `README.md`
+- installer and CLI tests under `tests/`
+
+Files deliberately not added or changed:
+- no hidden rollback database
+- no automatic stash, reset, checkout, or destructive cleanup
+- no write behavior that bypasses dry-run-first planning
+
+Implementation steps:
+1. Change dirty worktree handling from warning-only to blocked-by-default for write operations against git repos.
+2. Add an explicit override such as `--allow-dirty` with JSON and human diagnostics that name the risk.
+3. Add a source-checkout guard that refuses installing into the enhancer source repo unless an explicit escape hatch is provided.
+4. Preserve existing proposal-mode conflict behavior and make the new dirty/source guards appear before any external bootstrap or file write.
+5. Extend tests for clean targets, dirty targets, source-checkout targets, JSON error output, and override behavior.
+
+Validation:
+- focused installer and CLI tests for dirty/source guards
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- blocking legitimate advanced workflows; solve with an explicit, auditable override flag instead of removing the capability.
+
+Acceptance criteria:
+- `--write` exits before modifying a dirty git target unless the override is present
+- installing into the enhancer source checkout requires deliberate acknowledgement
+- diagnostics explain what the user should commit, stash manually, or re-run
+
+### 4.1 Step 3: External Action Transparency
+Objective:
+- make concise previews show enough information for users to audit external setup before applying changes
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `scripts/codex_enhancer_cli.py`
+- `scripts/install_enhancer_gui.py`, if summary previews are shared there
+- `docs/ai/spec-kit-bridge.md`
+- `README.md`
+- Spec Kit bridge and installer tests
+
+Files deliberately not added or changed:
+- no network action during dry-run
+- no vendored Spec Kit files
+- no hidden installer bootstrap step
+
+Implementation steps:
+1. Include exact external bootstrap commands, executable paths, pinned refs, and fallback hints in `--summary` output when external steps are planned.
+2. Keep full previews and JSON output aligned with the concise summary fields.
+3. Add a warning when a command requires network access or an executable that is not present.
+4. Keep external bootstrap ordering explicit: official tool first, enhancer-owned writes second.
+5. Test summary, full preview, JSON, and failure-path output for external steps.
+
+Validation:
+- focused Spec Kit bridge and installer tests
+- dry-run smoke for `init <probe> --new --with-spec-kit --summary`
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- leaking too much command detail into the concise view; solve by showing the command line and a short reason, with full detail still available elsewhere.
+
+Acceptance criteria:
+- a user can see the exact external command before approving `--write`
+- JSON and human previews agree on external step count, command, executable, and recovery hint
+- dry-runs never execute external bootstrap
+
+### 4.1 Step 4: Roadmap And Documentation Hygiene
+Objective:
+- make current priorities easy to find without deleting useful design history
+
+Files to change:
+- `docs/ai/roadmap.md`
+- `README.md`
+- `AGENTS.md`, only if the repo map or canonical guidance changes
+
+Files deliberately not added or changed:
+- no large archival migration unless the roadmap remains hard to scan after this step
+- no rewrite of completed history just to make old sections read like new work
+
+Implementation steps:
+1. Clearly label active, completed, and historical roadmap sections.
+2. Move stale-looking historical version notes into an explicit history subsection or add context that prevents them being read as active instructions.
+3. Add a short active-priorities summary that points to the current implementation steps.
+4. Keep README references to the roadmap accurate after any split or relabeling.
+
+Validation:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- manual scan for broken internal links and misleading "current" language
+
+Main risk:
+- losing useful design context; solve by relabeling first and splitting only if the file remains too heavy.
+
+Acceptance criteria:
+- the top of the roadmap identifies the active section in one paragraph
+- completed `4.0` work cannot be mistaken for the next implementation plan
+- old version notes are clearly historical
+
+### 4.1 Step 5: Cross-Platform And Release Confidence
+Objective:
+- increase confidence that documented install paths work outside the author's Windows source checkout
+
+Files to change:
+- `.github/workflows/validate.yml`
+- `pyproject.toml`
+- `MANIFEST.in`
+- `README.md`
+- `docs/ai/release.md`
+- `codex-enhancer`
+- packaging and CLI tests under `tests/`
+
+Files deliberately not added or changed:
+- no automatic release publisher
+- no committed build artifacts
+- no PyPI claim unless publication is verified
+
+Implementation steps:
+1. Decide whether Python `3.13+` is a hard requirement or can be broadened with tested support for older Python versions.
+2. Add or document a CI matrix for the chosen Python and operating-system support policy.
+3. Fix or document POSIX source-shim execution if the checkout command is advertised for macOS/Linux users.
+4. Keep wheel/sdist build checks and packaged asset smoke tests aligned with README install guidance.
+5. Make release docs state the supported distribution channels and what is intentionally unpublished.
+
+Validation:
+- packaging tests
+- wheel-installed `codex-enhancer list-packs` smoke
+- CI matrix, if added
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- widening support without actually testing it; solve by keeping the declared support policy exactly as broad as CI proves.
+
+Acceptance criteria:
+- README, `pyproject.toml`, release docs, and CI agree on Python support
+- documented source-checkout shims work or are replaced by explicit Python commands
+- users can tell whether the package is source-only, wheel-distributed, or published
+
+### 4.1 Step 6: Auditability And Trust Surfaces
+Objective:
+- help users trust what the enhancer detected, skipped, and validated
+
+Files to change:
+- `scripts/stack_packs.py`
+- `scripts/codex_enhancer_cli.py`
+- `scripts/enhancer_validator.py`
+- `README.md`
+- `docs/ai/release.md`, if external link checks become release-only
+- tests for pack reporting and validation
+
+Files deliberately not added or changed:
+- no remote telemetry
+- no broad semantic codebase index
+- no automatic fixes for every audit finding
+
+Implementation steps:
+1. Add a pack-explanation mode or enrich existing pack output so users can see evidence, skipped signals, and false-positive boundaries.
+2. Add an optional external-link check with timeouts and clear "unverified" reporting, or document that normal validation only checks local links.
+3. Add a small real-world evaluation checklist for whether the enhancer improved a Codex workflow, such as fewer repeated prompts, clearer validation commands, or safer handoff.
+4. Add targeted fixtures only for recurring bug classes or stable behavior, not speculative eval machinery.
+
+Validation:
+- stack-pack reporting tests
+- optional link-check tests with deterministic fixtures if implemented
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- turning trust work into noisy scoring; keep it evidence-based, explainable, and optional where external systems are involved.
+
+Acceptance criteria:
+- pack choices are explainable from visible repo evidence
+- documentation is clear about which links and facts are locally validated
+- the repo has a lightweight way to record whether the enhancer helped an actual Codex workflow
+
+### 4.1 Step 7: Larger Follow-Ups To Defer Until Needed
+Objective:
+- capture valuable audit findings that are real but should not displace the safer short-term work
+
+Candidate work:
+- minimal, standard, and full install profiles if file-count friction remains after onboarding improvements
+- transactional writes or a structured apply log if partial-write recovery remains a user trust blocker
+- Utility Harness dependency grouping if users report the helper dependency bundle feels too broad
+- license strategy review if broader organizational adoption is a goal
+- richer GUI QA once the CLI path is stable and the GUI is a common entrypoint
+
+Deferral rule:
+- start one of these only after a user report, repeated maintainer friction, or a targeted implementation plan shows that the smaller 4.1 steps are not enough.
