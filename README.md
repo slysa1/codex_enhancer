@@ -663,7 +663,7 @@ It is a map, not a dump of every durable rule.
 
 Use docs when guidance needs more explanation. Use `AGENTS.md` when guidance must be visible immediately.
 
-For the current enhancer evolution record, see [docs/ai/roadmap.md](docs/ai/roadmap.md). It records the shipped `2.x` and `3.x` design history, the completed `4.0` product-maturity roadmap, and the active `4.1` audit-derived follow-up plan for first-run clarity, write safety, release confidence, and trust surfaces.
+For the current enhancer evolution record, see the status table at the top of [docs/ai/roadmap.md](docs/ai/roadmap.md). It separates historical `2.x`/`3.x` design notes, the completed `4.0` product-maturity baseline, and the active `4.1` audit-derived follow-up plan for first-run clarity, write safety, release confidence, and trust surfaces.
 
 For upgrading existing installed repos, see [docs/ai/migration-v3.md](docs/ai/migration-v3.md). It gives the operator checklist for inspect, upgrade, pack management, refresh, proposal review, and validation.
 
