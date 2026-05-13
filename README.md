@@ -84,6 +84,8 @@ Do not use it if you want a packaged agent runtime, hidden orchestration layer, 
 - Python 3.13 or newer
 - Codex or another environment that understands repo-local `AGENTS.md` and skills
 
+Support policy: package metadata requires Python `>=3.13`, and CI proves Python 3.13 on Ubuntu, Windows, and macOS. Do not claim older Python support until the CI matrix tests it.
+
 The current source-repo implementation has no runtime third-party Python dependencies. The optional Utility Harness can scaffold a target-repo `requirements-codex.txt` for Codex/operator helper tooling, but the installer never installs those packages automatically.
 
 Spec Kit bootstrap is the only normal path that expects an external executable. `--with-spec-kit` or `--spec-kit-mode bootstrap` uses `uvx` by default and pins the official bootstrap ref used by this enhancer release. Use `--spec-kit-exe <path>` when you already have a local `specify`-compatible executable or want to avoid `uvx`. Previews show the exact bootstrap command, executable status, pinned ref, network warning, and recovery hint before any `--write` apply.
@@ -151,7 +153,7 @@ The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gu
 If you prefer the CLI or want to script installs, use the commands below.
 CLI dry-runs now preview the same pack-aware "after install" guidance that the GUI shows before you rerun with `--write`. Detected pack lines include the exact evidence the installer used, such as matched files, package-manager fields, lockfiles, relevant scripts, dependencies, and Python tool tables.
 
-For a shorter command surface from a source checkout, use [scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py), or put this checkout on `PATH` and run the [codex-enhancer](codex-enhancer) shim. On Windows, [codex-enhancer.bat](codex-enhancer.bat) exposes the same subcommands:
+For a shorter command surface from a source checkout, use [scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py), or put this checkout on `PATH` and run the [codex-enhancer](codex-enhancer) shim. On POSIX systems, run `python codex-enhancer ...` if your checkout did not preserve the shim's executable bit. On Windows, [codex-enhancer.bat](codex-enhancer.bat) exposes the same subcommands:
 
 ```bash
 python scripts/codex_enhancer_cli.py list-packs
@@ -709,7 +711,7 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 [install_enhancer.bat](install_enhancer.bat) is the easiest Windows entrypoint. Double-click it or run it from `cmd`/PowerShell to launch the GUI installer without typing the Python command yourself.
 
 ### `codex-enhancer`
-[codex-enhancer](codex-enhancer) and [codex-enhancer.bat](codex-enhancer.bat) are source-checkout shims for the friendly CLI facade. They are convenience entrypoints only; the installer core remains [scripts/install_enhancer.py](scripts/install_enhancer.py).
+[codex-enhancer](codex-enhancer) and [codex-enhancer.bat](codex-enhancer.bat) are source-checkout shims for the friendly CLI facade. The POSIX shim has a Python shebang; use `python codex-enhancer ...` as the fallback when a copied checkout loses executable permissions. They are convenience entrypoints only; the installer core remains [scripts/install_enhancer.py](scripts/install_enhancer.py).
 
 ### `scripts/enhancer_spec.py`
 [scripts/enhancer_spec.py](scripts/enhancer_spec.py) is the shared source of truth for:
