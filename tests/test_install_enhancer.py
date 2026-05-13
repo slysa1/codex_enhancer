@@ -119,6 +119,25 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertIn("node-api-service", output)
         self.assertIn("library-package", output)
 
+    def test_list_packs_with_target_explains_detection_audit(self) -> None:
+        with repo_fixture("list_packs_audit") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, output = run_installer(["--list-packs", "--target", str(install_target)])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Detection audit:", output)
+            self.assertIn("Evidence is local only", output)
+            self.assertIn("This report does not select packs", output)
+            self.assertIn("Signals checked:", output)
+            self.assertIn("required files: package.json", output)
+            self.assertIn("optional detection signals: globs tsconfig*.json", output)
+            self.assertIn("False-positive boundary:", output)
+            self.assertIn("javascript-typescript-app", output)
+            self.assertIn("status: recommended", output)
+            self.assertIn("evidence: found package.json; matched tsconfig.json", output)
+
     def test_doctor_reports_plain_repo_first_run_path(self) -> None:
         with repo_fixture("doctor_plain") as install_target:
             write_file(install_target, "README.md", "# Demo\n")
@@ -418,19 +437,110 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("bootstrap", plan.spec_kit_bridge.mode)
             self.assertIn("docs/ai/spec-kit-bridge.md", plan.manifest_preview)
 
+    def test_bootstrap_external_step_is_auditable_in_human_previews(self) -> None:
+        with repo_fixture("install_bootstrap_preview") as install_target:
+            plan = build_install_plan(
+                install_target,
+                mode="new",
+                spec_kit_mode="bootstrap",
+                spec_kit_script="ps",
+                spec_kit_version="v0.8.3",
+            )
+
+            with patch.object(install_enhancer.shutil, "which", return_value=None):
+                summary = install_enhancer.format_plan_report(plan, write=False, summary=True)
+                full_preview = install_enhancer.format_plan_report(plan, write=False)
+                gui_preview = build_plan_preview(plan)
+
+            for rendered in (summary, full_preview, gui_preview):
+                self.assertIn("uvx --from git+https://github.com/github/spec-kit.git@v0.8.3", rendered)
+                self.assertIn("executable", rendered)
+                self.assertIn("not found on PATH", rendered)
+                self.assertIn("pinned ref", rendered)
+                self.assertIn("v0.8.3", rendered)
+                self.assertIn("network", rendered)
+                self.assertIn("--spec-kit-exe <path>", rendered)
+                self.assertIn("before enhancer-owned writes", rendered)
+
+    def test_bootstrap_external_step_is_auditable_in_json_preview(self) -> None:
+        with repo_fixture("install_bootstrap_json") as install_target:
+            with patch.object(install_enhancer.shutil, "which", return_value=None):
+                exit_code, output = run_installer(
+                    [
+                        "--target",
+                        str(install_target),
+                        "--mode",
+                        "new",
+                        "--spec-kit-mode",
+                        "bootstrap",
+                        "--spec-kit-script",
+                        "ps",
+                        "--spec-kit-version",
+                        "v0.8.3",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(len(payload["external_steps"]), 1)
+            step = payload["external_steps"][0]
+            self.assertIn("uvx --from git+https://github.com/github/spec-kit.git@v0.8.3", step["command"])
+            self.assertEqual(step["executable"], "uvx")
+            self.assertFalse(step["executable_found"])
+            self.assertEqual(step["executable_status"], "not found on PATH")
+            self.assertEqual(step["pinned_ref"], "v0.8.3")
+            self.assertTrue(step["requires_network"])
+            self.assertEqual(step["order"], "before-enhancer-writes")
+            self.assertIn("--spec-kit-exe <path>", step["recovery_hint"])
+
+    def test_bootstrap_dry_run_does_not_execute_external_step(self) -> None:
+        with repo_fixture("install_bootstrap_dry_run") as install_target:
+            with patch.object(
+                install_enhancer,
+                "run_external_step",
+                side_effect=AssertionError("dry run executed external step"),
+            ):
+                exit_code, output = run_installer(
+                    [
+                        "--target",
+                        str(install_target),
+                        "--mode",
+                        "new",
+                        "--spec-kit-mode",
+                        "bootstrap",
+                        "--summary",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("External steps: 1", output)
+            self.assertFalse((install_target / ".specify").exists())
+
     def test_install_bootstrap_mode_write_runs_external_step(self) -> None:
         with repo_fixture("install_bootstrap_write") as parent:
             install_target = parent / "repo"
-            fake_specify = parent / "fake-specify.cmd"
-            fake_specify.write_text(
-                "@echo off\r\n"
-                "mkdir .specify\\memory >nul 2>nul\r\n"
-                "mkdir specs >nul 2>nul\r\n"
-                "mkdir .agents\\skills\\speckit-plan >nul 2>nul\r\n"
-                "echo # Constitution> .specify\\memory\\constitution.md\r\n"
-                "echo # Plan> .agents\\skills\\speckit-plan\\SKILL.md\r\n",
-                encoding="utf-8",
-            )
+            if sys.platform == "win32":
+                fake_specify = parent / "fake-specify.cmd"
+                fake_specify.write_text(
+                    "@echo off\r\n"
+                    "mkdir .specify\\memory >nul 2>nul\r\n"
+                    "mkdir specs >nul 2>nul\r\n"
+                    "mkdir .agents\\skills\\speckit-plan >nul 2>nul\r\n"
+                    "echo # Constitution> .specify\\memory\\constitution.md\r\n"
+                    "echo # Plan> .agents\\skills\\speckit-plan\\SKILL.md\r\n",
+                    encoding="utf-8",
+                )
+            else:
+                fake_specify = parent / "fake-specify"
+                fake_specify.write_text(
+                    "#!/bin/sh\n"
+                    "mkdir -p .specify/memory specs .agents/skills/speckit-plan\n"
+                    "printf '# Constitution\\n' > .specify/memory/constitution.md\n"
+                    "printf '# Plan\\n' > .agents/skills/speckit-plan/SKILL.md\n",
+                    encoding="utf-8",
+                )
+                fake_specify.chmod(0o755)
 
             exit_code, _ = run_installer(
                 [
@@ -1077,7 +1187,10 @@ class InstallEnhancerTests(unittest.TestCase):
     def test_json_output_covers_read_only_reports_and_errors(self) -> None:
         exit_code, output = run_installer(["--list-packs", "--json"])
         self.assertEqual(exit_code, 0)
-        self.assertEqual(json.loads(output)["kind"], "pack-catalog")
+        pack_catalog = json.loads(output)
+        self.assertEqual(pack_catalog["kind"], "pack-catalog")
+        self.assertIn("packs", pack_catalog)
+        self.assertIn("detection_signals", pack_catalog["packs"][0])
 
         exit_code, output = run_installer(["--mode", "new", "--json"])
         self.assertEqual(exit_code, 1)
@@ -1112,6 +1225,31 @@ class InstallEnhancerTests(unittest.TestCase):
             )
             self.assertEqual(exit_code, 0)
             self.assertEqual(json.loads(output)["kind"], "spec-kit-sync-report")
+
+    def test_json_pack_catalog_with_target_includes_structured_detection_evidence(self) -> None:
+        with repo_fixture("json_pack_catalog_target") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, output = run_installer(["--list-packs", "--target", str(install_target), "--json"])
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["kind"], "pack-catalog")
+            self.assertEqual(payload["target"], str(install_target.resolve()))
+            self.assertIn("Detection uses only local", payload["notes"][0])
+
+            javascript_pack = next(
+                pack for pack in payload["packs"] if pack["name"] == "javascript-typescript-app"
+            )
+            self.assertEqual(javascript_pack["status"], "recommended")
+            self.assertTrue(javascript_pack["detected"])
+            self.assertTrue(javascript_pack["recommended"])
+            self.assertEqual(javascript_pack["detection_signals"]["all_files"], ["package.json"])
+            self.assertIn("tsconfig*.json", javascript_pack["detection_signals"]["any_globs"])
+            self.assertIn("found package.json", javascript_pack["evidence"])
+            self.assertIn("matched tsconfig.json", javascript_pack["evidence"])
+            self.assertIn("package.json exists only", javascript_pack["guidance"]["skip_when"][0])
 
     def test_json_output_covers_management_plan_operations(self) -> None:
         with repo_fixture("json_management") as install_target:
@@ -2898,8 +3036,14 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             source_label="official Spec Kit bootstrap",
         )
 
-        with self.assertRaisesRegex(RuntimeError, "was not found"):
+        with self.assertRaisesRegex(RuntimeError, "was not found") as captured:
             install_enhancer.run_external_step(step)
+
+        message = str(captured.exception)
+        self.assertIn("Command:", message)
+        self.assertIn(missing_executable, message)
+        self.assertIn("Working directory:", message)
+        self.assertIn("Recovery:", message)
 
 
 if __name__ == "__main__":

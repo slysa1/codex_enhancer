@@ -27,6 +27,7 @@ else:
 from codex_enhancer.package_assets import asset_path
 from scripts.install_enhancer import (
     GENERATED_OUTPUT_DESTINATIONS,
+    EXTERNAL_STEP_ORDER_NOTE,
     SOURCE_ALIGNED_UPGRADE_DESTINATIONS,
     InstallPlan,
     apply_install_plan,
@@ -36,6 +37,7 @@ from scripts.install_enhancer import (
     build_upgrade_plan,
     format_after_install_preview,
     format_conflict_severity_lines,
+    format_external_step_summary_lines,
     format_next_steps,
     format_output_ownership_lines,
     format_pack_decision_hint,
@@ -284,8 +286,9 @@ def format_spec_kit_entries(plan: InstallPlan) -> list[str]:
             commands = ", ".join(f"`{command}`" for command in plan.spec_kit_bridge.available_commands)
             entries.append(f"- Bridge-aware commands: {commands}")
         if plan.external_steps:
+            entries.append(f"- Bootstrap order: {EXTERNAL_STEP_ORDER_NOTE}")
             for step in plan.external_steps:
-                entries.append("- Bootstrap command: " + " ".join(step.argv))
+                entries.extend(format_external_step_summary_lines(step))
     detection = plan.spec_kit_detection
     if detection is not None and detection.detected:
         entries.extend(render_spec_kit_detection_lines(detection))
