@@ -925,7 +925,7 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertEqual(payload["diagnostics"], [])
             self.assertIn("next_steps", payload)
 
-    def test_write_plan_warns_about_existing_git_changes(self) -> None:
+    def test_write_plan_blocks_existing_git_changes_by_default(self) -> None:
         with repo_fixture("write_safety_dirty") as install_target:
             write_file(install_target, ".git/HEAD", "ref: refs/heads/main\n")
             write_file(install_target, "README.md", "# Existing local work\n")
@@ -952,11 +952,46 @@ class InstallEnhancerTests(unittest.TestCase):
                     ]
                 )
 
-            self.assertEqual(exit_code, 0)
-            self.assertIn("Write safety:", output)
+            self.assertEqual(exit_code, 1)
+            self.assertIn("Write safety blocked apply:", output)
             self.assertIn("Target git worktree already has 1 local change(s)", output)
             self.assertIn("Review `git status --short`", output)
+            self.assertIn("--allow-dirty", output)
             self.assertIn("?? README.md", output)
+            self.assertFalse((install_target / "AGENTS.md").exists())
+
+    def test_write_plan_allows_dirty_target_with_explicit_override(self) -> None:
+        with repo_fixture("write_safety_allow_dirty") as install_target:
+            write_file(install_target, ".git/HEAD", "ref: refs/heads/main\n")
+            write_file(install_target, "README.md", "# Existing local work\n")
+            git_status = subprocess.CompletedProcess(
+                args=("git", "status", "--short"),
+                returncode=0,
+                stdout="?? README.md\n",
+                stderr="",
+            )
+
+            with (
+                patch.object(install_enhancer.shutil, "which", return_value="git"),
+                patch.object(install_enhancer.subprocess, "run", return_value=git_status),
+            ):
+                exit_code, output = run_installer(
+                    [
+                        "--target",
+                        str(install_target),
+                        "--mode",
+                        "existing",
+                        "--write",
+                        "--force",
+                        "--allow-dirty",
+                        "--summary",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Write safety:", output)
+            self.assertIn("warning: Target git worktree already has 1 local change(s)", output)
+            self.assertTrue((install_target / "AGENTS.md").exists())
 
     def test_write_plan_json_includes_git_change_diagnostics(self) -> None:
         with repo_fixture("write_safety_json") as install_target:
@@ -985,11 +1020,59 @@ class InstallEnhancerTests(unittest.TestCase):
                     ]
                 )
 
-            self.assertEqual(exit_code, 0)
+            self.assertEqual(exit_code, 1)
             payload = json.loads(output)
-            self.assertEqual(payload["diagnostics"][0]["severity"], "warning")
+            self.assertEqual(payload["kind"], "error")
+            self.assertEqual(payload["diagnostics"][0]["severity"], "error")
             self.assertEqual(payload["diagnostics"][0]["code"], "dirty-git-worktree")
             self.assertIn("?? README.md", payload["diagnostics"][0]["details"])
+
+    def test_write_plan_blocks_source_checkout_target_by_default(self) -> None:
+        with repo_fixture("write_safety_source") as install_target:
+            write_file(install_target, "scripts/install_enhancer.py", "# source marker\n")
+            write_file(install_target, "docs/ai/roadmap.md", "# source marker\n")
+            write_file(install_target, "scaffold/target-repo/AGENTS.md", "# source marker\n")
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--write",
+                    "--force",
+                    "--summary",
+                ]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("source checkout", output)
+            self.assertIn("--allow-source-target", output)
+            self.assertFalse((install_target / ".codex/enhancer/manifest.toml").exists())
+
+    def test_write_plan_allows_source_checkout_with_explicit_override(self) -> None:
+        with repo_fixture("write_safety_source_allowed") as install_target:
+            write_file(install_target, "scripts/install_enhancer.py", "# source marker\n")
+            write_file(install_target, "docs/ai/roadmap.md", "# source marker\n")
+            write_file(install_target, "scaffold/target-repo/AGENTS.md", "# source marker\n")
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--write",
+                    "--force",
+                    "--allow-source-target",
+                    "--summary",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Write safety:", output)
+            self.assertIn("warning: Target looks like the Codex Enhancer source checkout", output)
+            self.assertTrue((install_target / ".codex/enhancer/manifest.toml").exists())
 
     def test_json_output_covers_read_only_reports_and_errors(self) -> None:
         exit_code, output = run_installer(["--list-packs", "--json"])

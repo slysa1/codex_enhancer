@@ -187,6 +187,16 @@ def add_write_options(parser: argparse.ArgumentParser, *, include_force: bool) -
         action="store_false",
         help="preview the plan without writing files; this is the default",
     )
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="allow --write when the target git worktree is dirty or cannot be verified clean",
+    )
+    parser.add_argument(
+        "--allow-source-target",
+        action="store_true",
+        help="allow --write when the target looks like the Codex Enhancer source checkout",
+    )
     parser.set_defaults(write=False)
     if include_force:
         parser.add_argument(
@@ -321,6 +331,7 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
             installer_args.append("--write")
         if args.force:
             installer_args.append("--force")
+        append_write_safety_args(installer_args, args)
         if args.use_recommended_packs:
             installer_args.append("--use-recommended-packs")
         for pack in args.pack:
@@ -346,6 +357,7 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         installer_args.append("--upgrade-enhancer")
         if args.write:
             installer_args.append("--write")
+        append_write_safety_args(installer_args, args)
         append_output_args(installer_args, args)
         append_spec_kit_args(installer_args, args)
         append_utility_harness_args(installer_args, args)
@@ -355,6 +367,7 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         installer_args.append("--refresh-generated")
         if args.write:
             installer_args.append("--write")
+        append_write_safety_args(installer_args, args)
         append_output_args(installer_args, args)
         return installer_args
 
@@ -362,6 +375,7 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         installer_args.append("--manage-spec-kit-bridge")
         if args.write:
             installer_args.append("--write")
+        append_write_safety_args(installer_args, args)
         append_output_args(installer_args, args)
         append_spec_kit_args(installer_args, args)
         return installer_args
@@ -388,6 +402,7 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         installer_args.append("--manage-packs")
         if args.write:
             installer_args.append("--write")
+        append_write_safety_args(installer_args, args)
         append_output_args(installer_args, args)
         for pack in args.add_pack:
             installer_args.extend(["--add-pack", pack])
@@ -422,6 +437,13 @@ def append_output_args(installer_args: list[str], args: argparse.Namespace) -> N
         installer_args.append("--diff-full")
     if getattr(args, "json", False):
         installer_args.append("--json")
+
+
+def append_write_safety_args(installer_args: list[str], args: argparse.Namespace) -> None:
+    if args.allow_dirty:
+        installer_args.append("--allow-dirty")
+    if args.allow_source_target:
+        installer_args.append("--allow-source-target")
 
 
 def append_utility_harness_args(installer_args: list[str], args: argparse.Namespace) -> None:

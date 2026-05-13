@@ -2644,20 +2644,46 @@ def _truncated_status_details(status_lines: tuple[str, ...], *, limit: int = 8) 
     return (*status_lines[:limit], f"... {hidden} more local change(s) not shown.")
 
 
-def collect_write_safety_diagnostics(target: Path) -> tuple[WriteSafetyDiagnostic, ...]:
+def _blocking_or_warning(blocked: bool) -> str:
+    return "error" if blocked else "warning"
+
+
+def collect_write_safety_diagnostics(
+    target: Path,
+    *,
+    allow_dirty: bool = False,
+    allow_source_target: bool = False,
+) -> tuple[WriteSafetyDiagnostic, ...]:
+    diagnostics: list[WriteSafetyDiagnostic] = []
+    if target.exists() and target.is_dir() and looks_like_source_repo(target):
+        diagnostics.append(
+            WriteSafetyDiagnostic(
+                severity=_blocking_or_warning(not allow_source_target),
+                code="source-checkout-target",
+                message=(
+                    "Target looks like the Codex Enhancer source checkout, not an install target. "
+                    "Installing into it can create proposal files and confusing scaffold drift."
+                ),
+                details=(
+                    "Use a separate target repo path, or rerun with --allow-source-target if this is deliberate.",
+                ),
+            )
+        )
+
     if not target.exists() or not target.is_dir() or not (target / ".git").exists():
-        return ()
+        return tuple(diagnostics)
 
     git = shutil.which("git")
     if git is None:
-        return (
+        diagnostics.append(
             WriteSafetyDiagnostic(
-                severity="warning",
+                severity=_blocking_or_warning(not allow_dirty),
                 code="git-status-unavailable",
-                message="Target has .git metadata, but `git` was not found; review local changes before applying.",
-                details=("Install Git or inspect the target manually before rerunning with --write.",),
-            ),
+                message="Target has .git metadata, but `git` was not found; clean state cannot be verified.",
+                details=("Install Git, inspect the target manually, or rerun with --allow-dirty if this is deliberate.",),
+            )
         )
+        return tuple(diagnostics)
 
     try:
         completed = subprocess.run(
@@ -2668,26 +2694,28 @@ def collect_write_safety_diagnostics(target: Path) -> tuple[WriteSafetyDiagnosti
             timeout=GIT_STATUS_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as error:
-        return (
+        diagnostics.append(
             WriteSafetyDiagnostic(
-                severity="warning",
+                severity=_blocking_or_warning(not allow_dirty),
                 code="git-status-unavailable",
                 message="Target has .git metadata, but `git status --short` could not run.",
-                details=(str(error),),
-            ),
+                details=(str(error), "Rerun with --allow-dirty only if applying over this state is deliberate."),
+            )
         )
+        return tuple(diagnostics)
     except subprocess.TimeoutExpired:
-        return (
+        diagnostics.append(
             WriteSafetyDiagnostic(
-                severity="warning",
+                severity=_blocking_or_warning(not allow_dirty),
                 code="git-status-timeout",
                 message=(
                     f"`git status --short` timed out after {GIT_STATUS_TIMEOUT_SECONDS} seconds; "
-                    "review local changes before applying."
+                    "clean state cannot be verified."
                 ),
-                details=("Run `git status --short` in the target repo, then rerun the enhancer command.",),
-            ),
+                details=("Run `git status --short` in the target repo, or rerun with --allow-dirty if this is deliberate.",),
+            )
         )
+        return tuple(diagnostics)
 
     if completed.returncode != 0:
         details = tuple(
@@ -2695,30 +2723,34 @@ def collect_write_safety_diagnostics(target: Path) -> tuple[WriteSafetyDiagnosti
             for line in (completed.stderr or completed.stdout).splitlines()
             if line.strip()
         )
-        return (
+        diagnostics.append(
             WriteSafetyDiagnostic(
-                severity="warning",
+                severity=_blocking_or_warning(not allow_dirty),
                 code="git-status-failed",
-                message="Target has .git metadata, but `git status --short` failed; review local changes before applying.",
-                details=details or (f"git exited with code {completed.returncode}",),
-            ),
+                message="Target has .git metadata, but `git status --short` failed; clean state cannot be verified.",
+                details=(details or (f"git exited with code {completed.returncode}",))
+                + ("Rerun with --allow-dirty only if applying over this state is deliberate.",),
+            )
         )
+        return tuple(diagnostics)
 
     status_lines = tuple(line for line in completed.stdout.splitlines() if line.strip())
     if not status_lines:
-        return ()
+        return tuple(diagnostics)
 
-    return (
+    diagnostics.append(
         WriteSafetyDiagnostic(
-            severity="warning",
+            severity=_blocking_or_warning(not allow_dirty),
             code="dirty-git-worktree",
             message=(
                 f"Target git worktree already has {len(status_lines)} local change(s) before enhancer apply. "
                 "Review `git status --short` or commit/stash unrelated work first."
             ),
-            details=_truncated_status_details(status_lines),
-        ),
+            details=_truncated_status_details(status_lines)
+            + ("Rerun with --allow-dirty only if applying over this state is deliberate.",),
+        )
     )
+    return tuple(diagnostics)
 
 
 def format_write_safety_lines(diagnostics: tuple[WriteSafetyDiagnostic, ...]) -> list[str]:
@@ -2731,6 +2763,23 @@ def format_write_safety_lines(diagnostics: tuple[WriteSafetyDiagnostic, ...]) ->
         for detail in diagnostic.details:
             lines.append(f"  {detail}")
     return lines
+
+
+def has_blocking_write_safety_diagnostics(
+    diagnostics: tuple[WriteSafetyDiagnostic, ...],
+) -> bool:
+    return any(diagnostic.severity == "error" for diagnostic in diagnostics)
+
+
+def format_write_safety_block_message(
+    diagnostics: tuple[WriteSafetyDiagnostic, ...],
+) -> str:
+    lines = ["Write safety blocked apply:"]
+    for diagnostic in diagnostics:
+        lines.append(f"- {diagnostic.severity}: {diagnostic.message}")
+        for detail in diagnostic.details:
+            lines.append(f"  {detail}")
+    return "\n".join(lines)
 
 
 def format_plan_report(
@@ -2988,7 +3037,21 @@ def build_apply_failure_message(
     return "\n".join(lines)
 
 
-def apply_install_plan(plan: InstallPlan, progress_callback: ProgressCallback | None = None) -> None:
+def apply_install_plan(
+    plan: InstallPlan,
+    progress_callback: ProgressCallback | None = None,
+    *,
+    allow_dirty: bool = False,
+    allow_source_target: bool = False,
+) -> None:
+    diagnostics = collect_write_safety_diagnostics(
+        plan.target,
+        allow_dirty=allow_dirty,
+        allow_source_target=allow_source_target,
+    )
+    if has_blocking_write_safety_diagnostics(diagnostics):
+        raise RuntimeError(format_write_safety_block_message(diagnostics))
+
     total_steps = len(plan.external_steps) + len(plan.writes) + (1 if plan.gitignore is not None else 0)
     current_step = 0
     completed_paths: list[Path] = []
@@ -3192,6 +3255,16 @@ def main(argv: list[str]) -> int:
         help="overwrite colliding files instead of writing proposals under .codex/enhancer-proposals/",
     )
     parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="allow --write when git status is dirty or cannot verify a clean target worktree",
+    )
+    parser.add_argument(
+        "--allow-source-target",
+        action="store_true",
+        help="allow --write when the target looks like the Codex Enhancer source checkout",
+    )
+    parser.add_argument(
         "--use-recommended-packs",
         action="store_true",
         help="select all detected stack packs that are marked as recommended",
@@ -3261,12 +3334,17 @@ def main(argv: list[str]) -> int:
     def emit(text: str, data: dict[str, object] | None = None) -> None:
         print(format_json(data) if args.json and data is not None else text)
 
-    def fail(message: str) -> int:
-        emit(message, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "error", "message": message})
+    def fail(message: str, extra: dict[str, object] | None = None) -> int:
+        payload = {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "error", "message": message}
+        if extra:
+            payload.update(extra)
+        emit(message, payload)
         return 1
 
-    def emit_plan(plan: InstallPlan) -> None:
-        diagnostics = collect_write_safety_diagnostics(plan.target) if args.write else ()
+    def emit_plan(
+        plan: InstallPlan,
+        diagnostics: tuple[WriteSafetyDiagnostic, ...] = (),
+    ) -> None:
         emit(
             format_plan_report(
                 plan,
@@ -3278,6 +3356,33 @@ def main(argv: list[str]) -> int:
             ),
             plan_to_dict(plan, write=args.write, diagnostics=diagnostics),
         )
+
+    def emit_plan_and_apply(plan: InstallPlan) -> int:
+        diagnostics = (
+            collect_write_safety_diagnostics(
+                plan.target,
+                allow_dirty=args.allow_dirty,
+                allow_source_target=args.allow_source_target,
+            )
+            if args.write
+            else ()
+        )
+        if args.write and has_blocking_write_safety_diagnostics(diagnostics):
+            return fail(
+                format_write_safety_block_message(diagnostics),
+                {"diagnostics": [_write_safety_to_dict(diagnostic) for diagnostic in diagnostics]},
+            )
+        emit_plan(plan, diagnostics)
+        if args.write:
+            try:
+                apply_install_plan(
+                    plan,
+                    allow_dirty=args.allow_dirty,
+                    allow_source_target=args.allow_source_target,
+                )
+            except RuntimeError as error:
+                return fail(str(error))
+        return 0
 
     if args.doctor:
         if (
@@ -3291,6 +3396,8 @@ def main(argv: list[str]) -> int:
             or args.manage_spec_kit_bridge
             or args.write
             or args.force
+            or args.allow_dirty
+            or args.allow_source_target
             or args.refresh_generated
             or args.mode != "auto"
             or args.use_recommended_packs
@@ -3356,6 +3463,8 @@ def main(argv: list[str]) -> int:
         or args.manage_spec_kit_bridge
         or args.write
         or args.force
+        or args.allow_dirty
+        or args.allow_source_target
         or args.refresh_generated
         or args.use_recommended_packs
         or args.pack
@@ -3401,6 +3510,8 @@ def main(argv: list[str]) -> int:
         or args.manage_spec_kit_bridge
         or args.write
         or args.force
+        or args.allow_dirty
+        or args.allow_source_target
         or args.refresh_generated
         or args.use_recommended_packs
         or args.pack
@@ -3433,9 +3544,10 @@ def main(argv: list[str]) -> int:
         args.upgrade_enhancer
         or args.manage_packs
         or args.manage_spec_kit_bridge
-        or
-        args.write
+        or args.write
         or args.force
+        or args.allow_dirty
+        or args.allow_source_target
         or args.refresh_generated
         or args.use_recommended_packs
         or args.pack
@@ -3497,13 +3609,7 @@ def main(argv: list[str]) -> int:
             )
         except ValueError as error:
             return fail(str(error))
-        emit_plan(plan)
-        if args.write:
-            try:
-                apply_install_plan(plan)
-            except RuntimeError as error:
-                return fail(str(error))
-        return 0
+        return emit_plan_and_apply(plan)
 
     if args.manage_spec_kit_bridge and (
         args.force
@@ -3534,13 +3640,7 @@ def main(argv: list[str]) -> int:
             )
         except ValueError as error:
             return fail(str(error))
-        emit_plan(plan)
-        if args.write:
-            try:
-                apply_install_plan(plan)
-            except RuntimeError as error:
-                return fail(str(error))
-        return 0
+        return emit_plan_and_apply(plan)
 
     if (args.add_pack or args.remove_pack or args.set_pack) and not args.manage_packs:
         return fail("--add-pack, --remove-pack, and --set-pack require --manage-packs.")
@@ -3574,13 +3674,7 @@ def main(argv: list[str]) -> int:
             )
         except ValueError as error:
             return fail(str(error))
-        emit_plan(plan)
-        if args.write:
-            try:
-                apply_install_plan(plan)
-            except RuntimeError as error:
-                return fail(str(error))
-        return 0
+        return emit_plan_and_apply(plan)
 
     if args.refresh_generated and args.force:
         return fail("--refresh-generated only updates safe managed outputs and does not accept --force.")
@@ -3627,14 +3721,7 @@ def main(argv: list[str]) -> int:
     except ValueError as error:
         return fail(str(error))
 
-    emit_plan(plan)
-
-    if args.write:
-        try:
-            apply_install_plan(plan)
-        except RuntimeError as error:
-            return fail(str(error))
-    return 0
+    return emit_plan_and_apply(plan)
 
 
 if __name__ == "__main__":
