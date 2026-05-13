@@ -418,6 +418,86 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("bootstrap", plan.spec_kit_bridge.mode)
             self.assertIn("docs/ai/spec-kit-bridge.md", plan.manifest_preview)
 
+    def test_bootstrap_external_step_is_auditable_in_human_previews(self) -> None:
+        with repo_fixture("install_bootstrap_preview") as install_target:
+            plan = build_install_plan(
+                install_target,
+                mode="new",
+                spec_kit_mode="bootstrap",
+                spec_kit_script="ps",
+                spec_kit_version="v0.8.3",
+            )
+
+            with patch.object(install_enhancer.shutil, "which", return_value=None):
+                summary = install_enhancer.format_plan_report(plan, write=False, summary=True)
+                full_preview = install_enhancer.format_plan_report(plan, write=False)
+                gui_preview = build_plan_preview(plan)
+
+            for rendered in (summary, full_preview, gui_preview):
+                self.assertIn("uvx --from git+https://github.com/github/spec-kit.git@v0.8.3", rendered)
+                self.assertIn("executable", rendered)
+                self.assertIn("not found on PATH", rendered)
+                self.assertIn("pinned ref", rendered)
+                self.assertIn("v0.8.3", rendered)
+                self.assertIn("network", rendered)
+                self.assertIn("--spec-kit-exe <path>", rendered)
+                self.assertIn("before enhancer-owned writes", rendered)
+
+    def test_bootstrap_external_step_is_auditable_in_json_preview(self) -> None:
+        with repo_fixture("install_bootstrap_json") as install_target:
+            with patch.object(install_enhancer.shutil, "which", return_value=None):
+                exit_code, output = run_installer(
+                    [
+                        "--target",
+                        str(install_target),
+                        "--mode",
+                        "new",
+                        "--spec-kit-mode",
+                        "bootstrap",
+                        "--spec-kit-script",
+                        "ps",
+                        "--spec-kit-version",
+                        "v0.8.3",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(len(payload["external_steps"]), 1)
+            step = payload["external_steps"][0]
+            self.assertIn("uvx --from git+https://github.com/github/spec-kit.git@v0.8.3", step["command"])
+            self.assertEqual(step["executable"], "uvx")
+            self.assertFalse(step["executable_found"])
+            self.assertEqual(step["executable_status"], "not found on PATH")
+            self.assertEqual(step["pinned_ref"], "v0.8.3")
+            self.assertTrue(step["requires_network"])
+            self.assertEqual(step["order"], "before-enhancer-writes")
+            self.assertIn("--spec-kit-exe <path>", step["recovery_hint"])
+
+    def test_bootstrap_dry_run_does_not_execute_external_step(self) -> None:
+        with repo_fixture("install_bootstrap_dry_run") as install_target:
+            with patch.object(
+                install_enhancer,
+                "run_external_step",
+                side_effect=AssertionError("dry run executed external step"),
+            ):
+                exit_code, output = run_installer(
+                    [
+                        "--target",
+                        str(install_target),
+                        "--mode",
+                        "new",
+                        "--spec-kit-mode",
+                        "bootstrap",
+                        "--summary",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("External steps: 1", output)
+            self.assertFalse((install_target / ".specify").exists())
+
     def test_install_bootstrap_mode_write_runs_external_step(self) -> None:
         with repo_fixture("install_bootstrap_write") as parent:
             install_target = parent / "repo"
@@ -2898,8 +2978,14 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             source_label="official Spec Kit bootstrap",
         )
 
-        with self.assertRaisesRegex(RuntimeError, "was not found"):
+        with self.assertRaisesRegex(RuntimeError, "was not found") as captured:
             install_enhancer.run_external_step(step)
+
+        message = str(captured.exception)
+        self.assertIn("Command:", message)
+        self.assertIn(missing_executable, message)
+        self.assertIn("Working directory:", message)
+        self.assertIn("Recovery:", message)
 
 
 if __name__ == "__main__":

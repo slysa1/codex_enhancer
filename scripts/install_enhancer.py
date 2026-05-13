@@ -7,6 +7,7 @@ import argparse
 import difflib
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -82,6 +83,8 @@ PLAN_JSON_SCHEMA_VERSION = 1
 DEFAULT_DIFF_FILE_LINE_LIMIT = 240
 EXTERNAL_STEP_TIMEOUT_SECONDS = 600
 GIT_STATUS_TIMEOUT_SECONDS = 10
+EXTERNAL_STEP_ORDER = "before-enhancer-writes"
+EXTERNAL_STEP_ORDER_NOTE = "external tools run before enhancer-owned writes"
 
 COMMON_GUIDANCE_PATHS = (
     Path("AGENTS.md"),
@@ -133,6 +136,23 @@ class ExternalStep:
     cwd: Path
     label: str
     source_label: str
+
+
+@dataclass(frozen=True)
+class ExternalStepAudit:
+    label: str
+    source_label: str
+    argv: tuple[str, ...]
+    command: str
+    cwd: Path
+    executable: str | None
+    executable_path: str | None
+    executable_found: bool
+    executable_status: str
+    requires_network: bool
+    pinned_ref: str | None
+    warnings: tuple[str, ...]
+    recovery_hint: str
 
 
 @dataclass(frozen=True)
@@ -1952,6 +1972,152 @@ def format_plan_header(plan: InstallPlan, write: bool) -> str:
     )
 
 
+def format_external_command(argv: tuple[str, ...]) -> str:
+    if sys.platform == "win32":
+        return subprocess.list2cmdline(argv)
+    return shlex.join(argv)
+
+
+def _resolve_external_executable(executable: str | None) -> str | None:
+    if not executable:
+        return None
+    candidate = Path(executable)
+    if candidate.exists():
+        return str(candidate.resolve())
+    return shutil.which(executable)
+
+
+def _external_step_requires_network(step: ExternalStep) -> bool:
+    return any(
+        argument.startswith(("git+https://", "https://", "http://"))
+        for argument in step.argv
+    )
+
+
+def _external_step_pinned_ref(step: ExternalStep) -> str | None:
+    for argument in step.argv:
+        match = re.search(
+            r"git\+https://github\.com/github/spec-kit\.git@(?P<ref>[^#\s]+)",
+            argument,
+        )
+        if match:
+            return match.group("ref")
+    return None
+
+
+def _external_step_recovery_hint(
+    step: ExternalStep,
+    *,
+    executable_found: bool,
+    requires_network: bool,
+) -> str:
+    executable = step.argv[0] if step.argv else ""
+    if not executable_found:
+        if executable == "uvx":
+            return "Install uv/uvx or rerun with --spec-kit-exe <path>."
+        return "Fix the executable path or rerun with --spec-kit-exe <path>."
+    if requires_network:
+        return "Ensure network access can fetch the pinned official Spec Kit ref before rerunning with --write."
+    return "If this fails, inspect any official files it created, fix the executable or arguments, then rerun the same enhancer command."
+
+
+def audit_external_step(step: ExternalStep) -> ExternalStepAudit:
+    executable = step.argv[0] if step.argv else None
+    executable_path = _resolve_external_executable(executable)
+    executable_found = executable_path is not None
+    executable_status = (
+        "missing command"
+        if executable is None
+        else f"found at {executable_path}"
+        if executable_found
+        else "not found on PATH"
+    )
+    requires_network = _external_step_requires_network(step)
+    pinned_ref = _external_step_pinned_ref(step)
+    warnings: list[str] = []
+    if not executable_found:
+        warnings.append(f"executable `{executable}` is not available on this machine")
+    if requires_network:
+        warnings.append("command may need network access to fetch official Spec Kit")
+    return ExternalStepAudit(
+        label=step.label,
+        source_label=step.source_label,
+        argv=step.argv,
+        command=format_external_command(step.argv),
+        cwd=step.cwd,
+        executable=executable,
+        executable_path=executable_path,
+        executable_found=executable_found,
+        executable_status=executable_status,
+        requires_network=requires_network,
+        pinned_ref=pinned_ref,
+        warnings=tuple(warnings),
+        recovery_hint=_external_step_recovery_hint(
+            step,
+            executable_found=executable_found,
+            requires_network=requires_network,
+        ),
+    )
+
+
+def external_step_to_dict(step: ExternalStep) -> dict[str, object]:
+    audit = audit_external_step(step)
+    return {
+        "label": audit.label,
+        "source_label": audit.source_label,
+        "argv": list(audit.argv),
+        "command": audit.command,
+        "cwd": str(audit.cwd),
+        "executable": audit.executable,
+        "executable_path": audit.executable_path,
+        "executable_found": audit.executable_found,
+        "executable_status": audit.executable_status,
+        "requires_network": audit.requires_network,
+        "pinned_ref": audit.pinned_ref,
+        "order": EXTERNAL_STEP_ORDER,
+        "order_note": EXTERNAL_STEP_ORDER_NOTE,
+        "warnings": list(audit.warnings),
+        "recovery_hint": audit.recovery_hint,
+    }
+
+
+def format_external_step_preview_lines(step: ExternalStep) -> list[str]:
+    audit = audit_external_step(step)
+    lines = [
+        f"- {audit.label}: `{audit.command}`",
+        f"  cwd: `{audit.cwd}`",
+        f"  executable: `{audit.executable}` {audit.executable_status}",
+    ]
+    if audit.pinned_ref:
+        lines.append(f"  pinned ref: `{audit.pinned_ref}`")
+    lines.append(
+        "  network: required for official bootstrap source"
+        if audit.requires_network
+        else "  network: no network URL detected"
+    )
+    for warning in audit.warnings:
+        lines.append(f"  warning: {warning}")
+    lines.append(f"  recovery: {audit.recovery_hint}")
+    return lines
+
+
+def format_external_step_summary_lines(step: ExternalStep) -> list[str]:
+    audit = audit_external_step(step)
+    lines = [
+        f"  - {audit.label}: `{audit.command}`",
+        f"    executable: `{audit.executable}` {audit.executable_status}",
+    ]
+    if audit.pinned_ref:
+        lines.append(f"    pinned ref: `{audit.pinned_ref}`")
+    if audit.requires_network:
+        lines.append("    warning: may need network access")
+    if not audit.executable_found:
+        lines.append(f"    fallback: {audit.recovery_hint}")
+    else:
+        lines.append(f"    recovery: {audit.recovery_hint}")
+    return lines
+
+
 def format_plan_lines(plan: InstallPlan) -> list[str]:
     lines: list[str] = []
     lines.extend(format_pack_lines(plan))
@@ -1970,11 +2136,9 @@ def format_plan_lines(plan: InstallPlan) -> list[str]:
         lines.extend(utility_lines)
     if plan.external_steps:
         lines.append("External steps:")
+        lines.append(f"- Order: {EXTERNAL_STEP_ORDER_NOTE}.")
         for step in plan.external_steps:
-            executable_found = bool(step.argv and (Path(step.argv[0]).exists() or shutil.which(step.argv[0])))
-            status = "found" if executable_found else "not found on PATH"
-            lines.append("- run: " + " ".join(step.argv))
-            lines.append(f"  executable: `{step.argv[0]}` {status}")
+            lines.extend(format_external_step_preview_lines(step))
         lines.append("")
     ownership_lines = format_output_ownership_lines(plan)
     if ownership_lines:
@@ -2478,16 +2642,7 @@ def plan_to_dict(
         },
         "gitignore": _gitignore_to_dict(plan.gitignore),
         "diagnostics": [_write_safety_to_dict(diagnostic) for diagnostic in diagnostics],
-        "external_steps": [
-            {
-                "label": step.label,
-                "source_label": step.source_label,
-                "argv": list(step.argv),
-                "cwd": str(step.cwd),
-                "executable_found": bool(step.argv and (Path(step.argv[0]).exists() or shutil.which(step.argv[0]))),
-            }
-            for step in plan.external_steps
-        ],
+        "external_steps": [external_step_to_dict(step) for step in plan.external_steps],
         "next_steps": format_next_steps(plan, write=write),
     }
 
@@ -2580,7 +2735,9 @@ def format_plan_summary_lines(plan: InstallPlan) -> list[str]:
     if plan.utility_harness is not None:
         lines.append(f"- Utility Harness: `{plan.utility_harness.mode}` / `{plan.utility_harness.state}`")
     if plan.external_steps:
-        lines.append(f"- External steps: {len(plan.external_steps)}")
+        lines.append(f"- External steps: {len(plan.external_steps)} ({EXTERNAL_STEP_ORDER_NOTE})")
+        for step in plan.external_steps:
+            lines.extend(format_external_step_summary_lines(step))
     if summary.critical_proposals or summary.critical_overwrites:
         critical = len(summary.critical_proposals) + len(summary.critical_overwrites)
         lines.append(f"- Critical conflicts: {critical}")
@@ -2957,14 +3114,12 @@ def run_external_step(step: ExternalStep) -> None:
         raise RuntimeError(f"{step.label} failed because no command was configured.")
     executable = step.argv[0]
     if not Path(executable).exists() and shutil.which(executable) is None:
-        hint = (
-            "Install uv/uvx or pass --spec-kit-exe with a local specify-compatible executable."
-            if executable == "uvx"
-            else "Verify the executable path and rerun the same command."
-        )
+        audit = audit_external_step(step)
         raise RuntimeError(
-            f"{step.label} failed before enhancer-owned files were written because `{executable}` was not found. "
-            f"{hint}"
+            f"{step.label} failed before enhancer-owned files were written because `{executable}` was not found.\n"
+            f"Command: `{audit.command}`\n"
+            f"Working directory: `{audit.cwd}`\n"
+            f"Recovery: {audit.recovery_hint}"
         )
     try:
         completed = subprocess.run(
@@ -2976,18 +3131,19 @@ def run_external_step(step: ExternalStep) -> None:
             timeout=EXTERNAL_STEP_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as error:
-        hint = (
-            "Install uv/uvx or pass --spec-kit-exe with a local specify-compatible executable."
-            if executable == "uvx"
-            else "Verify the executable path and rerun the same command."
-        )
+        audit = audit_external_step(step)
         raise RuntimeError(
-            f"{step.label} failed before enhancer-owned files were written because `{executable}` was not found. "
-            f"{hint}"
+            f"{step.label} failed before enhancer-owned files were written because `{executable}` was not found.\n"
+            f"Command: `{audit.command}`\n"
+            f"Working directory: `{audit.cwd}`\n"
+            f"Recovery: {audit.recovery_hint}"
         ) from error
     except subprocess.TimeoutExpired as error:
+        audit = audit_external_step(step)
         raise RuntimeError(
             f"{step.label} timed out after {EXTERNAL_STEP_TIMEOUT_SECONDS} seconds.\n"
+            f"Command: `{audit.command}`\n"
+            f"Working directory: `{audit.cwd}`\n"
             "Recovery: inspect the target for any files written by the external tool, fix the executable, "
             "version, or network problem, then rerun the same enhancer command."
         ) from error
@@ -3000,9 +3156,21 @@ def run_external_step(step: ExternalStep) -> None:
         "Recovery: inspect the target for any files written by the external tool, fix the bootstrap problem, "
         "then rerun the same enhancer command. Enhancer-owned files are written only after external steps succeed."
     )
+    audit = audit_external_step(step)
     if details:
-        raise RuntimeError(f"{step.label} failed.\n{details}\n{recovery}")
-    raise RuntimeError(f"{step.label} failed with exit code {completed.returncode}.\n{recovery}")
+        raise RuntimeError(
+            f"{step.label} failed.\n"
+            f"Command: `{audit.command}`\n"
+            f"Working directory: `{audit.cwd}`\n"
+            f"{details}\n"
+            f"{recovery}"
+        )
+    raise RuntimeError(
+        f"{step.label} failed with exit code {completed.returncode}.\n"
+        f"Command: `{audit.command}`\n"
+        f"Working directory: `{audit.cwd}`\n"
+        f"{recovery}"
+    )
 
 
 def _format_limited_paths(paths: tuple[Path, ...], *, limit: int = 8) -> list[str]:

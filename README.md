@@ -86,7 +86,7 @@ Do not use it if you want a packaged agent runtime, hidden orchestration layer, 
 
 The current source-repo implementation has no runtime third-party Python dependencies. The optional Utility Harness can scaffold a target-repo `requirements-codex.txt` for Codex/operator helper tooling, but the installer never installs those packages automatically.
 
-Spec Kit bootstrap is the only normal path that expects an external executable. `--with-spec-kit` or `--spec-kit-mode bootstrap` uses `uvx` by default and pins the official bootstrap ref used by this enhancer release. Use `--spec-kit-exe <path>` when you already have a local `specify`-compatible executable or want to avoid `uvx`.
+Spec Kit bootstrap is the only normal path that expects an external executable. `--with-spec-kit` or `--spec-kit-mode bootstrap` uses `uvx` by default and pins the official bootstrap ref used by this enhancer release. Use `--spec-kit-exe <path>` when you already have a local `specify`-compatible executable or want to avoid `uvx`. Previews show the exact bootstrap command, executable status, pinned ref, network warning, and recovery hint before any `--write` apply.
 
 ## Installation
 
@@ -168,11 +168,11 @@ python scripts/codex_enhancer_cli.py bridge ../my-existing-repo --attach-spec-ki
 
 The facade only translates friendly verbs such as `doctor`, `init`, `install`, `inspect`, `audit`, `packs`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
 
-Use `--with-spec-kit` when you want Codex Enhancer to bootstrap official Spec Kit for Codex and install the bridge skills/guidance in the same flow. The preview shows the official bootstrap command first; the external Spec Kit download/setup only runs if you re-run with `--write`.
+Use `--with-spec-kit` when you want Codex Enhancer to bootstrap official Spec Kit for Codex and install the bridge skills/guidance in the same flow. The preview shows the official bootstrap command first, including the executable check, pinned ref, network note, and recovery hint; the external Spec Kit download/setup only runs if you re-run with `--write`.
 
 Useful preview formats:
 - `doctor <repo>` or `--doctor --target <repo>` runs a read-only first-run diagnostic and prints the next useful commands for a source checkout, installed target, or plain repo.
-- `--summary` prints the shortest install, upgrade, refresh, pack, or bridge plan.
+- `--summary` prints the shortest install, upgrade, refresh, pack, or bridge plan, including exact external bootstrap commands when any are planned.
 - `--dry-run` makes the default preview behavior explicit for scripts and cautious first runs.
 - `--diff` adds a unified diff preview for planned text writes, proposals, managed-section refreshes, and `.gitignore` merges. Large per-file diffs are truncated by default; use `--diff-full` when you need the entire diff.
 - `--json` emits a versioned machine-readable plan or report for wrappers and CI.
@@ -181,7 +181,7 @@ Useful preview formats:
 - If an apply fails while writing files, the error names the failed path, lists enhancer-owned paths likely touched in that run, and gives recovery steps.
 - `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files, then reports an adaptation status and severity summary.
 
-JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `diagnostics`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`; adaptation audits also include `status` and `severity_counts`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
+JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `diagnostics`, `external_steps`, and `next_steps`. Each `external_steps` item includes the exact command string, argv list, executable status/path when available, pinned ref, network flag, execution order, warnings, and recovery hint. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`; adaptation audits also include `status` and `severity_counts`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
 
 List the currently available stack packs:
 
@@ -423,6 +423,7 @@ Bridge-specific flags:
 
 Bootstrap notes:
 - The default bootstrap ref is pinned by this enhancer release rather than silently following a moving branch.
+- `--summary`, full previews, GUI previews, and JSON all expose the same command, executable availability, pinned ref, network requirement, and recovery hint.
 - If `uvx` is missing during apply, install `uv`/`uvx` or pass `--spec-kit-exe <path>`.
 - External Spec Kit bootstrap runs before enhancer-owned files are written. If it fails, inspect any official Spec Kit files it may have created, fix the bootstrap problem, and rerun the same enhancer command.
 

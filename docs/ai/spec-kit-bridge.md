@@ -38,7 +38,7 @@ This document defines how Codex Enhancer should coexist with official GitHub Spe
 - Bootstrap uses `uvx` by default and a pinned official Spec Kit ref from the current enhancer release.
 - Use `--spec-kit-version <ref>` only when deliberately testing another official Spec Kit ref.
 - Use `--spec-kit-exe <path>` to run a local `specify`-compatible executable instead of `uvx`.
-- Dry-runs show the external bootstrap command but never download or execute it.
+- Dry-runs show the exact external bootstrap command, executable availability, pinned ref, network requirement, order, and recovery hint, but never download or execute it.
 - During apply, official Spec Kit bootstrap runs before enhancer-owned files are written. If bootstrap fails, inspect any official Spec Kit files it may have created, fix the executable/version/network problem, and rerun the same enhancer command.
 
 ## Source Repo Footprint
@@ -52,7 +52,7 @@ This source repo can have official Spec Kit files checked in for its own develop
 - `python scripts/codex_enhancer_cli.py bridge <repo> --attach-spec-kit`: preview changing an installed target's bridge mode without running a full enhancer upgrade.
 - `--attach-spec-kit` attaches to an existing official install; `--no-spec-kit` keeps the bridge off.
 
-The preview must show the official bootstrap command before apply, including whether the executable is available on the current machine when that can be checked locally. Treat rerunning with `--write` as the user's consent to let the installer download or execute official Spec Kit tooling.
+The preview must show the official bootstrap command before apply, including whether the executable is available on the current machine when that can be checked locally, the pinned ref, whether network access may be needed, and what recovery command or flag to use if it fails. Treat rerunning with `--write` as the user's consent to let the installer download or execute official Spec Kit tooling.
 
 ## Development Rule
 - If a bridge change affects ownership, update the shared spec, validator expectations, source docs, and target scaffold in the same patch.
