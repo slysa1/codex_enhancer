@@ -1,6 +1,6 @@
 {
   "integration": "speckit",
-  "version": "0.8.3",
+  "version": "0.8.9.dev0",
   "installed_at": "2026-05-01T16:30:58.843475+00:00",
   "files": {
     ".specify/scripts/powershell/check-prerequisites.ps1": "bcb37804b0757c37799b65a9321c1d3fb7b7ddcab6703c55c5b9a142c9166bf1",
@@ -11,6 +11,7 @@
     ".specify/templates/constitution-template.md": "29fc1837b20f493d302203554923322a245123b4be9ed5734d9e1af96cd5ef0b",
     ".specify/templates/plan-template.md": "1c7437fd37e46a65922f666557dc01d015999abbbb3da415ab6aae5508afe8fd",
     ".specify/templates/spec-template.md": "e0aa5d506918cc203970079b5b5201a692f741b798c46ff6f34f4f8d081aaa80",
-    ".specify/templates/tasks-template.md": "b01e10f0393b94a880f611bea908d97e3cbbd3ba5cb8bd34470a6ab42bc1f112"
+    ".specify/templates/tasks-template.md": "b01e10f0393b94a880f611bea908d97e3cbbd3ba5cb8bd34470a6ab42bc1f112",
+    ".specify/scripts/powershell/setup-tasks.ps1": "aa7b19077dc4f6feee1dae47f68dc3e6d8ac75adf572a949443f3322b753cfa2"
   }
 }

@@ -107,3 +107,8 @@ Do not use subagents for small doc edits, single-skill changes, or work blocked 
 - Release checklist: [docs/ai/release.md](docs/ai/release.md)
 - Spec Kit bridge contract: [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md)
 - Utility Harness contract: [docs/ai/utility-harness.md](docs/ai/utility-harness.md)
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->
