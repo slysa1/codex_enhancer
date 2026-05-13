@@ -1111,7 +1111,9 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             payload = json.loads(output)
             self.assertEqual(payload["kind"], "adaptation-audit")
+            self.assertEqual(payload["status"], "needs-adaptation")
             self.assertGreater(payload["finding_count"], 0)
+            self.assertGreater(payload["severity_counts"]["medium"], 0)
 
     def test_audit_adaptation_can_pass_clean_target(self) -> None:
         with repo_fixture("adapt_clean") as install_target:
@@ -1125,7 +1127,19 @@ class InstallEnhancerTests(unittest.TestCase):
             )
 
             self.assertEqual(exit_code, 0)
+            self.assertIn("Status: ready", output)
+            self.assertIn("Severity summary: none", output)
             self.assertIn("no obvious inherited placeholders", output)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--audit-adaptation", "--json"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["severity_counts"]["high"], 0)
+            self.assertEqual(payload["severity_counts"]["medium"], 0)
 
     def test_dry_run_reports_detected_stack_packs(self) -> None:
         with repo_fixture("install_pack_preview") as install_target:

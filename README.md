@@ -165,9 +165,9 @@ Useful preview formats:
 - `--json` emits a versioned machine-readable plan or report for wrappers and CI.
 - `--write` checks the target repo's own git worktree first and warns when `git status --short` already reports local changes.
 - If an apply fails while writing files, the error names the failed path, lists enhancer-owned paths likely touched in that run, and gives recovery steps.
-- `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files.
+- `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files, then reports an adaptation status and severity summary.
 
-JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `diagnostics`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
+JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `diagnostics`, `external_steps`, and `next_steps`. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`; adaptation audits also include `status` and `severity_counts`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
 
 List the currently available stack packs:
 

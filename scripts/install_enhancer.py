@@ -655,14 +655,41 @@ def audit_adaptation(target: Path) -> tuple[AdaptationFinding, ...]:
     return tuple(findings)
 
 
+ADAPTATION_SEVERITIES = ("high", "medium", "low", "info")
+
+
+def adaptation_severity_counts(findings: tuple[AdaptationFinding, ...]) -> dict[str, int]:
+    counts = {severity: 0 for severity in ADAPTATION_SEVERITIES}
+    for finding in findings:
+        counts[finding.severity] = counts.get(finding.severity, 0) + 1
+    return counts
+
+
+def adaptation_audit_status(findings: tuple[AdaptationFinding, ...]) -> str:
+    counts = adaptation_severity_counts(findings)
+    if not findings:
+        return "ready"
+    if counts["high"] or counts["medium"]:
+        return "needs-adaptation"
+    return "review-info"
+
+
+def format_severity_summary(counts: dict[str, int]) -> str:
+    parts = [f"{count} {severity}" for severity, count in counts.items() if count]
+    return ", ".join(parts) if parts else "none"
+
+
 def format_adaptation_audit(target: Path) -> str:
     resolved_target = target.resolve()
     findings = audit_adaptation(resolved_target)
     lines = [f"Codex Enhancer adaptation audit for {resolved_target}"]
+    counts = adaptation_severity_counts(findings)
+    status = adaptation_audit_status(findings)
     if not findings:
         lines.extend(
             [
-                "- Status: no obvious inherited placeholders, proposal files, or generic install guidance were found.",
+                "- Status: ready; no obvious inherited placeholders, proposal files, or generic install guidance were found.",
+                "- Severity summary: none",
                 "- Next step: run the target repo validation commands and review the workflow docs normally.",
             ]
         )
@@ -673,6 +700,8 @@ def format_adaptation_audit(target: Path) -> str:
         findings,
         key=lambda finding: (severity_order.get(finding.severity, 99), finding.path.as_posix(), finding.message),
     )
+    lines.append(f"- Status: {status}")
+    lines.append(f"- Severity summary: {format_severity_summary(counts)}")
     lines.append(f"- Findings: {len(sorted_findings)}")
     for finding in sorted_findings:
         lines.append(
@@ -2499,11 +2528,14 @@ def doctor_to_dict(report: DoctorReport) -> dict[str, object]:
 
 def adaptation_audit_to_dict(target: Path) -> dict[str, object]:
     findings = audit_adaptation(target)
+    counts = adaptation_severity_counts(findings)
     return {
         "schema_version": PLAN_JSON_SCHEMA_VERSION,
         "kind": "adaptation-audit",
         "target": str(target.resolve()),
+        "status": adaptation_audit_status(findings),
         "finding_count": len(findings),
+        "severity_counts": counts,
         "findings": [
             {
                 "severity": finding.severity,
