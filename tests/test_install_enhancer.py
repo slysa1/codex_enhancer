@@ -520,16 +520,27 @@ class InstallEnhancerTests(unittest.TestCase):
     def test_install_bootstrap_mode_write_runs_external_step(self) -> None:
         with repo_fixture("install_bootstrap_write") as parent:
             install_target = parent / "repo"
-            fake_specify = parent / "fake-specify.cmd"
-            fake_specify.write_text(
-                "@echo off\r\n"
-                "mkdir .specify\\memory >nul 2>nul\r\n"
-                "mkdir specs >nul 2>nul\r\n"
-                "mkdir .agents\\skills\\speckit-plan >nul 2>nul\r\n"
-                "echo # Constitution> .specify\\memory\\constitution.md\r\n"
-                "echo # Plan> .agents\\skills\\speckit-plan\\SKILL.md\r\n",
-                encoding="utf-8",
-            )
+            if sys.platform == "win32":
+                fake_specify = parent / "fake-specify.cmd"
+                fake_specify.write_text(
+                    "@echo off\r\n"
+                    "mkdir .specify\\memory >nul 2>nul\r\n"
+                    "mkdir specs >nul 2>nul\r\n"
+                    "mkdir .agents\\skills\\speckit-plan >nul 2>nul\r\n"
+                    "echo # Constitution> .specify\\memory\\constitution.md\r\n"
+                    "echo # Plan> .agents\\skills\\speckit-plan\\SKILL.md\r\n",
+                    encoding="utf-8",
+                )
+            else:
+                fake_specify = parent / "fake-specify"
+                fake_specify.write_text(
+                    "#!/bin/sh\n"
+                    "mkdir -p .specify/memory specs .agents/skills/speckit-plan\n"
+                    "printf '# Constitution\\n' > .specify/memory/constitution.md\n"
+                    "printf '# Plan\\n' > .agents/skills/speckit-plan/SKILL.md\n",
+                    encoding="utf-8",
+                )
+                fake_specify.chmod(0o755)
 
             exit_code, _ = run_installer(
                 [
