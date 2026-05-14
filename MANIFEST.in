@@ -2,4 +2,4 @@ include LICENSE
 include README.md
 recursive-include codex_enhancer/assets/root *
 recursive-include codex_enhancer/assets/root/.codex *
-global-exclude __pycache__ *.py[cod]
+global-exclude __pycache__ *.py[cod] *.pyc.*

@@ -83,7 +83,7 @@ class PackagingMetadataTests(unittest.TestCase):
         self.assertIn("python -m build", release_doc)
         self.assertIn("codex-enhancer list-packs", release_doc)
         self.assertIn("requirements-codex.txt", release_doc)
-        self.assertIn("global-exclude __pycache__ *.py[cod]", manifest)
+        self.assertIn("global-exclude __pycache__ *.py[cod] *.pyc.*", manifest)
 
     def test_ci_matrix_matches_declared_python_and_platform_support(self) -> None:
         root = self.repo_root()
