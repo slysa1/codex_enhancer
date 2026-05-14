@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-ENHANCER_VERSION = "4.1.0"
+ENHANCER_VERSION = "4.2.0"
 ENHANCER_MANIFEST_SCHEMA_VERSION = 3
 SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, ENHANCER_MANIFEST_SCHEMA_VERSION})
 
@@ -96,12 +96,16 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("docs/ai/migration-v3.md"),
         Path("docs/ai/roadmap.md"),
         Path("docs/ai/release.md"),
+        Path("docs/ai/repo-improvement-audit.md"),
+        Path("docs/ai/repo-audit-finding-schema.md"),
+        Path("docs/ai/repo-audit-roadmap-rubric.md"),
         Path("docs/ai/spec-kit-bridge.md"),
         Path("docs/ai/utility-harness.md"),
         Path(".codex/skills/AGENTS.md"),
         Path(".codex/skills/plan-change/SKILL.md"),
         Path(".codex/skills/review-prep/SKILL.md"),
         Path(".codex/skills/adapt-enhancer/SKILL.md"),
+        Path(".codex/skills/full-repo-improvement-audit/SKILL.md"),
         Path("scripts/check.py"),
         Path("scripts/codex_enhancer_cli.py"),
         Path("scripts/enhancer_spec.py"),
@@ -163,12 +167,23 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("scaffold/stack-packs/library-package/fragments/agents-summary.md"),
         Path("scaffold/stack-packs/library-package/fragments/stack-guidance.md"),
         Path("scaffold/stack-packs/library-package/fragments/review-notes.md"),
+        Path("scaffold/workflow-packs/repository-improvement-audit/pack.toml"),
+        Path("scaffold/workflow-packs/repository-improvement-audit/fragments/agents-summary.md"),
+        Path("scaffold/workflow-packs/repository-improvement-audit/fragments/workflow-guidance.md"),
+        Path("scaffold/workflow-packs/repository-improvement-audit/fragments/review-notes.md"),
     ),
     line_limits={
         Path("AGENTS.md"): 140,
         Path(".codex/skills/AGENTS.md"): 80,
     },
-    min_required_skills=frozenset({"plan-change", "review-prep", "adapt-enhancer"}),
+    min_required_skills=frozenset(
+        {
+            "plan-change",
+            "review-prep",
+            "adapt-enhancer",
+            "full-repo-improvement-audit",
+        }
+    ),
     content_requirements={
         Path("README.md"): (
             "AGENTS.md",
@@ -184,7 +199,13 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "docs/ai/migration-v3.md",
             "docs/ai/roadmap.md",
             "docs/ai/release.md",
+            "docs/ai/repo-improvement-audit.md",
+            "docs/ai/repo-audit-finding-schema.md",
+            "docs/ai/repo-audit-roadmap-rubric.md",
             "docs/ai/utility-harness.md",
+            "full-repo-improvement-audit",
+            "scaffold/workflow-packs/",
+            "scripts/stack_packs.py",
             "requirements-codex-readers.txt",
             "--utility-harness-mode",
             "--summary",
@@ -209,13 +230,23 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "docs/ai/migration-v3.md",
             "docs/ai/roadmap.md",
             "docs/ai/release.md",
+            "docs/ai/repo-improvement-audit.md",
+            "docs/ai/repo-audit-finding-schema.md",
+            "docs/ai/repo-audit-roadmap-rubric.md",
             "docs/ai/spec-kit-bridge.md",
             "docs/ai/utility-harness.md",
             ".codex/skills/",
             "audit",
             "spec-sync",
             "scripts/utility_harness.py",
+            "scripts/stack_packs.py",
+            "scaffold/workflow-packs/",
             "tests/",
+        ),
+        Path("docs/ai/architecture.md"): (
+            "scripts/stack_packs.py",
+            "scaffold/workflow-packs/",
+            "workflow-pack installer support",
         ),
         Path("docs/ai/code-review.md"): (
             CHECK_COMMAND,
@@ -255,6 +286,27 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "requirements-codex-readers.txt",
             "codex_enhancer/assets/root/",
         ),
+        Path("docs/ai/repo-improvement-audit.md"): (
+            "## Evidence Standards",
+            "repo-audit-finding-schema.md",
+            "repo-audit-roadmap-rubric.md",
+            "Stop before implementation",
+            "Do not infer build, lint, test, coverage, architecture, dependencies, deployment, or security posture from common stack conventions alone.",
+        ),
+        Path("docs/ai/repo-audit-finding-schema.md"): (
+            "`Severity`",
+            "`Confidence`",
+            "`Evidence`",
+            "`Acceptance Test`",
+            "Low-confidence items must go under `Hypotheses / Needs Confirmation`",
+        ),
+        Path("docs/ai/repo-audit-roadmap-rubric.md"): (
+            "### Quick Wins",
+            "### Phase 1 Stabilization",
+            "### Phase 2 Maintainability/Test Hardening",
+            "### Phase 3 Larger Architecture Work",
+            "Do not schedule implementation during the audit.",
+        ),
         Path("docs/ai/spec-kit-bridge.md"): (
             "uvx",
             "--spec-kit-exe",
@@ -262,6 +314,12 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "spec-sync",
             "bridge",
             "official Spec Kit files",
+        ),
+        Path(".codex/skills/full-repo-improvement-audit/SKILL.md"): (
+            "Read repo guidance first",
+            "Build a system map",
+            "For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.",
+            "Stop after the audit. Do not modify files during audit mode.",
         ),
         Path(".github/workflows/validate.yml"): (
             CHECK_COMMAND,

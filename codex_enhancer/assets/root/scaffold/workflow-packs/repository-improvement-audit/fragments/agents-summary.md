@@ -1,0 +1,3 @@
+- Use `full-repo-improvement-audit` for read-only whole-repo improvement audits before implementation.
+- Keep confirmed findings evidence-backed and keep low-confidence concerns under hypotheses.
+- Stop after the audit report and roadmap; implementation starts only after the user chooses follow-up work.

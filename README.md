@@ -60,6 +60,7 @@ Concrete before/after workflow:
 - A Spec Kit bridge resolver in [scripts/spec_kit_bridge.py](scripts/spec_kit_bridge.py)
 - A Utility Harness resolver in [scripts/utility_harness.py](scripts/utility_harness.py)
 - A stack-pack registry in [scaffold/stack-packs/](scaffold/stack-packs/)
+- A workflow-pack registry in [scaffold/workflow-packs/](scaffold/workflow-packs/) that reuses the stack-pack loader format
 - A stack-pack loader in [scripts/stack_packs.py](scripts/stack_packs.py)
 - A shared install/validation spec in [scripts/enhancer_spec.py](scripts/enhancer_spec.py)
 - A reusable validation engine in [scripts/enhancer_validator.py](scripts/enhancer_validator.py)
@@ -582,6 +583,14 @@ Use [.codex/skills/plan-change/SKILL.md](.codex/skills/plan-change/SKILL.md) whe
 
 Do not use it for trivial copy edits or obvious one-file fixes.
 
+#### `full-repo-improvement-audit`
+Use [.codex/skills/full-repo-improvement-audit/SKILL.md](.codex/skills/full-repo-improvement-audit/SKILL.md) when:
+- the user asks for a read-only whole-repo improvement audit before implementation
+- you need to map architecture, tests, quality, security, performance, or developer experience across a repo
+- the output should be a prioritized improvement roadmap instead of code changes
+
+Keep the audit evidence-backed and stop before implementation. The durable workflow, finding schema, and prioritization rubric live in [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md), [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md), and [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
+
 #### `adapt-enhancer`
 Use [.codex/skills/adapt-enhancer/SKILL.md](.codex/skills/adapt-enhancer/SKILL.md) when:
 - you installed this enhancer into a different repository
@@ -675,6 +684,8 @@ For upgrading existing installed repos, see [docs/ai/migration-v3.md](docs/ai/mi
 
 For package build and release readiness, see [docs/ai/release.md](docs/ai/release.md). It keeps the wheel/sdist checks, packaged-asset boundary, and no-dependency policy in one place.
 
+For read-only whole-repo improvement audits, see [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md), [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md), and [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
+
 ### `.codex/skills/`
 [.codex/skills/](.codex/skills/) holds narrow, repeatable procedures. The subtree rules live in [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md).
 
@@ -741,8 +752,11 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 ### `scaffold/stack-packs/`
 [scaffold/stack-packs/](scaffold/stack-packs/) stores the file-based stack-pack registry. Each pack lives in its own directory with `pack.toml` plus small markdown fragments that the installer can detect and render into target guidance.
 
+### `scaffold/workflow-packs/`
+[scaffold/workflow-packs/](scaffold/workflow-packs/) stores optional workflow-pack assets. Workflow packs reuse the stack-pack metadata and fragment format, but they live under a separate root so process guidance does not blur with technology stack guidance.
+
 ### `scripts/stack_packs.py`
-[scripts/stack_packs.py](scripts/stack_packs.py) loads stack-pack metadata, detects matching packs in a target repo, collects narrow manifest evidence from `package.json`, package-manager signals, and `pyproject.toml`, resolves selection state, and renders the target `AGENTS.md` summary, manifest, and stack-guidance outputs.
+[scripts/stack_packs.py](scripts/stack_packs.py) loads stack-pack-compatible metadata, detects matching packs in a target repo, collects narrow manifest evidence from `package.json`, package-manager signals, and `pyproject.toml`, resolves selection state, and renders the target `AGENTS.md` summary, manifest, and stack-guidance outputs. Phase 3 workflow packs reuse this loader with a separate root and manual marker discovery.
 
 ### `scripts/utility_harness.py`
 [scripts/utility_harness.py](scripts/utility_harness.py) resolves the optional Codex Utility Harness state and renders the target `AGENTS.md` summary for that integration.
@@ -751,6 +765,7 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 [tests/test_check.py](tests/test_check.py) gives you regression coverage for the source-repo validator.
 [tests/test_install_enhancer.py](tests/test_install_enhancer.py) verifies dry-run behavior, actual installs, proposal mode, force overwrite on safe paths, and the installed target profile.
 [tests/test_stack_packs.py](tests/test_stack_packs.py) covers the pack registry, detection heuristics, manifest evidence, selection rules, and generated pack-aware guidance.
+[tests/test_stack_packs.py](tests/test_stack_packs.py) also covers the render-only workflow-pack registry that reuses the stack-pack loader.
 [tests/test_utility_harness.py](tests/test_utility_harness.py) covers the Utility Harness mode resolver and summary text.
 
 ### GitHub Actions
@@ -897,6 +912,7 @@ Check:
 |-- scripts/enhancer_validator.py
 |-- scaffold/target-repo/
 |-- scaffold/stack-packs/
+|-- scaffold/workflow-packs/
 |-- tests/
 `-- .github/workflows/validate.yml
 ```

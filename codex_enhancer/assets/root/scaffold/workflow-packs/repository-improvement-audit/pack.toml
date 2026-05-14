@@ -1,0 +1,32 @@
+schema_version = 1
+name = "repository-improvement-audit"
+label = "Repository improvement audit"
+description = "Read-only workflow guidance for mapping an existing repository and producing an evidence-backed improvement roadmap before implementation."
+version = "0.1.0"
+
+[discovery]
+any_files = [".codex/enhancer/workflows/repository-improvement-audit.toml"]
+
+[ui]
+recommended_if_detected = false
+default_selected = false
+order = 10
+
+[guidance]
+use_when = [
+  "The user asks Codex to audit a whole repository before implementation.",
+  "Codex should map architecture, tests, risk, technical debt, developer experience, and improvement sequencing from actual repo evidence.",
+]
+adds = [
+  "A reusable full-repo audit workflow with explicit evidence standards.",
+  "Finding schema and prioritization rules for turning audit output into a staged roadmap.",
+]
+skip_when = [
+  "The user asks for a normal bounded code review, single-file edit, or direct implementation task.",
+  "The repository only needs target-specific adaptation after enhancer installation.",
+]
+
+[render]
+agents_summary = "fragments/agents-summary.md"
+stack_guidance = "fragments/workflow-guidance.md"
+review_notes = "fragments/review-notes.md"

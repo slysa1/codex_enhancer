@@ -18,6 +18,9 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [docs/ai/migration-v3.md](docs/ai/migration-v3.md): upgrade and review notes for the v3 managed-section lifecycle.
 - [docs/ai/roadmap.md](docs/ai/roadmap.md): phased roadmap for stack packs, installer UX, and planned enhancer evolution.
 - [docs/ai/release.md](docs/ai/release.md): package build and release-readiness checklist.
+- [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md): read-only full repository improvement audit workflow.
+- [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md): evidence-backed finding fields and severity/confidence rubrics for repo audits.
+- [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md): prioritization rules for turning audit findings into roadmap buckets.
 - [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md): ownership rules and phased plan for optional GitHub Spec Kit integration.
 - [docs/ai/utility-harness.md](docs/ai/utility-harness.md): contract for the optional Codex Utility Harness helper tools.
 - [.codex/skills/](.codex/skills/): repo-local skills for repeated procedures. Read [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md) before editing or adding skills.
@@ -34,6 +37,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [scripts/check.py](scripts/check.py): deterministic validation for the enhancer source repo.
 - [scaffold/target-repo/](scaffold/target-repo/): install scaffold for files that should differ in target repos.
 - [scaffold/stack-packs/](scaffold/stack-packs/): file-based registry for optional stack packs and their fragments.
+- [scaffold/workflow-packs/](scaffold/workflow-packs/): render-only workflow-pack registry that reuses the stack-pack loader shape.
 - [tests/](tests/): unit tests for the validator and installer.
 - [.github/workflows/validate.yml](.github/workflows/validate.yml): CI that mirrors the local validation commands.
 
@@ -105,6 +109,9 @@ Do not use subagents for small doc edits, single-skill changes, or work blocked 
 - Review checklist: [docs/ai/code-review.md](docs/ai/code-review.md)
 - Design roadmap: [docs/ai/roadmap.md](docs/ai/roadmap.md)
 - Release checklist: [docs/ai/release.md](docs/ai/release.md)
+- Repository improvement audit workflow: [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md)
+- Repo audit finding schema: [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md)
+- Repo audit roadmap rubric: [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md)
 - Spec Kit bridge contract: [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md)
 - Utility Harness contract: [docs/ai/utility-harness.md](docs/ai/utility-harness.md)
 

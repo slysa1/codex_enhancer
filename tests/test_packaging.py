@@ -49,6 +49,10 @@ class PackagingMetadataTests(unittest.TestCase):
         source_roots = (root / "scaffold", root / ".codex/skills")
 
         self.assertEqual(asset_path("scaffold/stack-packs").resolve(), (root / "scaffold/stack-packs").resolve())
+        self.assertEqual(
+            asset_path("scaffold/workflow-packs").resolve(),
+            (root / "scaffold/workflow-packs").resolve(),
+        )
         self.assertTrue((packaged_root / "README.md").is_file())
         self.assertEqual(
             (packaged_root / "README.md").read_text(encoding="utf-8"),

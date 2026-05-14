@@ -12,6 +12,7 @@ from scripts.stack_packs import (
     detect_stack_packs,
     load_enhancer_install_state,
     load_selected_packs_from_manifest,
+    load_stack_pack,
     load_stack_packs,
     render_agents_summary,
     render_install_follow_up_lines,
@@ -67,6 +68,163 @@ class StackPackTests(unittest.TestCase):
             self.assertTrue(pack.guidance.use_when)
             self.assertTrue(pack.guidance.adds)
             self.assertTrue(pack.guidance.skip_when)
+
+    def test_repository_improvement_workflow_pack_uses_stack_pack_loader(self) -> None:
+        workflow_root = Path(__file__).resolve().parents[1] / "scaffold/workflow-packs"
+
+        packs = load_stack_packs(workflow_root)
+
+        self.assertEqual(tuple(pack.name for pack in packs), ("repository-improvement-audit",))
+        pack = packs[0]
+        self.assertEqual(pack.label, "Repository improvement audit")
+        self.assertEqual(pack.render.stack_guidance, Path("fragments/workflow-guidance.md"))
+        self.assertTrue(pack.guidance.use_when)
+        self.assertTrue(pack.guidance.adds)
+        self.assertTrue(pack.guidance.skip_when)
+
+    def test_repository_improvement_workflow_pack_renders_with_stack_pack_fragment(self) -> None:
+        workflow_root = Path(__file__).resolve().parents[1] / "scaffold/workflow-packs"
+        pack = load_stack_packs(workflow_root)[0]
+
+        rendered = render_pack_fragment(pack, "stack_guidance")
+
+        self.assertIn("## Repository improvement audit", rendered)
+        self.assertIn("repo-audit-finding-schema.md", rendered)
+
+    def test_repository_improvement_workflow_pack_is_manual_by_default(self) -> None:
+        workflow_root = Path(__file__).resolve().parents[1] / "scaffold/workflow-packs"
+        packs = load_stack_packs(workflow_root)
+        with repo_fixture("workflow_pack_detection") as root:
+            write_file(root, "AGENTS.md", "# Demo\n")
+
+            detection = detect_stack_packs(root, packs=packs)[0]
+
+            self.assertFalse(detection.detected)
+            self.assertFalse(detection.recommended)
+            self.assertIn("missing detection signal", "; ".join(detection.reasons))
+
+    def test_repository_improvement_workflow_pack_can_use_manual_marker(self) -> None:
+        workflow_root = Path(__file__).resolve().parents[1] / "scaffold/workflow-packs"
+        packs = load_stack_packs(workflow_root)
+        with repo_fixture("workflow_pack_manual_marker") as root:
+            write_file(root, ".codex/enhancer/workflows/repository-improvement-audit.toml", "selected = true\n")
+
+            detection = detect_stack_packs(root, packs=packs)[0]
+
+            self.assertTrue(detection.detected)
+            self.assertFalse(detection.recommended)
+            self.assertIn(".codex/enhancer/workflows/repository-improvement-audit.toml", "; ".join(detection.reasons))
+
+    def test_invalid_workflow_pack_metadata_is_rejected_by_stack_pack_loader(self) -> None:
+        with repo_fixture("workflow_pack_bad_metadata") as root:
+            pack_root = root / "repository-improvement-audit"
+            write_file(
+                pack_root,
+                "pack.toml",
+                """
+                schema_version = 99
+                name = "repository-improvement-audit"
+                label = "Repository improvement audit"
+                description = "Read-only repository audit workflow."
+                version = "0.1.0"
+
+                [discovery]
+                any_files = [".codex/enhancer/workflows/repository-improvement-audit.toml"]
+
+                [ui]
+                recommended_if_detected = false
+                default_selected = false
+                order = 10
+
+                [guidance]
+                use_when = ["Use for read-only repo audits."]
+                adds = ["Adds audit guidance."]
+                skip_when = ["Skip for direct implementation."]
+
+                [render]
+                agents_summary = "fragments/agents-summary.md"
+                stack_guidance = "fragments/workflow-guidance.md"
+                review_notes = "fragments/review-notes.md"
+                """,
+            )
+            write_file(pack_root, "fragments/agents-summary.md", "Summary.\n")
+            write_file(pack_root, "fragments/workflow-guidance.md", "Guidance.\n")
+            write_file(pack_root, "fragments/review-notes.md", "Review notes.\n")
+
+            with self.assertRaisesRegex(ValueError, "Unsupported stack pack schema_version"):
+                load_stack_pack(pack_root)
+
+    def test_missing_workflow_pack_guidance_metadata_is_rejected_by_stack_pack_loader(self) -> None:
+        with repo_fixture("workflow_pack_missing_guidance_metadata") as root:
+            pack_root = root / "repository-improvement-audit"
+            write_file(
+                pack_root,
+                "pack.toml",
+                """
+                schema_version = 1
+                name = "repository-improvement-audit"
+                label = "Repository improvement audit"
+                description = "Read-only repository audit workflow."
+                version = "0.1.0"
+
+                [discovery]
+                any_files = [".codex/enhancer/workflows/repository-improvement-audit.toml"]
+
+                [ui]
+                recommended_if_detected = false
+                default_selected = false
+                order = 10
+
+                [render]
+                agents_summary = "fragments/agents-summary.md"
+                stack_guidance = "fragments/workflow-guidance.md"
+                review_notes = "fragments/review-notes.md"
+                """,
+            )
+            write_file(pack_root, "fragments/agents-summary.md", "Summary.\n")
+            write_file(pack_root, "fragments/workflow-guidance.md", "Guidance.\n")
+            write_file(pack_root, "fragments/review-notes.md", "Review notes.\n")
+
+            with self.assertRaisesRegex(ValueError, "Expected table section 'guidance'"):
+                load_stack_pack(pack_root)
+
+    def test_missing_workflow_pack_fragment_is_rejected_by_stack_pack_loader(self) -> None:
+        with repo_fixture("workflow_pack_missing_fragment") as root:
+            pack_root = root / "repository-improvement-audit"
+            write_file(
+                pack_root,
+                "pack.toml",
+                """
+                schema_version = 1
+                name = "repository-improvement-audit"
+                label = "Repository improvement audit"
+                description = "Read-only repository audit workflow."
+                version = "0.1.0"
+
+                [discovery]
+                any_files = [".codex/enhancer/workflows/repository-improvement-audit.toml"]
+
+                [ui]
+                recommended_if_detected = false
+                default_selected = false
+                order = 10
+
+                [guidance]
+                use_when = ["Use for read-only repo audits."]
+                adds = ["Adds audit guidance."]
+                skip_when = ["Skip for direct implementation."]
+
+                [render]
+                agents_summary = "fragments/agents-summary.md"
+                stack_guidance = "fragments/workflow-guidance.md"
+                review_notes = "fragments/review-notes.md"
+                """,
+            )
+            write_file(pack_root, "fragments/agents-summary.md", "Summary.\n")
+            write_file(pack_root, "fragments/workflow-guidance.md", "Guidance.\n")
+
+            with self.assertRaisesRegex(ValueError, "missing fragment fragments/review-notes.md"):
+                load_stack_pack(pack_root)
 
     def test_detects_monorepo_pack_from_workspace_file(self) -> None:
         with repo_fixture("pack_monorepo") as root:

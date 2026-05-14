@@ -40,9 +40,14 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         `python scripts/codex_enhancer_cli.py spec-sync ../repo --changed src/app.py`,
         and `python scripts/codex_enhancer_cli.py bridge ../repo --attach-spec-kit`.
         Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_gui.py`.
+        Workflow packs live in `scaffold/workflow-packs/` and reuse `scripts/stack_packs.py`.
         Read [docs/ai/migration-v3.md](docs/ai/migration-v3.md) before upgrading existing installs.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the completed product maturity roadmap.
         See [docs/ai/release.md](docs/ai/release.md) before building packages.
+        Use `full-repo-improvement-audit` for read-only whole-repo improvement audits.
+        See [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md).
+        See [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md).
+        See [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
         See [docs/ai/utility-harness.md](docs/ai/utility-harness.md) for the optional harness.
         Use requirements-codex-readers.txt for rich helper readers.
         Preview with `--utility-harness-mode install`.
@@ -59,9 +64,13 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Use `install_enhancer.bat` for the Windows GUI installer.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the enhancer roadmap.
         See [docs/ai/release.md](docs/ai/release.md) for package release checks.
+        See [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md).
+        See [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md).
+        See [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
         See [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md) for the optional Spec Kit bridge.
         See [docs/ai/utility-harness.md](docs/ai/utility-harness.md) for the optional Utility Harness.
         The resolver lives in `scripts/utility_harness.py`.
+        Workflow pack loading reuses `scripts/stack_packs.py` with `scaffold/workflow-packs/`.
 
         See [docs/ai/architecture.md](docs/ai/architecture.md),
         [docs/ai/code-review.md](docs/ai/code-review.md),
@@ -113,6 +122,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         # Architecture
 
         Repo-local workflow guidance only.
+        Workflow pack loading reuses scripts/stack_packs.py with scaffold/workflow-packs/.
+        workflow-pack installer support is deferred.
         """,
         "docs/ai/code-review.md": f"""
         # Review
@@ -137,6 +148,38 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         keep requirements-codex.txt out of production dependencies, and
         keep requirements-codex-readers.txt scoped to helper environments.
         mirror `codex_enhancer/assets/root/`.
+        """,
+        "docs/ai/repo-improvement-audit.md": """
+        # Repository Improvement Audit
+
+        ## Audit Order
+        Stop before implementation.
+
+        ## Evidence Standards
+        Do not infer build, lint, test, coverage, architecture, dependencies, deployment, or security posture from common stack conventions alone.
+
+        Use [repo-audit-finding-schema.md](repo-audit-finding-schema.md)
+        and [repo-audit-roadmap-rubric.md](repo-audit-roadmap-rubric.md).
+        """,
+        "docs/ai/repo-audit-finding-schema.md": """
+        # Repository Audit Finding Schema
+
+        - `Severity`: Critical, High, Medium, or Low.
+        - `Confidence`: High, Medium, or Low.
+        - `Evidence`: inspected files, commands, or tests.
+        - `Acceptance Test`: how a reviewer can tell the fix worked.
+
+        Low-confidence items must go under `Hypotheses / Needs Confirmation`.
+        """,
+        "docs/ai/repo-audit-roadmap-rubric.md": """
+        # Repository Audit Roadmap Rubric
+
+        ### Quick Wins
+        ### Phase 1 Stabilization
+        ### Phase 2 Maintainability/Test Hardening
+        ### Phase 3 Larger Architecture Work
+
+        Do not schedule implementation during the audit.
         """,
         "docs/ai/roadmap.md": """
         # Codex Enhancer Roadmap
@@ -192,6 +235,22 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         ## Do not use
         - Do not use when the repo guidance is already repo specific.
+        """,
+        ".codex/skills/full-repo-improvement-audit/SKILL.md": """
+        ---
+        name: full-repo-improvement-audit
+        description: Audit a whole repository before implementation. Use when the user asks for a repo-wide improvement audit.
+        ---
+
+        # Audit
+
+        1. Read repo guidance first.
+        2. Build a system map.
+        3. For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.
+        4. Stop after the audit. Do not modify files during audit mode.
+
+        ## Do not use
+        - Do not use for single-file edits.
         """,
         "scripts/__init__.py": '"""Repository-local Python helpers for Codex Enhancer."""\n',
         "scripts/check.py": """
@@ -522,6 +581,40 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "scaffold/stack-packs/library-package/fragments/review-notes.md": """
         Library review notes.
         """,
+        "scaffold/workflow-packs/repository-improvement-audit/pack.toml": """
+        schema_version = 1
+        name = "repository-improvement-audit"
+        label = "Repository improvement audit"
+        description = "Read-only repository audit workflow."
+        version = "0.1.0"
+
+        [guidance]
+        use_when = ["Use for read-only repo audits."]
+        adds = ["Adds audit guidance."]
+        skip_when = ["Skip for direct implementation."]
+
+        [discovery]
+        any_files = [".codex/enhancer/workflows/repository-improvement-audit.toml"]
+
+        [ui]
+        recommended_if_detected = false
+        default_selected = false
+        order = 10
+
+        [render]
+        agents_summary = "fragments/agents-summary.md"
+        stack_guidance = "fragments/workflow-guidance.md"
+        review_notes = "fragments/review-notes.md"
+        """,
+        "scaffold/workflow-packs/repository-improvement-audit/fragments/agents-summary.md": """
+        Repository audit summary.
+        """,
+        "scaffold/workflow-packs/repository-improvement-audit/fragments/workflow-guidance.md": """
+        Repository audit workflow guidance.
+        """,
+        "scaffold/workflow-packs/repository-improvement-audit/fragments/review-notes.md": """
+        Repository audit review notes.
+        """,
     }
 
     for relative_path, content in files.items():
@@ -608,6 +701,43 @@ class ValidateTests(unittest.TestCase):
 
             self.assertTrue(
                 any("Missing required skill: .codex/skills/adapt-enhancer/SKILL.md" in error for error in errors)
+            )
+
+    def test_audit_skill_is_enforced(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root, missing={".codex/skills/full-repo-improvement-audit/SKILL.md"})
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "Missing required skill: .codex/skills/full-repo-improvement-audit/SKILL.md" in error
+                    for error in errors
+                )
+            )
+
+    def test_audit_workflow_doc_drift_is_reported(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root)
+            write_file(
+                root,
+                "docs/ai/repo-improvement-audit.md",
+                """
+                # Repository Improvement Audit
+
+                Use [repo-audit-finding-schema.md](repo-audit-finding-schema.md)
+                and [repo-audit-roadmap-rubric.md](repo-audit-roadmap-rubric.md).
+                """,
+            )
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "docs/ai/repo-improvement-audit.md is missing required text" in error
+                    and "## Evidence Standards" in error
+                    for error in errors
+                )
             )
 
     def test_skill_missing_do_not_use_is_reported(self) -> None:

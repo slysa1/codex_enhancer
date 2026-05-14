@@ -1,23 +1,413 @@
 # Codex Enhancer Roadmap
 
 ## Purpose
-This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the implemented `3.x` lifecycle, Spec Kit bridge, Utility Harness, and packaging-readiness work. The core idea remains optional, visible, repo-local workflow guidance that improves Codex use without turning the enhancer into an agent runtime, package manager, or hidden orchestration layer.
+This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the implemented `3.x` lifecycle, Spec Kit bridge, Utility Harness, packaging-readiness work, and the implemented source-repo `4.2` repository-improvement audit workflow. The core idea remains optional, visible, repo-local workflow guidance that improves Codex use without turning the enhancer into an agent runtime, package manager, or hidden orchestration layer.
 
 Sections through `3.4` are retained as design history and implementation context. The `4.0` product maturity work is retained as the completed audit-backed roadmap for first-time-user polish, safer command execution, packaging confidence, and integration-ready installer output. The `4.1` section is retained as the completed follow-up baseline from the first-time-user product audit.
 
 ## Roadmap Status At A Glance
-There is no active broad implementation contract after the completed `4.1` follow-up pass. Sections before `4.0` are historical design records, and `4.0` plus `4.1` are completed baselines whose acceptance criteria should be preserved rather than re-implemented. Start a new `4.2` section only when a user report, repeated maintainer friction, or focused audit identifies a concrete follow-up.
+The only active `4.2` item is the focused repository-improvement audit workflow below. Sections before `4.0` are historical design records, and `4.0` plus `4.1` are completed baselines whose acceptance criteria should be preserved rather than re-implemented.
 
 | Section | Status | How to read it |
 |---------|--------|----------------|
 | `2.x` through `3.4` | Historical design record | Use for architecture context, shipped rationale, and regression expectations. Do not treat these sections as current TODOs. |
 | `4.0` | Completed baseline | Use as the product-maturity bar that the enhancer should not regress below. |
 | `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
+| `4.2` | Source workflow and workflow-pack foundation implemented; later phases deferred | Phase 1 source docs/skill, Phase 2 source validation, and Phase 3 render-only workflow-pack assets are implemented. Later installer, scaffold, specialist-skill, and `.agents/skills` work requires new evidence. |
 
 ## Current Priorities
 - Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
+- Keep the `4.2` repository-improvement audit workflow read-only until a user explicitly chooses follow-up implementation work.
 - Treat `4.1 Step 7` candidates as deferred. Do not start install profiles, transactional writes, dependency regrouping, license strategy, or richer GUI QA without fresh evidence that the smaller completed work is not enough.
-- When a new follow-up is justified, add a focused `4.2` section with objective, scope, non-goals, file set, validation, risks, and acceptance criteria before implementation.
+- Do not add workflow-pack installer support, target-repo scaffold integration, or `.agents/skills` migration until a later focused change justifies it.
+
+## 4.2 Repository Improvement Audit Workflow
+
+### Objective
+Add a reusable, read-only full repository improvement audit workflow that helps Codex map an existing repo, identify evidence-backed risks and technical debt, and produce a prioritized roadmap before any implementation begins.
+
+### Integration Recommendation
+The audit workflow should live first as source-repo durable docs plus one normal repo-local skill under `.codex/skills/`. That matches the current enhancer philosophy: visible repo-local guidance, narrow repeatable skills, deterministic validation, and no hidden runtime.
+
+Do not model repository-improvement auditing as a stack pack. Stack packs describe technology-shaped guidance selected from local target evidence, while this audit workflow is a cross-cutting process. If target repos later need installable audit guidance, add an explicit optional workflow-pack asset category rather than stretching `scaffold/stack-packs/`.
+
+### Scope
+- one concise source-repo orchestrator skill under `.codex/skills/`
+- durable docs under `docs/ai/` for the audit workflow, finding schema, and roadmap rubric
+- source validation metadata so the new workflow assets stay present and well-formed
+- root repo-map updates so maintainers can discover the workflow
+
+### Non-Goals
+- no installer flags, GUI changes, CLI commands, or target-repo scaffold integration
+- no `.agents/skills` migration
+- no specialist audit skills yet
+- no static-analysis integrations or invented audit commands
+- no implementation work during audit mode
+
+### Current Implementation Status
+Implemented:
+- Phase 1 source-repo docs and one orchestrator skill.
+- Phase 2 source validation and repo-map alignment using existing required-file, content, markdown-link, and skill-frontmatter checks.
+- Phase 3 render-only workflow-pack assets under `scaffold/workflow-packs/`, reusing the existing stack-pack loader metadata shape.
+
+Deferred:
+- installer/CLI/GUI support, target-repo scaffold integration, specialist audit skills, static-analysis-assisted inputs, and `.agents/skills` compatibility or migration.
+
+### Files Added In Phase 1
+- `.codex/skills/full-repo-improvement-audit/SKILL.md`
+- `docs/ai/repo-improvement-audit.md`
+- `docs/ai/repo-audit-finding-schema.md`
+- `docs/ai/repo-audit-roadmap-rubric.md`
+
+### Phased Roadmap
+
+#### Phase 0: Read-Only Design And Audit
+Objective:
+- inspect the actual repository and produce an evidence-backed integration roadmap before editing.
+
+Files to change:
+- none.
+
+Files deliberately not added:
+- no skills, docs, scaffold, scripts, tests, installer flags, or commands.
+
+Implementation notes:
+- use inspected repo files as evidence and separate confirmed facts from recommendations.
+
+Validation commands:
+- optional `python scripts/check.py` after inspection if local state needs confirmation.
+
+Tests to add or update:
+- none.
+
+Risks:
+- recommendations can drift if based on assumed architecture instead of inspected files.
+
+Acceptance criteria:
+- the report identifies the best integration point, alternatives, deferrals, validation needs, and phase boundaries without modifying files.
+
+#### Phase 1: Source Skill And Durable Docs
+Objective:
+- add the smallest reusable audit workflow: one orchestrator skill plus durable docs for workflow, finding schema, and roadmap prioritization.
+
+Files to change:
+- `.codex/skills/full-repo-improvement-audit/SKILL.md`
+- `docs/ai/repo-improvement-audit.md`
+- `docs/ai/repo-audit-finding-schema.md`
+- `docs/ai/repo-audit-roadmap-rubric.md`
+- `AGENTS.md`
+- `README.md`
+- `docs/ai/architecture.md`
+- `docs/ai/roadmap.md`
+- `scripts/enhancer_spec.py`
+- `tests/test_check.py`
+
+Files deliberately not added:
+- no `scaffold/workflow-packs/`
+- no installer or CLI flags
+- no GUI changes
+- no target-repo scaffold integration
+- no specialist audit skills
+- no static-analysis tooling
+- no `.agents/skills` migration
+
+Implementation notes:
+- keep the skill concise and operational.
+- keep detailed schema and prioritization rules in `docs/ai/`.
+- keep audit mode read-only and stop before implementation.
+- pin the source assets in the source validation profile so they cannot silently disappear.
+
+Validation commands:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Tests to add or update:
+- update source validator fixtures in `tests/test_check.py` so the audit docs and skill are required.
+
+Risks:
+- the workflow becomes broad AI process theater instead of a narrow evidence-backed audit.
+
+Acceptance criteria:
+- the skill has narrow trigger language and a `## Do not use` section.
+- audit docs define evidence standards, finding fields, severity/confidence, and roadmap buckets.
+- validation passes without adding scripts, installer support, or new command surfaces.
+
+#### Phase 2: Source Validation And Repo Map Alignment
+Objective:
+- harden the source-repo audit assets after Phase 1 proves useful.
+
+Files to change:
+- `scripts/enhancer_spec.py`
+- `scripts/enhancer_validator.py`, only if existing checks cannot express the needed rule
+- `tests/test_check.py`
+- `AGENTS.md`
+- `README.md`
+- `docs/ai/architecture.md`
+- `docs/ai/code-review.md`, only if review expectations change
+
+Files deliberately not added:
+- no installer behavior.
+- no workflow-pack asset category.
+- no new command facade.
+
+Implementation notes:
+- prefer existing required-file, content, link, and skill-frontmatter checks before adding validator logic.
+- avoid brittle prose snapshots beyond the canonical references needed for discoverability.
+
+Validation commands:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Tests to add or update:
+- add focused validator tests for missing audit docs, missing audit skill, malformed skill frontmatter, and broken doc links if existing coverage is not enough.
+
+Risks:
+- over-validating wording can make normal documentation edits noisy.
+
+Acceptance criteria:
+- audit workflow assets stay discoverable and well-formed with minimal validator churn.
+
+#### Phase 3: Optional Workflow-Pack Asset Category
+Objective:
+- add a separate installable workflow-pack model if repeated target-repo use shows audit guidance should be distributed as an opt-in bundle.
+
+Files to change:
+- new `scaffold/workflow-packs/repository-improvement-audit/`
+- `scripts/stack_packs.py`, reused as the shared loader
+- `scripts/enhancer_spec.py`
+- `scripts/enhancer_validator.py`
+- `README.md`
+- `docs/ai/architecture.md`
+- `docs/ai/roadmap.md`
+- new or updated tests under `tests/`
+
+Files deliberately not added:
+- no GUI controls in this phase unless CLI planning already works.
+- no automatic audit execution.
+- no technology-stack detection heuristics for workflow packs.
+
+Implementation notes:
+- mirror the visible, file-based simplicity of stack packs.
+- reuse the existing stack-pack loader shape under a separate `scaffold/workflow-packs/` root.
+- use manual marker discovery rather than technology detection heuristics unless a workflow has real local evidence.
+- keep selection opt-in.
+
+Validation commands:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Tests to add or update:
+- loader tests for required metadata, fragment existence, rendering, and invalid pack rejection.
+- packaging tests if workflow-pack assets become packaged runtime inputs.
+
+Risks:
+- adding a new asset category before target repos ask for it creates maintenance surface without value.
+
+Acceptance criteria:
+- workflow packs load and render deterministically without installer support or hidden state.
+
+#### Phase 4: Installer, CLI, And GUI Support
+Objective:
+- let users explicitly preview and install selected workflow packs into target repos.
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `scripts/codex_enhancer_cli.py`
+- `scripts/install_enhancer_gui.py`
+- `scripts/enhancer_spec.py`
+- `scripts/enhancer_validator.py`
+- `README.md`
+- `docs/ai/architecture.md`
+- `docs/ai/migration-v3.md`, if upgrade or refresh ownership changes
+- installer, CLI, GUI-facing, JSON, and packaging tests
+
+Files deliberately not added:
+- no background audit runner.
+- no default target install of audit workflows.
+- no external service or MCP integration.
+
+Implementation notes:
+- keep preview as the default.
+- preserve proposal-mode and dirty-worktree safety.
+- include workflow-pack state in JSON only after the human preview shape is stable.
+- keep CLI and GUI behavior delegated to the same installer core.
+
+Validation commands:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- wheel smoke path if packaged assets or console behavior changes.
+
+Tests to add or update:
+- CLI translation tests for workflow-pack flags.
+- installer dry-run, write, proposal, JSON, upgrade, and refresh tests.
+- GUI preview/completion helper tests if GUI exposes workflow packs.
+
+Risks:
+- command-surface growth makes the enhancer feel like a framework instead of a thin workflow layer.
+
+Acceptance criteria:
+- users can preview workflow-pack changes, understand planned writes, and apply them only with explicit `--write`.
+
+#### Phase 5: Target-Repo Scaffold Integration
+Objective:
+- make installed targets aware of selected audit workflow packs without forcing audit guidance into every install.
+
+Files to change:
+- workflow-pack assets for target docs and skills
+- `scaffold/target-repo/AGENTS.md`, only for selected workflow-pack managed summary support if needed
+- `scaffold/target-repo/docs/ai/architecture.md`
+- `scaffold/target-repo/tests/test_check.py`
+- target validation profile and installer rendering tests
+
+Files deliberately not added:
+- no default `full-repo-improvement-audit` skill in every target repo.
+- no audit docs in target repos unless selected.
+
+Implementation notes:
+- keep base target scaffold focused on adaptation, validation, stack guidance, Spec Kit bridge, and optional Utility Harness.
+- treat workflow-pack outputs as managed or repo-owned explicitly in the manifest.
+
+Validation commands:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- install smoke tests for targets with and without the audit workflow pack.
+
+Tests to add or update:
+- target validation tests for selected workflow-pack docs/skills.
+- installer tests proving unselected targets stay unchanged.
+
+Risks:
+- target repos inherit broad generic audit guidance they then have to delete.
+
+Acceptance criteria:
+- no-workflow-pack installs remain minimal; selected installs receive coherent audit guidance and pass target validation.
+
+#### Phase 6: Specialist Audit Skills
+Objective:
+- split the orchestrator only after repeated audit use shows durable sub-procedures deserve separate invocation.
+
+Files to change:
+- `.codex/skills/repo-map/SKILL.md`, if justified
+- `.codex/skills/repo-quality-audit/SKILL.md`, if justified
+- `.codex/skills/repo-test-audit/SKILL.md`, if justified
+- `.codex/skills/repo-security-audit/SKILL.md`, if justified
+- `.codex/skills/repo-performance-audit/SKILL.md`, if justified
+- `.codex/skills/repo-dx-audit/SKILL.md`, if justified
+- docs and validator fixtures for whichever skills are actually added
+
+Files deliberately not added:
+- no full suite of specialist skills in one pass.
+- no specialist skill without a narrow trigger and repeated-use evidence.
+
+Implementation notes:
+- keep `full-repo-improvement-audit` as the orchestrator.
+- make specialists optional helpers for bounded audit phases, not separate audit products.
+
+Validation commands:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Tests to add or update:
+- skill-frontmatter and required-skill checks only for shipped specialists.
+
+Risks:
+- skill sprawl makes Codex routing noisier and less predictable.
+
+Acceptance criteria:
+- each specialist has a clear trigger, non-goals, and a concrete audit output contract.
+
+#### Phase 7: Static-Analysis-Assisted Inputs
+Objective:
+- allow audits to use existing repo tools and optional helper scripts as evidence without inventing commands or installing dependencies automatically.
+
+Files to change:
+- `docs/ai/repo-improvement-audit.md`
+- `docs/ai/utility-harness.md`
+- Utility Harness tools under `scaffold/target-repo/tools/ai/`, only if a bounded helper earns its place
+- `requirements-codex-analysis.txt`, only for optional Codex/operator tooling with a named use
+- tests for any changed helper behavior
+
+Files deliberately not added:
+- no automatic dependency install.
+- no background indexer, daemon, telemetry, or MCP server.
+- no audit command that claims authority beyond inspected evidence.
+
+Implementation notes:
+- prefer commands already recorded in manifests, CI, or `AGENTS.md`.
+- label tool output as supporting evidence or hypothesis input.
+- keep missing optional dependencies as explicit messages, not silent fallbacks.
+
+Validation commands:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- focused helper smoke tests when helper scripts change.
+
+Tests to add or update:
+- helper tests for bounded output, ignored directories, and missing dependency messages.
+
+Risks:
+- tool output can create false confidence if not tied back to inspected files and commands.
+
+Acceptance criteria:
+- audit docs explain how to use static-analysis inputs cautiously and no default workflow runs unverified tools.
+
+#### Phase 8: `.agents/skills` Compatibility Or Migration
+Objective:
+- decide whether Codex Enhancer should support `.agents/skills` as an enhancer-owned skill root, keep it as an external/Spec Kit footprint, or support explicit dual output.
+
+Files to change:
+- `docs/ai/architecture.md`
+- `docs/ai/spec-kit-bridge.md`
+- `docs/ai/roadmap.md`
+- `scripts/enhancer_spec.py`
+- `scripts/enhancer_validator.py`
+- `scripts/install_enhancer.py`
+- packaging and installer tests, if asset output changes
+
+Files deliberately not added:
+- no silent duplication of every skill into both roots.
+- no migration that rewrites official Spec Kit-owned `.agents/skills`.
+
+Implementation notes:
+- current enhancer-owned skills live under `.codex/skills/`.
+- current `.agents/skills` handling is tied to official Spec Kit detection and should remain separately owned unless a focused compatibility decision changes that.
+- if dual-root support is chosen, make ownership, validation, and packaging rules explicit.
+
+Validation commands:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- packaged wheel smoke tests if packaged skill assets change.
+
+Tests to add or update:
+- validator tests for whichever skill roots are supported.
+- Spec Kit bridge tests proving official `.agents/skills` files are not overwritten.
+
+Risks:
+- skill-root compatibility can blur enhancer ownership with official Spec Kit or other agent tools.
+
+Acceptance criteria:
+- the repository has one explicit skill-root policy, tests enforce it, and target installs do not overwrite external skill surfaces.
+
+### Deferred Future Work
+- workflow-pack installer support until repeated use proves target repos need it
+- target-repo scaffold integration until the source-repo workflow has settled
+- `.agents/skills` compatibility or migration until a focused compatibility decision justifies it
+- specialist audit skills until repeated audits expose stable sub-procedures
+- static-analysis-assisted inputs until they can be grounded in existing project tools and optional helper dependencies
+- issue creation, PR templates, or audit report generators until users ask for handoff automation after audits
+
+### Validation
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+### Main Risk
+The workflow could become broad AI bureaucracy instead of a narrow useful audit. Keep the first pass read-only, evidence-based, and limited to docs plus one orchestrator skill.
+
+### Acceptance Criteria
+- the skill is concise, operational, read-only by default, and has a clear `## Do not use` section
+- audit docs define when to use the workflow, evidence standards, finding schema, and roadmap prioritization
+- roadmap language makes installer/workflow-pack support a future option, not current behavior
+- validation passes without adding scripts, installer support, or new command surfaces
 
 ## Historical Design Record: 2.x Through 3.4
 The following `2.x`, `3.0`, `3.1`, `3.3`, and `3.4` sections describe shipped or superseded design work. Keep them for context, but use the current priorities above plus the completed `4.0` and `4.1` baselines for future implementation choices.
