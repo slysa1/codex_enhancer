@@ -188,11 +188,13 @@ class EnhancerInstallState:
     selected_packs: tuple[str, ...]
     safe_to_regenerate: tuple[str, ...]
     adapt_manually: tuple[str, ...]
+    selected_workflows: tuple[str, ...] = ()
     schema_version: int | None = None
     lifecycle_state: str | None = None
     pack_selection_mode: str | None = None
     managed_sections: tuple[str, ...] = ()
     pack_evidence: tuple[ManifestPackEvidence, ...] = ()
+    workflow_evidence: tuple[ManifestPackEvidence, ...] = ()
     spec_kit_bridge: SpecKitBridgeConfig | None = None
     utility_harness: UtilityHarnessConfig | None = None
 
@@ -744,6 +746,10 @@ def load_selected_packs_from_manifest(target: Path) -> tuple[str, ...]:
     return load_enhancer_install_state(target).selected_packs
 
 
+def load_selected_workflows_from_manifest(target: Path) -> tuple[str, ...]:
+    return load_enhancer_install_state(target).selected_workflows
+
+
 def _manifest_string_list(
     target: Path,
     manifest_path: Path,
@@ -823,6 +829,12 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
         TARGET_MANIFEST_PATH,
         "selected_packs",
         manifest.get("selected_packs", []),
+    )
+    selected_workflows = _manifest_string_list(
+        target,
+        TARGET_MANIFEST_PATH,
+        "selected_workflows",
+        manifest.get("selected_workflows", []),
     )
 
     lifecycle_state: str | None = None
@@ -909,6 +921,31 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
                 item.get("evidence", []),
             )
             pack_evidence.append(ManifestPackEvidence(name=name, evidence=evidence))
+
+    workflow_evidence: list[ManifestPackEvidence] = []
+    detected_workflows = manifest.get("detected_workflows", [])
+    if detected_workflows == []:
+        pass
+    elif not isinstance(detected_workflows, list) or any(not isinstance(item, dict) for item in detected_workflows):
+        raise ValueError(
+            f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+            "detected_workflows must be an array of tables when present."
+        )
+    else:
+        for item in detected_workflows:
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(
+                    f"Target {target.resolve()} has an invalid {TARGET_MANIFEST_PATH.as_posix()}: "
+                    "each detected_workflows entry must define a non-empty name."
+                )
+            evidence = _manifest_string_list(
+                target,
+                TARGET_MANIFEST_PATH,
+                f"detected_workflows.{name}.evidence",
+                item.get("evidence", []),
+            )
+            workflow_evidence.append(ManifestPackEvidence(name=name, evidence=evidence))
 
     spec_kit_bridge: SpecKitBridgeConfig | None = None
     integrations = manifest.get("integrations", {})
@@ -1131,11 +1168,13 @@ def load_enhancer_install_state(target: Path) -> EnhancerInstallState:
         selected_packs=selected_packs,
         safe_to_regenerate=safe_to_regenerate,
         adapt_manually=adapt_manually,
+        selected_workflows=selected_workflows,
         schema_version=schema_version,
         lifecycle_state=lifecycle_state,
         pack_selection_mode=pack_selection_mode,
         managed_sections=managed_sections,
         pack_evidence=tuple(pack_evidence),
+        workflow_evidence=tuple(workflow_evidence),
         spec_kit_bridge=spec_kit_bridge,
         utility_harness=utility_harness,
     )
@@ -1145,12 +1184,13 @@ def resolve_manifest_pack_selection(
     detections: tuple[PackDetection, ...],
     *,
     selected_packs: tuple[str, ...],
+    pack_label: str = "stack pack",
 ) -> tuple[PackSelection, ...]:
     selected_set = set(selected_packs)
     unknown = sorted(selected_set - available_pack_names(detections))
     if unknown:
         names = ", ".join(unknown)
-        raise ValueError(f"Unknown stack pack name(s) in target manifest: {names}")
+        raise ValueError(f"Unknown {pack_label} name(s) in target manifest: {names}")
 
     selections: list[PackSelection] = []
     for detection in detections:
@@ -1175,6 +1215,8 @@ def resolve_managed_pack_selection(
     add_packs: tuple[str, ...] = (),
     remove_packs: tuple[str, ...] = (),
     set_packs: tuple[str, ...] | None = None,
+    pack_label: str = "stack pack",
+    option_suffix: str = "pack",
 ) -> tuple[PackSelection, ...]:
     available = available_pack_names(detections)
     current_set = set(current_selected_packs)
@@ -1184,17 +1226,20 @@ def resolve_managed_pack_selection(
     unknown_current = sorted(current_set - available)
     if unknown_current:
         names = ", ".join(unknown_current)
-        raise ValueError(f"Unknown stack pack name(s) in target manifest: {names}")
+        raise ValueError(f"Unknown {pack_label} name(s) in target manifest: {names}")
 
     if set_packs is not None and (add_set or remove_set):
-        raise ValueError("--set-pack cannot be combined with --add-pack or --remove-pack.")
+        raise ValueError(
+            f"--set-{option_suffix} cannot be combined with --add-{option_suffix} "
+            f"or --remove-{option_suffix}."
+        )
 
     if set_packs is not None:
         set_pack_set = set(set_packs)
         unknown = sorted(set_pack_set - available)
         if unknown:
             names = ", ".join(unknown)
-            raise ValueError(f"Unknown stack pack name(s): {names}")
+            raise ValueError(f"Unknown {pack_label} name(s): {names}")
         final_set = set_pack_set
     else:
         overlap = add_set & remove_set
@@ -1205,7 +1250,7 @@ def resolve_managed_pack_selection(
         unknown = sorted((add_set | remove_set) - available)
         if unknown:
             names = ", ".join(unknown)
-            raise ValueError(f"Unknown stack pack name(s): {names}")
+            raise ValueError(f"Unknown {pack_label} name(s): {names}")
         final_set = (current_set | add_set) - remove_set
 
     selections: list[PackSelection] = []
@@ -1383,6 +1428,55 @@ def render_stack_guidance(selections: tuple[PackSelection, ...]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def render_workflow_guidance(selections: tuple[PackSelection, ...]) -> str:
+    selected = [selection for selection in selections if selection.selected]
+    lines = [
+        "# Workflow Guidance",
+        "",
+        "This file records optional Codex Enhancer workflow packs selected for this repository.",
+        "",
+    ]
+
+    if not selected:
+        lines.extend(
+            [
+                "No workflow packs are selected yet.",
+                "",
+                "If this repository later adopts one of the shipped workflow packs, update the installer selection and regenerate this file with the matching manifest.",
+                "",
+            ]
+        )
+        return "\n".join(lines)
+
+    lines.append(
+        "Selected workflows: "
+        + ", ".join(f"`{selection.pack.name}`" for selection in selected)
+    )
+    lines.append("")
+
+    for selection in selected:
+        lines.extend(
+            [
+                f"## {selection.pack.label}",
+                "",
+                f"Pack id: `{selection.pack.name}`",
+                "",
+                (selection.pack.root / selection.pack.render.stack_guidance)
+                .read_text(encoding="utf-8")
+                .strip(),
+                "",
+                "### Review Notes",
+                "",
+                (selection.pack.root / selection.pack.render.review_notes)
+                .read_text(encoding="utf-8")
+                .strip(),
+                "",
+            ]
+        )
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _toml_string(value: str) -> str:
     return json.dumps(value)
 
@@ -1391,6 +1485,8 @@ def render_stack_pack_manifest(
     detections: tuple[PackDetection, ...],
     selected_packs: tuple[str, ...] = (),
     *,
+    workflow_detections: tuple[PackDetection, ...] = (),
+    selected_workflows: tuple[str, ...] = (),
     safe_to_regenerate: tuple[Path, ...] = (),
     adapt_manually: tuple[Path, ...] = (),
     spec_kit_bridge: SpecKitBridgeConfig | None = None,
@@ -1398,10 +1494,13 @@ def render_stack_pack_manifest(
 ) -> str:
     selected = tuple(selected_packs)
     selected_set = set(selected)
+    selected_workflow_names = tuple(selected_workflows)
+    selected_workflow_set = set(selected_workflow_names)
     lines = [
         f"schema_version = {ENHANCER_MANIFEST_SCHEMA_VERSION}",
         f'enhancer_version = "{ENHANCER_VERSION}"',
         f"selected_packs = [{', '.join(_toml_string(item) for item in selected)}]",
+        f"selected_workflows = [{', '.join(_toml_string(item) for item in selected_workflow_names)}]",
         "",
         "[lifecycle]",
         'state = "active"',
@@ -1428,11 +1527,34 @@ def render_stack_pack_manifest(
             ]
         )
 
+    if selected_workflow_names:
+        for detection in workflow_detections:
+            lines.extend(
+                [
+                    "[[detected_workflows]]",
+                    f"name = {_toml_string(detection.pack.name)}",
+                    f"selected = {'true' if detection.pack.name in selected_workflow_set else 'false'}",
+                    f"recommended = {'true' if detection.recommended else 'false'}",
+                    f"detected = {'true' if detection.detected else 'false'}",
+                    f"reason = {_toml_string('; '.join(detection.reasons))}",
+                    "evidence = ["
+                    + ", ".join(_toml_string(reason) for reason in detection.reasons)
+                    + "]",
+                    "",
+                ]
+            )
+
     lines.extend(
         [
             "[generated_files]",
             'stack_guidance = "docs/ai/stack-guidance.md"',
             'spec_kit_bridge = "docs/ai/spec-kit-bridge.md"',
+        ]
+    )
+    if selected_workflow_names:
+        lines.append('workflow_guidance = "docs/ai/workflow-guidance.md"')
+    lines.extend(
+        [
             "",
             "[managed_outputs]",
             "safe_to_regenerate = ["

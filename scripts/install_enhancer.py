@@ -19,7 +19,7 @@ from typing import Callable
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codex_enhancer.package_assets import read_asset_text
+from codex_enhancer.package_assets import asset_path, read_asset_text
 from scripts.enhancer_spec import (
     CHECK_COMMAND,
     ENHANCER_MANIFEST_SCHEMA_VERSION,
@@ -65,6 +65,7 @@ from scripts.stack_packs import (
     render_refresh_follow_up_lines,
     render_stack_guidance,
     render_stack_pack_manifest,
+    render_workflow_guidance,
     resolve_manifest_pack_selection,
     resolve_managed_pack_selection,
     resolve_stack_pack_selection,
@@ -174,6 +175,8 @@ class InstallPlan:
     pack_detections: tuple[PackDetection, ...]
     pack_selections: tuple[PackSelection, ...]
     manifest_preview: str
+    workflow_detections: tuple[PackDetection, ...] = ()
+    workflow_selections: tuple[PackSelection, ...] = ()
     spec_kit_bridge: SpecKitBridgeConfig | None = None
     spec_kit_detection: SpecKitDetection | None = None
     utility_harness: UtilityHarnessConfig | None = None
@@ -245,6 +248,20 @@ GENERATED_OUTPUT_DESTINATIONS = (
     Path("docs/ai/spec-kit-bridge.md"),
     Path(".codex/enhancer/manifest.toml"),
 )
+WORKFLOW_PACK_ROOT = asset_path("scaffold/workflow-packs")
+WORKFLOW_GUIDANCE_DESTINATION = Path("docs/ai/workflow-guidance.md")
+WORKFLOW_GENERATED_OUTPUT_DESTINATIONS = (WORKFLOW_GUIDANCE_DESTINATION,)
+REGENERABLE_OUTPUT_DESTINATIONS = (
+    GENERATED_OUTPUT_DESTINATIONS + WORKFLOW_GENERATED_OUTPUT_DESTINATIONS
+)
+ROADMAP_DESTINATION = Path("roadmap.md")
+ROADMAP_AUDIT_SECTION_START = (
+    "<!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit start -->"
+)
+ROADMAP_AUDIT_SECTION_END = (
+    "<!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit end -->"
+)
+REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW = "repository-improvement-audit"
 SELECTED_STACK_PACKS_SECTION_ID = "AGENTS.md:selected-stack-packs"
 SPEC_KIT_BRIDGE_SECTION_ID = "AGENTS.md:spec-kit-bridge"
 
@@ -273,6 +290,29 @@ def install_managed_destinations(
     if utility_harness is not None and utility_harness.enabled:
         destinations += tuple(asset.destination for asset in OPTIONAL_UTILITY_HARNESS_COPY_ASSETS)
     return destinations
+
+
+def load_workflow_packs() -> tuple[StackPack, ...]:
+    return load_stack_packs(WORKFLOW_PACK_ROOT)
+
+
+def detect_workflow_packs(target: Path) -> tuple[PackDetection, ...]:
+    return detect_stack_packs(target, packs=load_workflow_packs())
+
+
+def resolve_manifest_workflow_selection(
+    workflow_detections: tuple[PackDetection, ...],
+    selected_workflows: tuple[str, ...],
+) -> tuple[PackSelection, ...]:
+    return resolve_manifest_pack_selection(
+        workflow_detections,
+        selected_packs=selected_workflows,
+        pack_label="workflow pack",
+    )
+
+
+def selected_workflow_names(plan: InstallPlan) -> tuple[str, ...]:
+    return selected_pack_names(plan.workflow_selections)
 
 
 def infer_mode(target: Path) -> str:
@@ -509,6 +549,7 @@ def format_install_inspection(inspection: InstallInspection) -> str:
     schema_version = "unknown" if state.schema_version is None else str(state.schema_version)
     lines.append(f"- Target manifest schema: `{schema_version}`")
     lines.append(f"- Selected packs: {_format_string_list(state.selected_packs)}")
+    lines.append(f"- Selected workflows: {_format_string_list(state.selected_workflows)}")
     lines.append(f"- Safe to regenerate: {_format_string_list(state.safe_to_regenerate)}")
     lines.append(f"- Adapt manually: {_format_string_list(state.adapt_manually)}")
     if inspection.spec_kit_bridge is not None:
@@ -1132,8 +1173,9 @@ def plan_generated_writes(
     replacements: dict[str, str],
     pack_selections: tuple[PackSelection, ...],
     manifest_preview: str,
+    workflow_selections: tuple[PackSelection, ...] | None = None,
 ) -> list[PlannedWrite]:
-    generated_assets = (
+    generated_assets: tuple[tuple[Path, str, str], ...] = (
         (
             GENERATED_OUTPUT_DESTINATIONS[0],
             render_stack_guidance(pack_selections),
@@ -1150,6 +1192,17 @@ def plan_generated_writes(
             "generated stack-pack manifest",
         ),
     )
+    if workflow_selections is not None and (
+        selected_pack_names(workflow_selections)
+        or (target / WORKFLOW_GUIDANCE_DESTINATION).exists()
+    ):
+        generated_assets += (
+            (
+                WORKFLOW_GUIDANCE_DESTINATION,
+                render_workflow_guidance(workflow_selections),
+                "generated workflow guidance",
+            ),
+        )
 
     writes: list[PlannedWrite] = []
     for destination, content, source_label in generated_assets:
@@ -1171,6 +1224,75 @@ def plan_generated_writes(
             )
         )
     return writes
+
+
+def workflow_managed_destinations(
+    target: Path,
+    workflow_selections: tuple[PackSelection, ...],
+) -> tuple[Path, ...]:
+    selected_names = selected_pack_names(workflow_selections)
+    destinations: list[Path] = []
+    if selected_names or (target / WORKFLOW_GUIDANCE_DESTINATION).exists():
+        destinations.append(WORKFLOW_GUIDANCE_DESTINATION)
+    if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_names:
+        destinations.append(ROADMAP_DESTINATION)
+    return tuple(destinations)
+
+
+def render_audit_roadmap_section() -> str:
+    return "\n".join(
+        [
+            ROADMAP_AUDIT_SECTION_START,
+            "## Repository Improvement Audit",
+            "",
+            "No audit findings recorded yet.",
+            "",
+            "When Codex completes a full repository improvement audit, update this section with evidence-backed suggested changes, risks, and staged roadmap items. Preserve roadmap content outside this managed section.",
+            ROADMAP_AUDIT_SECTION_END,
+        ]
+    )
+
+
+def ensure_audit_roadmap_section(existing_text: str | None) -> str:
+    section = render_audit_roadmap_section()
+    if existing_text is None or not existing_text.strip():
+        return f"# Roadmap\n\n{section}\n"
+
+    start_count = existing_text.count(ROADMAP_AUDIT_SECTION_START)
+    end_count = existing_text.count(ROADMAP_AUDIT_SECTION_END)
+    if start_count == 0 and end_count == 0:
+        prefix = "" if existing_text.endswith("\n") else "\n"
+        return f"{existing_text}{prefix}\n{section}\n"
+    if start_count != 1 or end_count != 1:
+        raise ValueError(
+            "roadmap.md has malformed repository-improvement audit managed markers; "
+            "keep exactly one start marker and one end marker before managing workflow packs."
+        )
+    if existing_text.index(ROADMAP_AUDIT_SECTION_START) > existing_text.index(ROADMAP_AUDIT_SECTION_END):
+        raise ValueError(
+            "roadmap.md has reversed repository-improvement audit managed markers."
+        )
+    start_index = existing_text.index(ROADMAP_AUDIT_SECTION_START)
+    end_index = existing_text.index(ROADMAP_AUDIT_SECTION_END) + len(ROADMAP_AUDIT_SECTION_END)
+    return f"{existing_text[:start_index]}{section}{existing_text[end_index:]}"
+
+
+def plan_audit_roadmap_write(
+    target: Path,
+    workflow_selections: tuple[PackSelection, ...],
+) -> PlannedWrite | None:
+    if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW not in selected_pack_names(workflow_selections):
+        return None
+    roadmap_path = target / ROADMAP_DESTINATION
+    existing_text = roadmap_path.read_text(encoding="utf-8") if roadmap_path.exists() else None
+    content = ensure_audit_roadmap_section(existing_text)
+    return _plan_changed_write(
+        target,
+        ROADMAP_DESTINATION,
+        content,
+        "repository improvement audit roadmap section",
+        existing_action="overwrite",
+    )
 
 
 def _managed_section(identifier: str):
@@ -1339,6 +1461,7 @@ def build_upgrade_plan(
     resolved_target = inspection.target
     spec_kit_detection = inspection.spec_kit_detection or detect_spec_kit(resolved_target)
     pack_detections = detect_stack_packs(resolved_target)
+    workflow_detections = detect_workflow_packs(resolved_target)
     install_state = inspection.install_state or EnhancerInstallState(None, (), (), ())
     spec_kit_bridge = resolve_target_spec_kit_bridge(
         resolved_target,
@@ -1354,16 +1477,23 @@ def build_upgrade_plan(
         mode=utility_harness_mode,
         existing=install_state.utility_harness,
     )
-    ownership = summarize_output_ownership(
-        install_managed_destinations(spec_kit_bridge, utility_harness)
-    )
     pack_selections = resolve_manifest_pack_selection(
         pack_detections,
         selected_packs=install_state.selected_packs,
     )
+    workflow_selections = resolve_manifest_workflow_selection(
+        workflow_detections,
+        install_state.selected_workflows,
+    )
+    ownership = summarize_output_ownership(
+        install_managed_destinations(spec_kit_bridge, utility_harness)
+        + workflow_managed_destinations(resolved_target, workflow_selections)
+    )
     manifest_preview = render_stack_pack_manifest(
         pack_detections,
         selected_packs=selected_pack_names(pack_selections),
+        workflow_detections=workflow_detections,
+        selected_workflows=selected_pack_names(workflow_selections),
         safe_to_regenerate=ownership.safe_to_regenerate,
         adapt_manually=ownership.adapt_manually,
         spec_kit_bridge=spec_kit_bridge,
@@ -1442,6 +1572,7 @@ def build_upgrade_plan(
         replacements=replacements,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
+        workflow_selections=workflow_selections,
     ):
         changed = _plan_changed_write(
             resolved_target,
@@ -1452,6 +1583,9 @@ def build_upgrade_plan(
         )
         if changed is not None:
             writes.append(changed)
+    roadmap_update = plan_audit_roadmap_write(resolved_target, workflow_selections)
+    if roadmap_update is not None:
+        writes.append(roadmap_update)
 
     gitignore = compute_gitignore_update(resolved_target)
     gitignore_plan = gitignore if gitignore.missing_lines else None
@@ -1480,6 +1614,8 @@ def build_upgrade_plan(
         pack_detections=pack_detections,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
+        workflow_detections=workflow_detections,
+        workflow_selections=workflow_selections,
         spec_kit_bridge=spec_kit_bridge,
         spec_kit_detection=spec_kit_detection,
         utility_harness=utility_harness,
@@ -1510,6 +1646,7 @@ def build_pack_management_plan(
     resolved_target = inspection.target
     spec_kit_detection = inspection.spec_kit_detection or detect_spec_kit(resolved_target)
     pack_detections = detect_stack_packs(resolved_target)
+    workflow_detections = detect_workflow_packs(resolved_target)
     install_state = inspection.install_state or EnhancerInstallState(None, (), (), ())
     spec_kit_bridge = resolve_target_spec_kit_bridge(
         resolved_target,
@@ -1520,9 +1657,6 @@ def build_pack_management_plan(
         mode=None,
         existing=install_state.utility_harness,
     )
-    ownership = summarize_output_ownership(
-        install_managed_destinations(spec_kit_bridge, utility_harness)
-    )
     pack_selections = resolve_managed_pack_selection(
         pack_detections,
         current_selected_packs=install_state.selected_packs,
@@ -1530,9 +1664,19 @@ def build_pack_management_plan(
         remove_packs=remove_packs,
         set_packs=set_packs,
     )
+    workflow_selections = resolve_manifest_workflow_selection(
+        workflow_detections,
+        install_state.selected_workflows,
+    )
+    ownership = summarize_output_ownership(
+        install_managed_destinations(spec_kit_bridge, utility_harness)
+        + workflow_managed_destinations(resolved_target, workflow_selections)
+    )
     manifest_preview = render_stack_pack_manifest(
         pack_detections,
         selected_packs=selected_pack_names(pack_selections),
+        workflow_detections=workflow_detections,
+        selected_workflows=selected_pack_names(workflow_selections),
         safe_to_regenerate=ownership.safe_to_regenerate,
         adapt_manually=ownership.adapt_manually,
         spec_kit_bridge=spec_kit_bridge,
@@ -1569,6 +1713,7 @@ def build_pack_management_plan(
         replacements=replacements,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
+        workflow_selections=workflow_selections,
     ):
         changed = _plan_changed_write(
             resolved_target,
@@ -1579,6 +1724,9 @@ def build_pack_management_plan(
         )
         if changed is not None:
             writes.append(changed)
+    roadmap_update = plan_audit_roadmap_write(resolved_target, workflow_selections)
+    if roadmap_update is not None:
+        writes.append(roadmap_update)
 
     return InstallPlan(
         target=resolved_target,
@@ -1590,6 +1738,120 @@ def build_pack_management_plan(
         pack_detections=pack_detections,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
+        workflow_detections=workflow_detections,
+        workflow_selections=workflow_selections,
+        spec_kit_bridge=spec_kit_bridge,
+        spec_kit_detection=spec_kit_detection,
+        utility_harness=utility_harness,
+    )
+
+
+def build_workflow_management_plan(
+    target: Path,
+    *,
+    add_workflows: tuple[str, ...] = (),
+    remove_workflows: tuple[str, ...] = (),
+    set_workflows: tuple[str, ...] | None = None,
+    require_changes: bool = False,
+) -> InstallPlan:
+    inspection = inspect_install(target)
+    if inspection.status == "not-installed":
+        raise ValueError(
+            "Target repo does not contain an enhancer install yet; run a full install preview first."
+        )
+    if inspection.status != "current":
+        raise ValueError(
+            "Target enhancer install is not current; run --upgrade-enhancer before managing workflow packs."
+        )
+    if require_changes and not add_workflows and not remove_workflows and set_workflows is None:
+        raise ValueError(
+            "--manage-workflows requires --add-workflow, --remove-workflow, or --set-workflow."
+        )
+
+    resolved_target = inspection.target
+    spec_kit_detection = inspection.spec_kit_detection or detect_spec_kit(resolved_target)
+    pack_detections = detect_stack_packs(resolved_target)
+    workflow_detections = detect_workflow_packs(resolved_target)
+    install_state = inspection.install_state or EnhancerInstallState(None, (), (), ())
+    spec_kit_bridge = resolve_target_spec_kit_bridge(
+        resolved_target,
+        detection=spec_kit_detection,
+        install_state=install_state,
+    )
+    utility_harness = resolve_utility_harness(
+        mode=None,
+        existing=install_state.utility_harness,
+    )
+    pack_selections = resolve_manifest_pack_selection(
+        pack_detections,
+        selected_packs=install_state.selected_packs,
+    )
+    workflow_selections = resolve_managed_pack_selection(
+        workflow_detections,
+        current_selected_packs=install_state.selected_workflows,
+        add_packs=add_workflows,
+        remove_packs=remove_workflows,
+        set_packs=set_workflows,
+        pack_label="workflow pack",
+        option_suffix="workflow",
+    )
+    ownership = summarize_output_ownership(
+        install_managed_destinations(spec_kit_bridge, utility_harness)
+        + workflow_managed_destinations(resolved_target, workflow_selections)
+    )
+    manifest_preview = render_stack_pack_manifest(
+        pack_detections,
+        selected_packs=selected_pack_names(pack_selections),
+        workflow_detections=workflow_detections,
+        selected_workflows=selected_pack_names(workflow_selections),
+        safe_to_regenerate=ownership.safe_to_regenerate,
+        adapt_manually=ownership.adapt_manually,
+        spec_kit_bridge=spec_kit_bridge,
+        utility_harness=utility_harness,
+    )
+    replacements = build_replacements(
+        resolved_target,
+        pack_selections,
+        spec_kit_bridge,
+        spec_kit_detection,
+        utility_harness,
+        ignore_existing_guidance=(Path("AGENTS.md"),),
+    )
+
+    writes: list[PlannedWrite] = []
+    for planned in plan_generated_writes(
+        resolved_target,
+        force=True,
+        replacements=replacements,
+        pack_selections=pack_selections,
+        manifest_preview=manifest_preview,
+        workflow_selections=workflow_selections,
+    ):
+        changed = _plan_changed_write(
+            resolved_target,
+            planned.destination,
+            planned.content,
+            planned.source_label,
+            existing_action="overwrite",
+        )
+        if changed is not None:
+            writes.append(changed)
+    roadmap_update = plan_audit_roadmap_write(resolved_target, workflow_selections)
+    if roadmap_update is not None:
+        writes.append(roadmap_update)
+
+    return InstallPlan(
+        target=resolved_target,
+        operation="manage-workflows",
+        mode="existing",
+        force=False,
+        writes=tuple(writes),
+        gitignore=None,
+        pack_detections=pack_detections,
+        pack_selections=pack_selections,
+        manifest_preview=manifest_preview,
+        workflow_detections=workflow_detections,
+        workflow_selections=workflow_selections,
         spec_kit_bridge=spec_kit_bridge,
         spec_kit_detection=spec_kit_detection,
         utility_harness=utility_harness,
@@ -1630,6 +1892,7 @@ def build_spec_kit_bridge_management_plan(
     resolved_target = inspection.target
     spec_kit_detection = inspection.spec_kit_detection or detect_spec_kit(resolved_target)
     pack_detections = detect_stack_packs(resolved_target)
+    workflow_detections = detect_workflow_packs(resolved_target)
     install_state = inspection.install_state or EnhancerInstallState(None, (), (), ())
     spec_kit_bridge = resolve_target_spec_kit_bridge(
         resolved_target,
@@ -1645,16 +1908,23 @@ def build_spec_kit_bridge_management_plan(
         mode=None,
         existing=install_state.utility_harness,
     )
-    ownership = summarize_output_ownership(
-        install_managed_destinations(spec_kit_bridge, utility_harness)
-    )
     pack_selections = resolve_manifest_pack_selection(
         pack_detections,
         selected_packs=install_state.selected_packs,
     )
+    workflow_selections = resolve_manifest_workflow_selection(
+        workflow_detections,
+        install_state.selected_workflows,
+    )
+    ownership = summarize_output_ownership(
+        install_managed_destinations(spec_kit_bridge, utility_harness)
+        + workflow_managed_destinations(resolved_target, workflow_selections)
+    )
     manifest_preview = render_stack_pack_manifest(
         pack_detections,
         selected_packs=selected_pack_names(pack_selections),
+        workflow_detections=workflow_detections,
+        selected_workflows=selected_pack_names(workflow_selections),
         safe_to_regenerate=ownership.safe_to_regenerate,
         adapt_manually=ownership.adapt_manually,
         spec_kit_bridge=spec_kit_bridge,
@@ -1707,6 +1977,7 @@ def build_spec_kit_bridge_management_plan(
         replacements=replacements,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
+        workflow_selections=workflow_selections,
     ):
         changed = _plan_changed_write(
             resolved_target,
@@ -1717,6 +1988,9 @@ def build_spec_kit_bridge_management_plan(
         )
         if changed is not None:
             writes.append(changed)
+    roadmap_update = plan_audit_roadmap_write(resolved_target, workflow_selections)
+    if roadmap_update is not None:
+        writes.append(roadmap_update)
 
     external_steps = (
         tuple(
@@ -1743,6 +2017,8 @@ def build_spec_kit_bridge_management_plan(
         pack_detections=pack_detections,
         pack_selections=pack_selections,
         manifest_preview=manifest_preview,
+        workflow_detections=workflow_detections,
+        workflow_selections=workflow_selections,
         spec_kit_bridge=spec_kit_bridge,
         spec_kit_detection=spec_kit_detection,
         utility_harness=utility_harness,
@@ -1799,6 +2075,7 @@ def build_install_plan(
     effective_mode = infer_mode(resolved_target) if mode == "auto" else mode
     spec_kit_detection = detect_spec_kit(resolved_target)
     pack_detections = detect_stack_packs(resolved_target)
+    workflow_detections = detect_workflow_packs(resolved_target)
 
     if refresh_generated:
         if effective_mode != "existing":
@@ -1816,13 +2093,18 @@ def build_install_plan(
             mode=None,
             existing=install_state.utility_harness,
         )
-        ownership = summarize_output_ownership(
-            install_managed_destinations(spec_kit_bridge, utility_harness)
-        )
         selected_names = load_selected_packs_from_manifest(resolved_target)
         pack_selections = resolve_manifest_pack_selection(
             pack_detections,
             selected_packs=selected_names,
+        )
+        workflow_selections = resolve_manifest_workflow_selection(
+            workflow_detections,
+            install_state.selected_workflows,
+        )
+        ownership = summarize_output_ownership(
+            install_managed_destinations(spec_kit_bridge, utility_harness)
+            + workflow_managed_destinations(resolved_target, workflow_selections)
         )
         replacements = build_replacements(
             resolved_target,
@@ -1835,19 +2117,26 @@ def build_install_plan(
         manifest_preview = render_stack_pack_manifest(
             pack_detections,
             selected_packs=selected_pack_names(pack_selections),
+            workflow_detections=workflow_detections,
+            selected_workflows=selected_pack_names(workflow_selections),
             safe_to_regenerate=ownership.safe_to_regenerate,
             adapt_manually=ownership.adapt_manually,
             spec_kit_bridge=spec_kit_bridge,
             utility_harness=utility_harness,
         )
+        writes_list = plan_generated_writes(
+            resolved_target,
+            force=True,
+            replacements=replacements,
+            pack_selections=pack_selections,
+            manifest_preview=manifest_preview,
+            workflow_selections=workflow_selections,
+        )
+        roadmap_update = plan_audit_roadmap_write(resolved_target, workflow_selections)
+        if roadmap_update is not None:
+            writes_list.append(roadmap_update)
         writes = tuple(
-            plan_generated_writes(
-                resolved_target,
-                force=True,
-                replacements=replacements,
-                pack_selections=pack_selections,
-                manifest_preview=manifest_preview,
-            )
+            writes_list
         )
         return InstallPlan(
             target=resolved_target,
@@ -1859,6 +2148,8 @@ def build_install_plan(
             pack_detections=pack_detections,
             pack_selections=pack_selections,
             manifest_preview=manifest_preview,
+            workflow_detections=workflow_detections,
+            workflow_selections=workflow_selections,
             spec_kit_bridge=spec_kit_bridge,
             spec_kit_detection=spec_kit_detection,
             utility_harness=utility_harness,
@@ -1958,6 +2249,9 @@ def format_plan_header(plan: InstallPlan, write: bool) -> str:
         else
         "Codex Enhancer stack-pack management plan"
         if plan.operation == "manage-packs"
+        else
+        "Codex Enhancer workflow-pack management plan"
+        if plan.operation == "manage-workflows"
         else
         "Codex Enhancer Spec Kit bridge management plan"
         if plan.operation == "manage-spec-kit-bridge"
@@ -2121,6 +2415,9 @@ def format_external_step_summary_lines(step: ExternalStep) -> list[str]:
 def format_plan_lines(plan: InstallPlan) -> list[str]:
     lines: list[str] = []
     lines.extend(format_pack_lines(plan))
+    workflow_lines = format_workflow_lines(plan)
+    if workflow_lines:
+        lines.extend(workflow_lines)
     spec_kit_lines = _format_spec_kit_lines(
         plan.spec_kit_bridge,
         plan.spec_kit_detection,
@@ -2208,10 +2505,51 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
         lines.append("- Pack management updates the selected target manifest packs, managed AGENTS section, and generated bridge or pack guidance.")
     elif plan.operation == "manage-spec-kit-bridge":
         lines.append("- Spec Kit bridge management keeps the installed pack selection and updates only enhancer-owned bridge guidance and generated outputs.")
+    elif plan.operation == "manage-workflows":
+        lines.append("- Workflow management keeps the installed stack-pack selection and updates only workflow guidance plus generated outputs.")
     elif plan.operation == "refresh-generated":
         lines.append("- Stack guidance, the Spec Kit bridge guide, and the pack manifest will be regenerated from the existing target manifest.")
     else:
         lines.append("- Stack guidance, the Spec Kit bridge guide, and the pack manifest will be generated during install.")
+    lines.append("")
+    return lines
+
+
+def format_workflow_lines(plan: InstallPlan) -> list[str]:
+    if not plan.workflow_selections and plan.operation != "manage-workflows":
+        return []
+
+    lines = ["Workflow pack selection:"]
+    if not plan.workflow_selections:
+        lines.append("- none")
+        lines.append("")
+        return lines
+
+    for selection in plan.workflow_selections:
+        lines.append(
+            f"- {selection.pack.name}: "
+            f"{describe_pack_selection(selection, option_suffix='workflow')}"
+        )
+        if selection.selected or selection.recommended or selection.detected:
+            lines.append(f"  {format_pack_decision_hint(selection.pack)}")
+    selected_names = selected_pack_names(plan.workflow_selections)
+    if selected_names:
+        rendered_names = ", ".join(f'"{name}"' for name in selected_names)
+        lines.append(f"- Manifest preview selected_workflows = [{rendered_names}]")
+    else:
+        lines.append("- Manifest preview selected_workflows = []")
+    if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_names:
+        lines.append(
+            "- Repository improvement audits will maintain a managed section in root `roadmap.md`."
+        )
+    if plan.operation == "manage-workflows":
+        lines.append(
+            "- Workflow management updates workflow guidance, the manifest, and selected workflow-owned outputs."
+        )
+    elif plan.workflow_selections:
+        lines.append(
+            "- Existing workflow-pack selection is preserved while this operation updates other enhancer outputs."
+        )
     lines.append("")
     return lines
 
@@ -2221,6 +2559,7 @@ def summarize_conflicts(plan: InstallPlan) -> ConflictSummary:
         "refresh-generated",
         "upgrade-enhancer",
         "manage-packs",
+        "manage-workflows",
         "manage-spec-kit-bridge",
     }:
         return ConflictSummary(
@@ -2272,10 +2611,10 @@ def _dedupe_paths(paths: tuple[Path, ...]) -> tuple[Path, ...]:
 def summarize_output_ownership(destinations: tuple[Path, ...]) -> OutputOwnershipSummary:
     ordered_destinations = _dedupe_paths(destinations)
     safe_to_regenerate = tuple(
-        path for path in ordered_destinations if path in GENERATED_OUTPUT_DESTINATIONS
+        path for path in ordered_destinations if path in REGENERABLE_OUTPUT_DESTINATIONS
     )
     adapt_manually = tuple(
-        path for path in ordered_destinations if path not in GENERATED_OUTPUT_DESTINATIONS
+        path for path in ordered_destinations if path not in REGENERABLE_OUTPUT_DESTINATIONS
     )
     return OutputOwnershipSummary(
         safe_to_regenerate=safe_to_regenerate,
@@ -2288,7 +2627,7 @@ def format_output_ownership_lines(plan: InstallPlan) -> list[str]:
     if not summary.safe_to_regenerate and not summary.adapt_manually:
         return []
 
-    if plan.operation in {"manage-packs", "manage-spec-kit-bridge"}:
+    if plan.operation in {"manage-packs", "manage-workflows", "manage-spec-kit-bridge"}:
         lines = ["Output ownership:"]
         if summary.safe_to_regenerate:
             lines.append("- Regenerated managed outputs: " + _format_conflict_paths(summary.safe_to_regenerate))
@@ -2296,6 +2635,8 @@ def format_output_ownership_lines(plan: InstallPlan) -> list[str]:
             lines.append("- Managed sections updated in place: " + _format_conflict_paths(summary.adapt_manually))
         if plan.operation == "manage-spec-kit-bridge":
             lines.append("- Official Spec Kit files stay untouched.")
+        elif plan.operation == "manage-workflows":
+            lines.append("- Repo-owned roadmap content outside managed markers stays untouched.")
         else:
             lines.append("- Repo-owned content outside managed markers stays untouched.")
         return lines
@@ -2320,7 +2661,7 @@ def _format_conflict_paths(paths: tuple[Path, ...]) -> str:
 
 def format_upgrade_write_groups(plan: InstallPlan) -> list[str]:
     generated = [
-        item for item in plan.writes if item.destination in GENERATED_OUTPUT_DESTINATIONS
+        item for item in plan.writes if item.destination in REGENERABLE_OUTPUT_DESTINATIONS
     ]
     direct_copies = [
         item for item in plan.writes if item.destination in SOURCE_ALIGNED_UPGRADE_DESTINATIONS
@@ -2328,7 +2669,7 @@ def format_upgrade_write_groups(plan: InstallPlan) -> list[str]:
     repo_owned = [
         item
         for item in plan.writes
-        if item.destination not in GENERATED_OUTPUT_DESTINATIONS
+        if item.destination not in REGENERABLE_OUTPUT_DESTINATIONS
         and item.destination not in SOURCE_ALIGNED_UPGRADE_DESTINATIONS
     ]
 
@@ -2421,7 +2762,7 @@ def build_overwrite_confirmation_message(plan: InstallPlan) -> str:
     return "\n".join(lines)
 
 
-def describe_pack_selection(selection: PackSelection) -> str:
+def describe_pack_selection(selection: PackSelection, *, option_suffix: str = "pack") -> str:
     reason = format_detection_reason(
         PackDetection(
             pack=selection.pack,
@@ -2433,19 +2774,19 @@ def describe_pack_selection(selection: PackSelection) -> str:
     if selection.selection_source == "recommended":
         return f"selected from recommended detection ({reason})"
     if selection.selection_source == "explicit-include":
-        return f"selected explicitly via --pack ({reason})"
+        return f"selected explicitly via --{option_suffix} ({reason})"
     if selection.selection_source == "explicit-exclude":
-        return f"skipped explicitly via --no-pack ({reason})"
+        return f"skipped explicitly via --no-{option_suffix} ({reason})"
     if selection.selection_source == "manifest":
         return f"selected from existing target manifest ({reason})"
     if selection.selection_source == "manage-add":
-        return f"added by --add-pack ({reason})"
+        return f"added by --add-{option_suffix} ({reason})"
     if selection.selection_source == "manage-remove":
-        return f"removed by --remove-pack ({reason})"
+        return f"removed by --remove-{option_suffix} ({reason})"
     if selection.selection_source == "manage-set":
-        return f"selected by --set-pack ({reason})"
+        return f"selected by --set-{option_suffix} ({reason})"
     if selection.selection_source == "manage-set-remove":
-        return f"removed by --set-pack replacement ({reason})"
+        return f"removed by --set-{option_suffix} replacement ({reason})"
     if selection.selection_source == "default":
         return f"selected by pack default ({reason})"
     if selection.detected and selection.recommended:
@@ -2564,6 +2905,56 @@ def pack_catalog_to_dict(target: Path | None = None) -> dict[str, object]:
     }
 
 
+def workflow_catalog_to_dict(target: Path | None = None) -> dict[str, object]:
+    workflows = load_workflow_packs()
+    detections_by_name: dict[str, PackDetection] = {}
+    if target is not None:
+        detections_by_name = {
+            detection.pack.name: detection
+            for detection in detect_workflow_packs(target)
+        }
+
+    workflow_entries: list[dict[str, object]] = []
+    for workflow in workflows:
+        detection = detections_by_name.get(workflow.name)
+        workflow_entries.append(
+            {
+                "name": workflow.name,
+                "label": workflow.label,
+                "description": workflow.description,
+                "version": workflow.version,
+                "guidance": {
+                    "use_when": list(workflow.guidance.use_when),
+                    "adds": list(workflow.guidance.adds),
+                    "skip_when": list(workflow.guidance.skip_when),
+                },
+                "detection_signals": {
+                    "all_files": [path.as_posix() for path in workflow.discovery.all_files],
+                    "any_files": [path.as_posix() for path in workflow.discovery.any_files],
+                    "any_globs": list(workflow.discovery.any_globs),
+                    "all_dirs": [path.as_posix() for path in workflow.discovery.all_dirs],
+                    "exclude_files": [path.as_posix() for path in workflow.discovery.exclude_files],
+                },
+                "status": None if detection is None else pack_detection_status(detection),
+                "detected": None if detection is None else detection.detected,
+                "recommended": None if detection is None else detection.recommended,
+                "evidence": [] if detection is None else list(detection.reasons),
+            }
+        )
+
+    notes = [
+        "Workflow packs use the existing stack-pack loader format but live under scaffold/workflow-packs/.",
+        "This report is read-only and does not select workflows; use --manage-workflows on an installed target to opt in.",
+    ]
+    return {
+        "schema_version": PLAN_JSON_SCHEMA_VERSION,
+        "kind": "workflow-catalog",
+        "target": None if target is None else str(target),
+        "notes": notes,
+        "workflows": workflow_entries,
+    }
+
+
 def format_pack_catalog(target: Path | None = None) -> str:
     packs = load_stack_packs()
     detections_by_name: dict[str, PackDetection] = {}
@@ -2592,6 +2983,39 @@ def format_pack_catalog(target: Path | None = None) -> str:
         lines.extend(format_pack_signal_lines(pack, indent="  "))
         if target is not None:
             detection = detections_by_name[pack.name]
+            lines.append(f"  status: {pack_detection_status(detection)}")
+            lines.append(f"  evidence: {format_detection_reason(detection)}")
+    return "\n".join(lines)
+
+
+def format_workflow_catalog(target: Path | None = None) -> str:
+    workflows = load_workflow_packs()
+    detections_by_name: dict[str, PackDetection] = {}
+    if target is not None:
+        detections_by_name = {
+            detection.pack.name: detection
+            for detection in detect_workflow_packs(target)
+        }
+
+    lines = ["Available workflow packs:"]
+    if target is not None:
+        lines.extend(
+            [
+                "",
+                "Detection audit:",
+                f"- Target: `{target.resolve()}`",
+                "- Evidence is local only: visible paths and explicit workflow marker files.",
+                "- This report does not select workflows. Use `--manage-workflows --add-workflow <name>` on an installed target to opt in.",
+                "- Not detected means the optional workflow marker is absent; workflow packs are still manually selectable.",
+                "",
+            ]
+        )
+    for workflow in workflows:
+        lines.append(f"- {workflow.name}: {workflow.label}")
+        lines.extend(format_pack_guidance_block(workflow, indent="  "))
+        lines.extend(format_pack_signal_lines(workflow, indent="  "))
+        if target is not None:
+            detection = detections_by_name[workflow.name]
             lines.append(f"  status: {pack_detection_status(detection)}")
             lines.append(f"  evidence: {format_detection_reason(detection)}")
     return "\n".join(lines)
@@ -2708,6 +3132,7 @@ def plan_to_dict(
     diagnostics: tuple[WriteSafetyDiagnostic, ...] = (),
 ) -> dict[str, object]:
     selected_names = selected_pack_names(plan.pack_selections)
+    selected_workflows = selected_pack_names(plan.workflow_selections)
     summary = summarize_conflicts(plan)
     return {
         "schema_version": PLAN_JSON_SCHEMA_VERSION,
@@ -2719,6 +3144,10 @@ def plan_to_dict(
         "force": plan.force,
         "selected_packs": list(selected_names),
         "pack_selections": [_pack_selection_to_dict(selection) for selection in plan.pack_selections],
+        "selected_workflows": list(selected_workflows),
+        "workflow_selections": [
+            _pack_selection_to_dict(selection) for selection in plan.workflow_selections
+        ],
         "spec_kit_bridge": _bridge_to_dict(plan.spec_kit_bridge),
         "spec_kit_detection": _detection_to_dict(plan.spec_kit_detection),
         "utility_harness": _utility_to_dict(plan.utility_harness),
@@ -2753,6 +3182,7 @@ def inspection_to_dict(inspection: InstallInspection) -> dict[str, object]:
         "status": inspection.status,
         "manifest_schema": None if state is None else state.schema_version,
         "selected_packs": [] if state is None else list(state.selected_packs),
+        "selected_workflows": [] if state is None else list(state.selected_workflows),
         "safe_to_regenerate": [] if state is None else list(state.safe_to_regenerate),
         "adapt_manually": [] if state is None else list(state.adapt_manually),
         "spec_kit_bridge": _bridge_to_dict(inspection.spec_kit_bridge),
@@ -2803,6 +3233,7 @@ def format_json(data: dict[str, object]) -> str:
 
 def format_plan_summary_lines(plan: InstallPlan) -> list[str]:
     selected_names = selected_pack_names(plan.pack_selections)
+    selected_workflows = selected_pack_names(plan.workflow_selections)
     summary = summarize_conflicts(plan)
     lines = [
         "Plan summary:",
@@ -2812,6 +3243,8 @@ def format_plan_summary_lines(plan: InstallPlan) -> list[str]:
         f"- Force: `{plan.force}`",
         "- Selected packs: "
         + (", ".join(f"`{name}`" for name in selected_names) if selected_names else "none"),
+        "- Selected workflows: "
+        + (", ".join(f"`{name}`" for name in selected_workflows) if selected_workflows else "none"),
         f"- Writes: {len(plan.writes)} total; "
         f"{sum(1 for item in plan.writes if item.action == 'create')} create, "
         f"{sum(1 for item in plan.writes if item.action == 'overwrite')} overwrite, "
@@ -3116,6 +3549,8 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
             if plan.operation == "manage-spec-kit-bridge"
             else "pack-management preview"
             if plan.operation == "manage-packs"
+            else "workflow-management preview"
+            if plan.operation == "manage-workflows"
             else "preview"
         )
         lines = [
@@ -3142,6 +3577,23 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
         lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
         return lines
 
+    if plan.operation == "manage-workflows":
+        selected_names = selected_pack_names(plan.workflow_selections)
+        if selected_names:
+            lines.append(
+                "- Review the regenerated `docs/ai/workflow-guidance.md` for: "
+                + ", ".join(f"`{name}`" for name in selected_names)
+                + "."
+            )
+        else:
+            lines.append("- Review `docs/ai/workflow-guidance.md`; no workflow packs are selected now.")
+        if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_names:
+            lines.append("- Review the managed repository-improvement audit section in root `roadmap.md`.")
+        lines.append("- Review `.codex/enhancer/manifest.toml` for the selected_workflows state.")
+        lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
+        lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
+        return lines
+
     if plan.operation == "manage-spec-kit-bridge":
         if bridge_enabled:
             lines.append("- Review the updated managed Spec Kit bridge section in `AGENTS.md` and the regenerated `docs/ai/spec-kit-bridge.md`.")
@@ -3155,6 +3607,11 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
 
     if plan.operation == "refresh-generated":
         lines.extend(render_refresh_follow_up_lines(plan.pack_selections))
+        workflow_names = selected_pack_names(plan.workflow_selections)
+        if workflow_names:
+            lines.append("- Review the refreshed `docs/ai/workflow-guidance.md` for selected workflow packs.")
+        if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in workflow_names:
+            lines.append("- Confirm root `roadmap.md` still preserves any existing audit roadmap notes.")
         lines.append("- Review the refreshed `docs/ai/spec-kit-bridge.md` if this repo uses the Spec Kit bridge.")
         lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
         lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
@@ -3188,6 +3645,8 @@ def format_after_install_preview(plan: InstallPlan) -> list[str]:
         if plan.operation == "refresh-generated"
         else "After Spec Kit bridge management:"
         if plan.operation == "manage-spec-kit-bridge"
+        else "After workflow management:"
+        if plan.operation == "manage-workflows"
         else "After pack management:"
         if plan.operation == "manage-packs"
         else "After install:"
@@ -3323,6 +3782,8 @@ def apply_install_plan(
             message = "Preparing upgrade..."
         elif plan.operation == "manage-spec-kit-bridge":
             message = "Preparing Spec Kit bridge management..."
+        elif plan.operation == "manage-workflows":
+            message = "Preparing workflow management..."
         elif plan.operation == "manage-packs":
             message = "Preparing pack management..."
         elif plan.operation == "refresh-generated":
@@ -3413,6 +3874,11 @@ def main(argv: list[str]) -> int:
         help="print the available stack packs and exit",
     )
     parser.add_argument(
+        "--list-workflows",
+        action="store_true",
+        help="print the available workflow packs and exit",
+    )
+    parser.add_argument(
         "--doctor",
         action="store_true",
         help="run a read-only first-run diagnostic for a source checkout, installed target, or plain repo",
@@ -3460,6 +3926,11 @@ def main(argv: list[str]) -> int:
         "--manage-packs",
         action="store_true",
         help="preview or apply selected stack-pack changes in an existing enhancer install",
+    )
+    parser.add_argument(
+        "--manage-workflows",
+        action="store_true",
+        help="preview or apply selected workflow-pack changes in an existing enhancer install",
     )
     parser.add_argument(
         "--manage-spec-kit-bridge",
@@ -3562,6 +4033,24 @@ def main(argv: list[str]) -> int:
         help="replace the installed stack-pack selection with this exact pack set; repeatable and requires --manage-packs",
     )
     parser.add_argument(
+        "--add-workflow",
+        action="append",
+        default=[],
+        help="add a workflow pack to an existing installed manifest; repeatable and requires --manage-workflows",
+    )
+    parser.add_argument(
+        "--remove-workflow",
+        action="append",
+        default=[],
+        help="remove a workflow pack from an existing installed manifest; repeatable and requires --manage-workflows",
+    )
+    parser.add_argument(
+        "--set-workflow",
+        action="append",
+        default=[],
+        help="replace the installed workflow-pack selection with this exact workflow set; repeatable and requires --manage-workflows",
+    )
+    parser.add_argument(
         "--spec-kit-mode",
         choices=("off", "auto", "attach", "bootstrap"),
         help="set the Spec Kit bridge mode for install or upgrade flows",
@@ -3646,15 +4135,20 @@ def main(argv: list[str]) -> int:
                 return fail(str(error))
         return 0
 
+    if args.list_packs and args.list_workflows:
+        return fail("--list-packs and --list-workflows are separate read-only reports.")
+
     if args.doctor:
         if (
             args.list_packs
+            or args.list_workflows
             or args.inspect_install
             or args.audit_adaptation
             or args.spec_kit_report
             or args.spec_kit_sync_report
             or args.upgrade_enhancer
             or args.manage_packs
+            or args.manage_workflows
             or args.manage_spec_kit_bridge
             or args.write
             or args.force
@@ -3668,6 +4162,9 @@ def main(argv: list[str]) -> int:
             or args.add_pack
             or args.remove_pack
             or args.set_pack
+            or args.add_workflow
+            or args.remove_workflow
+            or args.set_workflow
             or args.spec_kit_mode
             or args.spec_kit_script != "auto"
             or args.spec_kit_command_surface != "auto"
@@ -3696,8 +4193,18 @@ def main(argv: list[str]) -> int:
         emit(catalog, catalog_data)
         return 0
 
+    if args.list_workflows and args.target is None:
+        catalog = format_workflow_catalog()
+        catalog_data = workflow_catalog_to_dict()
+        catalog_data["text"] = catalog
+        emit(catalog, catalog_data)
+        return 0
+
     if args.target is None:
-        return fail("Missing required --target. Use --doctor for a read-only check of the current directory or --list-packs to inspect available stack packs without a target repo.")
+        return fail(
+            "Missing required --target. Use --doctor for a read-only check of the current directory, "
+            "--list-packs to inspect available stack packs, or --list-workflows to inspect workflow packs without a target repo."
+        )
 
     target = Path(args.target).resolve()
 
@@ -3708,6 +4215,17 @@ def main(argv: list[str]) -> int:
             return fail(str(error))
         catalog = format_pack_catalog(target)
         catalog_data = pack_catalog_to_dict(target)
+        catalog_data["text"] = catalog
+        emit(catalog, catalog_data)
+        return 0
+
+    if args.list_workflows:
+        try:
+            validate_mode(target, args.mode)
+        except ValueError as error:
+            return fail(str(error))
+        catalog = format_workflow_catalog(target)
+        catalog_data = workflow_catalog_to_dict(target)
         catalog_data["text"] = catalog
         emit(catalog, catalog_data)
         return 0
@@ -3726,6 +4244,7 @@ def main(argv: list[str]) -> int:
         or args.audit_adaptation
         or args.upgrade_enhancer
         or args.manage_packs
+        or args.manage_workflows
         or args.manage_spec_kit_bridge
         or args.write
         or args.force
@@ -3738,6 +4257,9 @@ def main(argv: list[str]) -> int:
         or args.add_pack
         or args.remove_pack
         or args.set_pack
+        or args.add_workflow
+        or args.remove_workflow
+        or args.set_workflow
         or args.spec_kit_mode
         or args.spec_kit_script != "auto"
         or args.spec_kit_command_surface != "auto"
@@ -3773,6 +4295,7 @@ def main(argv: list[str]) -> int:
         args.inspect_install
         or args.upgrade_enhancer
         or args.manage_packs
+        or args.manage_workflows
         or args.manage_spec_kit_bridge
         or args.write
         or args.force
@@ -3785,6 +4308,9 @@ def main(argv: list[str]) -> int:
         or args.add_pack
         or args.remove_pack
         or args.set_pack
+        or args.add_workflow
+        or args.remove_workflow
+        or args.set_workflow
         or args.spec_kit_mode
         or args.spec_kit_script != "auto"
         or args.spec_kit_command_surface != "auto"
@@ -3809,6 +4335,7 @@ def main(argv: list[str]) -> int:
     if args.inspect_install and (
         args.upgrade_enhancer
         or args.manage_packs
+        or args.manage_workflows
         or args.manage_spec_kit_bridge
         or args.write
         or args.force
@@ -3821,6 +4348,9 @@ def main(argv: list[str]) -> int:
         or args.add_pack
         or args.remove_pack
         or args.set_pack
+        or args.add_workflow
+        or args.remove_workflow
+        or args.set_workflow
         or args.spec_kit_mode
         or args.spec_kit_script != "auto"
         or args.spec_kit_command_surface != "auto"
@@ -3849,6 +4379,7 @@ def main(argv: list[str]) -> int:
     if args.upgrade_enhancer and (
         args.force
         or args.manage_packs
+        or args.manage_workflows
         or args.manage_spec_kit_bridge
         or args.refresh_generated
         or args.use_recommended_packs
@@ -3857,8 +4388,11 @@ def main(argv: list[str]) -> int:
         or args.add_pack
         or args.remove_pack
         or args.set_pack
+        or args.add_workflow
+        or args.remove_workflow
+        or args.set_workflow
     ):
-        return fail("--upgrade-enhancer keeps the installed pack selection and cannot be combined with refresh, force, or pack-selection flags.")
+        return fail("--upgrade-enhancer keeps the installed pack and workflow selection and cannot be combined with refresh, force, or selection flags.")
 
     if args.upgrade_enhancer:
         if args.mode == "new":
@@ -3880,6 +4414,7 @@ def main(argv: list[str]) -> int:
     if args.manage_spec_kit_bridge and (
         args.force
         or args.manage_packs
+        or args.manage_workflows
         or args.refresh_generated
         or args.use_recommended_packs
         or args.pack
@@ -3887,9 +4422,12 @@ def main(argv: list[str]) -> int:
         or args.add_pack
         or args.remove_pack
         or args.set_pack
+        or args.add_workflow
+        or args.remove_workflow
+        or args.set_workflow
         or args.utility_harness_mode
     ):
-        return fail("--manage-spec-kit-bridge updates bridge state and cannot be combined with force, refresh, Utility Harness, or pack-selection flags.")
+        return fail("--manage-spec-kit-bridge updates bridge state and cannot be combined with force, refresh, Utility Harness, or selection flags.")
 
     if args.manage_spec_kit_bridge:
         if args.mode == "new":
@@ -3911,8 +4449,12 @@ def main(argv: list[str]) -> int:
     if (args.add_pack or args.remove_pack or args.set_pack) and not args.manage_packs:
         return fail("--add-pack, --remove-pack, and --set-pack require --manage-packs.")
 
+    if (args.add_workflow or args.remove_workflow or args.set_workflow) and not args.manage_workflows:
+        return fail("--add-workflow, --remove-workflow, and --set-workflow require --manage-workflows.")
+
     if args.manage_packs and (
         args.force
+        or args.manage_workflows
         or args.manage_spec_kit_bridge
         or args.refresh_generated
         or args.use_recommended_packs
@@ -3924,8 +4466,11 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_version
         or args.spec_kit_exe
         or args.utility_harness_mode
+        or args.add_workflow
+        or args.remove_workflow
+        or args.set_workflow
     ):
-        return fail("--manage-packs updates installed pack selection and cannot be combined with install-time Spec Kit, Utility Harness, or pack-selection flags.")
+        return fail("--manage-packs updates installed pack selection and cannot be combined with workflow, Spec Kit, Utility Harness, or install-time pack-selection flags.")
 
     if args.manage_packs:
         if args.mode == "new":
@@ -3942,15 +4487,11 @@ def main(argv: list[str]) -> int:
             return fail(str(error))
         return emit_plan_and_apply(plan)
 
-    if args.refresh_generated and args.force:
-        return fail("--refresh-generated only updates safe managed outputs and does not accept --force.")
-
-    if args.refresh_generated and args.mode == "new":
-        return fail("--refresh-generated only works with --mode existing or --mode auto.")
-
-    if args.refresh_generated and (
-        args.use_recommended_packs
+    if args.manage_workflows and (
+        args.force
         or args.manage_spec_kit_bridge
+        or args.refresh_generated
+        or args.use_recommended_packs
         or args.pack
         or args.no_pack
         or args.add_pack
@@ -3963,9 +4504,52 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_exe
         or args.utility_harness_mode
     ):
+        return fail("--manage-workflows updates installed workflow selection and cannot be combined with pack, Spec Kit, Utility Harness, or install-time selection flags.")
+
+    if args.manage_workflows:
+        if args.mode == "new":
+            return fail("--manage-workflows only works with --mode existing or --mode auto.")
+        try:
+            plan = build_workflow_management_plan(
+                target,
+                add_workflows=tuple(args.add_workflow),
+                remove_workflows=tuple(args.remove_workflow),
+                set_workflows=tuple(args.set_workflow) if args.set_workflow else None,
+                require_changes=True,
+            )
+        except ValueError as error:
+            return fail(str(error))
+        return emit_plan_and_apply(plan)
+
+    if args.refresh_generated and args.force:
+        return fail("--refresh-generated only updates safe managed outputs and does not accept --force.")
+
+    if args.refresh_generated and args.mode == "new":
+        return fail("--refresh-generated only works with --mode existing or --mode auto.")
+
+    if args.refresh_generated and (
+        args.use_recommended_packs
+        or args.manage_spec_kit_bridge
+        or args.manage_workflows
+        or args.pack
+        or args.no_pack
+        or args.add_pack
+        or args.remove_pack
+        or args.set_pack
+        or args.add_workflow
+        or args.remove_workflow
+        or args.set_workflow
+        or args.spec_kit_mode
+        or args.spec_kit_script != "auto"
+        or args.spec_kit_command_surface != "auto"
+        or args.spec_kit_version
+        or args.spec_kit_exe
+        or args.utility_harness_mode
+    ):
         return fail(
             "--refresh-generated uses the target repo's existing manifest selection and bridge state; "
-            "do not combine it with pack-selection, Spec Kit override, or Utility Harness flags."
+            "do not combine it with pack-selection, Spec Kit override, or Utility Harness flags. "
+            "Use --manage-workflows for workflow-selection changes."
         )
 
     try:

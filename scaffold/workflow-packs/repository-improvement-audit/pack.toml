@@ -1,7 +1,7 @@
 schema_version = 1
 name = "repository-improvement-audit"
 label = "Repository improvement audit"
-description = "Read-only workflow guidance for mapping an existing repository and producing an evidence-backed improvement roadmap before implementation."
+description = "No-implementation workflow guidance for mapping an existing repository and producing an evidence-backed improvement roadmap before implementation."
 version = "0.1.0"
 
 [discovery]

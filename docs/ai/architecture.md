@@ -13,7 +13,7 @@ This repository contains the enhancer itself, not an application stack. The work
 7. [codex-enhancer](../../codex-enhancer), [codex-enhancer.bat](../../codex-enhancer.bat), and [scripts/codex_enhancer_cli.py](../../scripts/codex_enhancer_cli.py): thin source-checkout command facade over the installer core, including concise previews, adaptation audits, diff previews, and JSON output.
 8. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, pack management, upgrade/reconcile, and guided install or managed-output refresh flow.
 9. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus pack management, upgrade/reconcile, and safe generated-output refreshes.
-10. [scripts/stack_packs.py](../../scripts/stack_packs.py), [scaffold/stack-packs/](../../scaffold/stack-packs/), and [scaffold/workflow-packs/](../../scaffold/workflow-packs/): file-based registry, loader, manifest-evidence collector, and renderer for optional stack packs plus the render-only workflow-pack foundation that reuses the same metadata shape.
+10. [scripts/stack_packs.py](../../scripts/stack_packs.py), [scaffold/stack-packs/](../../scaffold/stack-packs/), and [scaffold/workflow-packs/](../../scaffold/workflow-packs/): file-based registry, loader, manifest-evidence collector, and renderer for optional stack packs plus explicit workflow-pack management that reuses the same metadata shape.
 11. [scripts/spec_kit_bridge.py](../../scripts/spec_kit_bridge.py): bridge-aware detection, bridge-mode resolution, feature/sync reporting, and summary helpers for optional official Spec Kit installs.
 12. [scripts/utility_harness.py](../../scripts/utility_harness.py): mode resolution and summary helpers for the optional Codex Utility Harness.
 13. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
@@ -42,7 +42,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - Stack-specific helper scripts once real install, build, lint, or test commands exist
 - Additional skills only after repeated use proves they remove real prompt repetition
 - Optional stack packs only if they stay file-based, visible, evidence-backed, and conservative as described in [roadmap.md](./roadmap.md)
-- Optional repository-improvement audit workflow-pack installer support only after the docs plus source-repo skill and render-only workflow-pack foundation prove useful without installer machinery
+- Further repository-improvement audit workflow expansion only after explicit workflow selection, generated workflow guidance, and the managed `roadmap.md` audit section prove useful without a background audit runner
 - An optional Spec Kit bridge only if it stays repo-local, keeps ownership boundaries explicit, and complements official Spec Kit instead of vendoring or replacing it
 - An optional Utility Harness only if it stays explicit, scaffolded, dependency-isolated, and limited to Codex/operator helper tools
 
@@ -74,7 +74,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - If a change introduces a new top-level workflow asset, update [AGENTS.md](../../AGENTS.md) so the repo map stays accurate.
 - If a lifecycle change affects installed-repo upgrade behavior, update [migration-v3.md](./migration-v3.md) with the operator-facing rule.
 - If a scaffold file gains or loses an enhancer-managed section marker, update the manifest renderer and validator expectations in the same patch.
-- If pack management changes, keep CLI flags, GUI mode labels, manifest rendering, managed-section behavior, README guidance, and tests aligned in the same patch.
+- If pack or workflow management changes, keep CLI flags, GUI mode labels, manifest rendering, managed-output behavior, README guidance, and tests aligned in the same patch.
 - If pack evidence or package-manager detection changes, keep stack-pack reasons, generated manifests, command discovery, README guidance, and tests aligned in the same patch.
 - If the Spec Kit bridge changes, keep [docs/ai/spec-kit-bridge.md](./spec-kit-bridge.md), target scaffold docs, bridge skills, managed-section markers, manifest state, CLI facade behavior, and validator expectations aligned in the same patch.
 - If the Utility Harness changes, keep [docs/ai/utility-harness.md](./utility-harness.md), target scaffold docs, helper scripts, manifest state, GUI/CLI flags, and validator expectations aligned in the same patch.

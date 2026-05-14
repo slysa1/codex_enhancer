@@ -113,6 +113,19 @@ class CodexEnhancerCliTests(unittest.TestCase):
             ],
         )
 
+    def test_list_workflows_translates_optional_target_for_detection_audit(self) -> None:
+        self.assertEqual(
+            self.translate(["list-workflows", "../target", "--json"]),
+            [
+                "--list-workflows",
+                "--mode",
+                "auto",
+                "--target",
+                "../target",
+                "--json",
+            ],
+        )
+
     def test_install_translates_write_and_spec_kit_options(self) -> None:
         self.assertEqual(
             self.translate(
@@ -211,6 +224,29 @@ class CodexEnhancerCliTests(unittest.TestCase):
             ],
         )
 
+    def test_workflow_management_translates_short_flags(self) -> None:
+        self.assertEqual(
+            self.translate(
+                [
+                    "workflows",
+                    "../target",
+                    "--add",
+                    "repository-improvement-audit",
+                    "--write",
+                    "--summary",
+                ]
+            ),
+            [
+                "--target",
+                "../target",
+                "--manage-workflows",
+                "--write",
+                "--summary",
+                "--add-workflow",
+                "repository-improvement-audit",
+            ],
+        )
+
     def test_upgrade_can_disable_utility_harness(self) -> None:
         self.assertEqual(
             self.translate(["upgrade", "../target", "--no-utility-harness"]),
@@ -298,6 +334,15 @@ class CodexEnhancerCliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("python-service", output.getvalue())
+
+    def test_main_list_workflows_delegates_to_installer(self) -> None:
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            exit_code = codex_enhancer_cli.main(["list-workflows"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("repository-improvement-audit", output.getvalue())
 
 
 if __name__ == "__main__":

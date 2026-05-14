@@ -13,13 +13,13 @@ The only active `4.2` item is the focused repository-improvement audit workflow 
 | `2.x` through `3.4` | Historical design record | Use for architecture context, shipped rationale, and regression expectations. Do not treat these sections as current TODOs. |
 | `4.0` | Completed baseline | Use as the product-maturity bar that the enhancer should not regress below. |
 | `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
-| `4.2` | Source workflow and workflow-pack foundation implemented; later phases deferred | Phase 1 source docs/skill, Phase 2 source validation, and Phase 3 render-only workflow-pack assets are implemented. Later installer, scaffold, specialist-skill, and `.agents/skills` work requires new evidence. |
+| `4.2` | Explicit workflow-pack management implemented; later expansion deferred | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, and Phase 4 installer/CLI/GUI workflow selection are implemented. Target scaffold, specialist-skill, static-analysis, and `.agents/skills` work requires new evidence. |
 
 ## Current Priorities
 - Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
-- Keep the `4.2` repository-improvement audit workflow read-only until a user explicitly chooses follow-up implementation work.
+- Keep the `4.2` repository-improvement audit workflow no-implementation until a user explicitly chooses follow-up implementation work. The selected workflow may write or update only the managed audit section in root `roadmap.md`.
 - Treat `4.1 Step 7` candidates as deferred. Do not start install profiles, transactional writes, dependency regrouping, license strategy, or richer GUI QA without fresh evidence that the smaller completed work is not enough.
-- Do not add workflow-pack installer support, target-repo scaffold integration, or `.agents/skills` migration until a later focused change justifies it.
+- Do not add target-repo scaffold integration, automatic audit execution, specialist audit skills, static-analysis tooling, or `.agents/skills` migration until a later focused change justifies it.
 
 ## 4.2 Repository Improvement Audit Workflow
 
@@ -38,7 +38,7 @@ Do not model repository-improvement auditing as a stack pack. Stack packs descri
 - root repo-map updates so maintainers can discover the workflow
 
 ### Non-Goals
-- no installer flags, GUI changes, CLI commands, or target-repo scaffold integration
+- no target-repo scaffold integration
 - no `.agents/skills` migration
 - no specialist audit skills yet
 - no static-analysis integrations or invented audit commands
@@ -48,10 +48,11 @@ Do not model repository-improvement auditing as a stack pack. Stack packs descri
 Implemented:
 - Phase 1 source-repo docs and one orchestrator skill.
 - Phase 2 source validation and repo-map alignment using existing required-file, content, markdown-link, and skill-frontmatter checks.
-- Phase 3 render-only workflow-pack assets under `scaffold/workflow-packs/`, reusing the existing stack-pack loader metadata shape.
+- Phase 3 workflow-pack assets under `scaffold/workflow-packs/`, reusing the existing stack-pack loader metadata shape.
+- Phase 4 explicit installer, CLI, and GUI workflow-pack management, including manifest state, generated `docs/ai/workflow-guidance.md`, and a managed root `roadmap.md` audit section for the repository-improvement audit workflow.
 
 Deferred:
-- installer/CLI/GUI support, target-repo scaffold integration, specialist audit skills, static-analysis-assisted inputs, and `.agents/skills` compatibility or migration.
+- target-repo scaffold integration, specialist audit skills, static-analysis-assisted inputs, and `.agents/skills` compatibility or migration.
 
 ### Files Added In Phase 1
 - `.codex/skills/full-repo-improvement-audit/SKILL.md`
@@ -207,6 +208,9 @@ Acceptance criteria:
 - workflow packs load and render deterministically without installer support or hidden state.
 
 #### Phase 4: Installer, CLI, And GUI Support
+Status:
+- implemented as explicit workflow-pack management.
+
 Objective:
 - let users explicitly preview and install selected workflow packs into target repos.
 
@@ -225,12 +229,15 @@ Files deliberately not added:
 - no background audit runner.
 - no default target install of audit workflows.
 - no external service or MCP integration.
+- no target-repo scaffold integration.
 
 Implementation notes:
 - keep preview as the default.
 - preserve proposal-mode and dirty-worktree safety.
 - include workflow-pack state in JSON only after the human preview shape is stable.
 - keep CLI and GUI behavior delegated to the same installer core.
+- use the existing stack-pack loader under the separate workflow-pack root.
+- selecting `repository-improvement-audit` creates or updates only the managed audit section in root `roadmap.md`, preserving all other roadmap content.
 
 Validation commands:
 - `python scripts/check.py`
@@ -247,6 +254,9 @@ Risks:
 
 Acceptance criteria:
 - users can preview workflow-pack changes, understand planned writes, and apply them only with explicit `--write`.
+- workflow selections are recorded separately from stack-pack selections.
+- selected workflow guidance is generated into `docs/ai/workflow-guidance.md`.
+- `repository-improvement-audit` selection creates root `roadmap.md` if missing, appends the managed audit section if markers are absent, and updates the managed audit section in place when markers already exist while preserving content outside it.
 
 #### Phase 5: Target-Repo Scaffold Integration
 Objective:
@@ -389,8 +399,7 @@ Acceptance criteria:
 - the repository has one explicit skill-root policy, tests enforce it, and target installs do not overwrite external skill surfaces.
 
 ### Deferred Future Work
-- workflow-pack installer support until repeated use proves target repos need it
-- target-repo scaffold integration until the source-repo workflow has settled
+- default target-repo scaffold integration until explicit workflow selection proves too much friction
 - `.agents/skills` compatibility or migration until a focused compatibility decision justifies it
 - specialist audit skills until repeated audits expose stable sub-procedures
 - static-analysis-assisted inputs until they can be grounded in existing project tools and optional helper dependencies
@@ -401,13 +410,13 @@ Acceptance criteria:
 - `python -m unittest discover -s tests -p "test_*.py" -v`
 
 ### Main Risk
-The workflow could become broad AI bureaucracy instead of a narrow useful audit. Keep the first pass read-only, evidence-based, and limited to docs plus one orchestrator skill.
+The workflow could become broad AI bureaucracy instead of a narrow useful audit. Keep audit mode evidence-based, no-implementation, and limited to explicit guidance plus the managed roadmap artifact.
 
 ### Acceptance Criteria
-- the skill is concise, operational, read-only by default, and has a clear `## Do not use` section
+- the skill is concise, operational, no-implementation by default, and has a clear `## Do not use` section
 - audit docs define when to use the workflow, evidence standards, finding schema, and roadmap prioritization
-- roadmap language makes installer/workflow-pack support a future option, not current behavior
-- validation passes without adding scripts, installer support, or new command surfaces
+- roadmap language keeps target scaffold, specialist skills, static-analysis helpers, and `.agents/skills` compatibility deferred
+- validation passes with explicit installer/CLI/GUI workflow-pack management and without adding a hidden runtime
 
 ## Historical Design Record: 2.x Through 3.4
 The following `2.x`, `3.0`, `3.1`, `3.3`, and `3.4` sections describe shipped or superseded design work. Keep them for context, but use the current priorities above plus the completed `4.0` and `4.1` baselines for future implementation choices.

@@ -20,7 +20,7 @@ Choose one command lane first:
 | --- | --- | --- |
 | Fresh clone, no install yet | `python scripts/codex_enhancer_cli.py doctor .` | Run `python scripts/check.py`, then preview a target repo with `python scripts/codex_enhancer_cli.py init ../target-repo --existing --summary --diff`. |
 | Editable local CLI | `python -m pip install -e . --no-deps` | Run `codex-enhancer doctor .`, then `codex-enhancer init ../target-repo --existing --summary --diff`. |
-| Built artifact handed to you | `python -m pip install <wheel-or-sdist>` | Run `codex-enhancer list-packs`, then preview a target repo before using `--write`. |
+| Built artifact handed to you | `python -m pip install <wheel-or-sdist>` | Run `codex-enhancer list-packs` and `codex-enhancer list-workflows`, then preview a target repo before using `--write`. |
 | Windows GUI | `install_enhancer.bat` | Pick a target folder, review the planned creates/proposals/overwrites, then apply only after the preview makes sense. |
 
 First successful target-repo workflow:
@@ -60,8 +60,8 @@ Concrete before/after workflow:
 - A Spec Kit bridge resolver in [scripts/spec_kit_bridge.py](scripts/spec_kit_bridge.py)
 - A Utility Harness resolver in [scripts/utility_harness.py](scripts/utility_harness.py)
 - A stack-pack registry in [scaffold/stack-packs/](scaffold/stack-packs/)
-- A workflow-pack registry in [scaffold/workflow-packs/](scaffold/workflow-packs/) that reuses the stack-pack loader format
-- A stack-pack loader in [scripts/stack_packs.py](scripts/stack_packs.py)
+- A workflow-pack registry in [scaffold/workflow-packs/](scaffold/workflow-packs/) that reuses the stack-pack loader format for explicit workflow selection
+- A stack-pack and workflow-pack loader in [scripts/stack_packs.py](scripts/stack_packs.py)
 - A shared install/validation spec in [scripts/enhancer_spec.py](scripts/enhancer_spec.py)
 - A reusable validation engine in [scripts/enhancer_validator.py](scripts/enhancer_validator.py)
 - A zero-dependency source-repo validator in [scripts/check.py](scripts/check.py)
@@ -118,8 +118,9 @@ To build distributable artifacts from a prepared packaging environment:
 
 ```bash
 python -m build
-python -m pip install dist/codex_enhancer-4.1.0-py3-none-any.whl
+python -m pip install dist/codex_enhancer-4.2.0-py3-none-any.whl
 codex-enhancer list-packs
+codex-enhancer list-workflows
 ```
 
 The wheel and source distribution include package-owned copies of the scaffold and stack-pack assets so the installed `codex-enhancer` command can plan installs without a source checkout. Packaging still does not vendor Spec Kit, install Utility Harness helper packages, publish releases, or download target-repo dependencies automatically. See [docs/ai/release.md](docs/ai/release.md) before building or publishing release artifacts.
@@ -142,13 +143,14 @@ The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gu
 - choose whether the Spec Kit bridge should stay off, attach to an existing official install, or bootstrap official Spec Kit for Codex
 - review detected stack packs and adjust the selected set before install
 - manage stack packs later without reinstalling the scaffold
+- review available workflow packs and manage selected workflows later without reinstalling the scaffold
 - review stack packs from the existing target manifest during upgrade and refresh
 - preview bridge mode, bridge command surface, and any official bootstrap command before apply
 - choose whether to install the optional Codex Utility Harness helper files
 - review which files will be created, proposed, or overwritten, with critical conflicts called out separately
 - confirm overwrite actions before install
 - watch installation progress
-- see a completion summary that lists the installed stack packs
+- see a completion summary that lists installed stack packs and selected workflow packs
 - open the product README automatically after completion
 
 If you prefer the CLI or want to script installs, use the commands below.
@@ -158,18 +160,20 @@ For a shorter command surface from a source checkout, use [scripts/codex_enhance
 
 ```bash
 python scripts/codex_enhancer_cli.py list-packs
+python scripts/codex_enhancer_cli.py list-workflows
 python scripts/codex_enhancer_cli.py doctor .
 python scripts/codex_enhancer_cli.py init ../my-new-repo --new --with-spec-kit --utility-harness
 python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --utility-harness
 python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --summary --diff
 python scripts/codex_enhancer_cli.py audit ../my-existing-repo
+python scripts/codex_enhancer_cli.py workflows ../my-existing-repo --add repository-improvement-audit --summary --diff
 python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --utility-harness --write
 python scripts/codex_enhancer_cli.py spec-report ../my-existing-repo --feature 001-login
 python scripts/codex_enhancer_cli.py spec-sync ../my-existing-repo --feature 001-login --changed src/auth.py
 python scripts/codex_enhancer_cli.py bridge ../my-existing-repo --attach-spec-kit
 ```
 
-The facade only translates friendly verbs such as `doctor`, `init`, `install`, `inspect`, `audit`, `packs`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
+The facade only translates friendly verbs such as `doctor`, `init`, `install`, `inspect`, `audit`, `packs`, `workflows`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager, workflow runner, or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
 
 Use `--with-spec-kit` when you want Codex Enhancer to bootstrap official Spec Kit for Codex and install the bridge skills/guidance in the same flow. The preview shows the official bootstrap command first, including the executable check, pinned ref, network note, and recovery hint; the external Spec Kit download/setup only runs if you re-run with `--write`.
 
@@ -184,7 +188,7 @@ Useful preview formats:
 - If an apply fails while writing files, the error names the failed path, lists enhancer-owned paths likely touched in that run, and gives recovery steps.
 - `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files, then reports an adaptation status and severity summary.
 
-JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `pack_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `diagnostics`, `external_steps`, and `next_steps`. Each `external_steps` item includes the exact command string, argv list, executable status/path when available, pinned ref, network flag, execution order, warnings, and recovery hint. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, and `pack-catalog`; pack catalogs also include structured pack guidance, detection signals, status, and evidence when a target repo is provided. Adaptation audits also include `status` and `severity_counts`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
+JSON output uses `schema_version: 1`. Plan objects include `kind`, `operation`, `target`, `mode`, `write`, `selected_packs`, `selected_workflows`, `pack_selections`, `workflow_selections`, `spec_kit_bridge`, `spec_kit_detection`, `utility_harness`, `writes`, `write_counts`, `conflicts`, `gitignore`, `diagnostics`, `external_steps`, and `next_steps`. Each `external_steps` item includes the exact command string, argv list, executable status/path when available, pinned ref, network flag, execution order, warnings, and recovery hint. Read-only report objects use operation-specific `kind` values such as `doctor-report`, `install-inspection`, `adaptation-audit`, `spec-kit-report`, `spec-kit-sync-report`, `pack-catalog`, and `workflow-catalog`; pack and workflow catalogs also include structured guidance, detection signals, status, and evidence when a target repo is provided. Adaptation audits also include `status` and `severity_counts`. Error output is also JSON when `--json` is set, with `kind: "error"` and a `message`.
 
 Validation boundary: `python scripts/check.py` validates the enhancer's local files, managed markers, markdown links that resolve inside the repo, and skill metadata. It does not prove external URLs, external tool behavior, package-registry publication, or unofficial documentation facts. Treat external references as unverified unless a release note, issue, or PR summary records the check that verified them.
 
@@ -206,6 +210,27 @@ Stack-pack detection now combines conservative file/path signals with narrow man
 
 To audit pack detection for a real target without installing anything, run `python scripts/codex_enhancer_cli.py list-packs ../target-repo` or `codex-enhancer list-packs ../target-repo`. The report shows local evidence, missing or skipped signals, false-positive boundaries, and the exact detection inputs used by each pack. Use `--json` when a wrapper needs the same facts without parsing prose.
 
+List the currently available workflow packs:
+
+```bash
+python scripts/install_enhancer.py --list-workflows
+python scripts/codex_enhancer_cli.py list-workflows
+```
+
+Current shipped workflows:
+- `repository-improvement-audit`
+
+Select workflow packs explicitly after an enhancer install. Workflow packs do not run audits by themselves, install dependencies, or change application code. They record selection state in `.codex/enhancer/manifest.toml`, generate `docs/ai/workflow-guidance.md`, and keep process guidance separate from technology stack packs.
+
+To select the repository-improvement audit workflow:
+
+```bash
+python scripts/install_enhancer.py --target ../my-existing-repo --manage-workflows --add-workflow repository-improvement-audit --summary --diff
+python scripts/codex_enhancer_cli.py workflows ../my-existing-repo --add repository-improvement-audit --summary --diff
+```
+
+When `repository-improvement-audit` is selected, the plan also creates or updates root `roadmap.md`. Existing roadmap content is preserved outside the managed audit section, and an existing managed audit section is updated in place rather than duplicated.
+
 ### Choosing Stack Packs
 
 Stack packs are optional guidance bundles. They do not install dependencies or change application code. They add stack-specific Codex instructions to the installed `AGENTS.md` managed section and `docs/ai/stack-guidance.md` so Codex plans, edits, validates, and reviews work with the right repo assumptions.
@@ -226,6 +251,12 @@ Common combinations:
 - Use `javascript-typescript-app` with `node-api-service` for Node or TypeScript backends.
 - Use `monorepo-workspace` together with the surface packs that match the actual packages inside the workspace.
 - Use `library-package` only when published package behavior matters to downstream consumers.
+
+### Choosing Workflow Packs
+
+Workflow packs are optional process guidance bundles. They reuse the same loader and manifest format as stack packs, but they live under [scaffold/workflow-packs/](scaffold/workflow-packs/) so cross-cutting workflows do not blur with technology-stack guidance.
+
+Use `repository-improvement-audit` when a target repo should support a no-implementation audit before follow-up work. It adds workflow guidance for architecture mapping, evidence-backed findings, roadmap prioritization, and the managed root `roadmap.md` artifact. Skip it when the target only needs normal adaptation, bounded PR review, or direct implementation.
 
 Preview a new-repo install:
 
@@ -585,11 +616,11 @@ Do not use it for trivial copy edits or obvious one-file fixes.
 
 #### `full-repo-improvement-audit`
 Use [.codex/skills/full-repo-improvement-audit/SKILL.md](.codex/skills/full-repo-improvement-audit/SKILL.md) when:
-- the user asks for a read-only whole-repo improvement audit before implementation
+- the user asks for a no-implementation whole-repo improvement audit before follow-up work
 - you need to map architecture, tests, quality, security, performance, or developer experience across a repo
-- the output should be a prioritized improvement roadmap instead of code changes
+- the output should be a prioritized improvement roadmap, optionally written to root `roadmap.md`, instead of code changes
 
-Keep the audit evidence-backed and stop before implementation. The durable workflow, finding schema, and prioritization rubric live in [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md), [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md), and [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
+Keep the audit evidence-backed and stop before implementation. The durable workflow, finding schema, roadmap artifact rule, and prioritization rubric live in [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md), [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md), and [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
 
 #### `adapt-enhancer`
 Use [.codex/skills/adapt-enhancer/SKILL.md](.codex/skills/adapt-enhancer/SKILL.md) when:
@@ -624,6 +655,8 @@ python scripts/check.py --verbose
 python -m unittest discover -s tests -p "test_*.py" -v
 python scripts/install_enhancer.py --list-packs
 python scripts/codex_enhancer_cli.py list-packs
+python scripts/install_enhancer.py --list-workflows
+python scripts/codex_enhancer_cli.py list-workflows
 python scripts/codex_enhancer_cli.py doctor .
 python scripts/install_enhancer.py --target ../my-existing-repo --inspect-install
 python scripts/codex_enhancer_cli.py inspect ../my-existing-repo
@@ -636,6 +669,8 @@ python scripts/install_enhancer.py --target ../my-existing-repo --manage-spec-ki
 python scripts/codex_enhancer_cli.py bridge ../my-existing-repo --attach-spec-kit
 python scripts/install_enhancer.py --target ../my-existing-repo --manage-packs --add-pack python-service
 python scripts/codex_enhancer_cli.py packs ../my-existing-repo --add python-service
+python scripts/install_enhancer.py --target ../my-existing-repo --manage-workflows --add-workflow repository-improvement-audit
+python scripts/codex_enhancer_cli.py workflows ../my-existing-repo --add repository-improvement-audit
 python scripts/install_enhancer.py --target ../my-new-repo --mode new
 python scripts/codex_enhancer_cli.py init ../my-new-repo --new
 python scripts/codex_enhancer_cli.py init ../my-new-repo --new --summary --diff
@@ -651,6 +686,7 @@ What they do:
 - `python -m unittest discover -s tests -p "test_*.py" -v`: tests the validator itself
 - `python scripts/codex_enhancer_cli.py ...`: provides short subcommands over the same installer core
 - `python scripts/install_enhancer.py --list-packs`: prints the available stack packs
+- `python scripts/install_enhancer.py --list-workflows`: prints the available workflow packs
 - `python scripts/codex_enhancer_cli.py doctor ...`: reports whether a path looks like the enhancer source checkout, an installed target, or a plain repo, then prints the next useful commands
 - `python scripts/codex_enhancer_cli.py audit ...`: reports inherited generic guidance, placeholders, and unreviewed proposal files after install
 - `--summary`, `--diff`, and `--json`: switch installer previews between concise human output, text diffs, and machine-readable plans
@@ -658,6 +694,7 @@ What they do:
 - `python scripts/install_enhancer.py --target ... --spec-kit-sync-report`: prints a read-only changed-path sync report for existing Spec Kit artifacts
 - `python scripts/install_enhancer.py --target ... --manage-spec-kit-bridge --spec-kit-mode <mode>`: previews a bridge-mode update for an installed target
 - `python scripts/install_enhancer.py --target ... --manage-packs --add-pack <name>`: previews a pack-selection change for an installed target
+- `python scripts/install_enhancer.py --target ... --manage-workflows --add-workflow <name>`: previews a workflow-selection change for an installed target and updates the managed `roadmap.md` audit section for `repository-improvement-audit`
 - `python scripts/install_enhancer.py --target ... --utility-harness-mode install`: previews installing optional Codex/operator helper tools
 - `python scripts/install_enhancer.py --target ...`: previews or applies a scaffold install into another repo
 - `install_enhancer.bat`: opens the Windows GUI installer
@@ -678,13 +715,13 @@ It is a map, not a dump of every durable rule.
 
 Use docs when guidance needs more explanation. Use `AGENTS.md` when guidance must be visible immediately.
 
-For the current enhancer evolution record, see the status table at the top of [docs/ai/roadmap.md](docs/ai/roadmap.md). It separates historical `2.x`/`3.x` design notes, completed `4.0` and `4.1` baselines, and the evidence gate for any future `4.2` follow-up.
+For the current enhancer evolution record, see the status table at the top of [docs/ai/roadmap.md](docs/ai/roadmap.md). It separates historical `2.x`/`3.x` design notes, completed `4.0` and `4.1` baselines, implemented `4.2` workflow-pack support, and deferred `4.2` follow-up boundaries.
 
 For upgrading existing installed repos, see [docs/ai/migration-v3.md](docs/ai/migration-v3.md). It gives the operator checklist for inspect, upgrade, pack management, refresh, proposal review, and validation.
 
 For package build and release readiness, see [docs/ai/release.md](docs/ai/release.md). It keeps the wheel/sdist checks, packaged-asset boundary, and no-dependency policy in one place.
 
-For read-only whole-repo improvement audits, see [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md), [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md), and [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
+For no-implementation whole-repo improvement audits and the managed `roadmap.md` audit artifact, see [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md), [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md), and [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
 
 ### `.codex/skills/`
 [.codex/skills/](.codex/skills/) holds narrow, repeatable procedures. The subtree rules live in [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md).
@@ -696,16 +733,19 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 - scaffolds enhancer files into a target repo
 - discovers a small set of likely commands from common manifests, respecting `packageManager` and common JavaScript lockfiles
 - lists, detects, and resolves shipped stack packs during install planning with visible evidence
+- lists and resolves shipped workflow packs through the same loader under a separate workflow root
 - supports recommended-pack selection plus explicit include/exclude overrides in the CLI
 - manages selected packs after install with manifest deltas and managed-section updates
+- manages selected workflows after install with manifest deltas, workflow guidance, and the managed `roadmap.md` audit section when selected
 - renders a compact selected-pack summary into the target `AGENTS.md`
 - merges `.gitignore` entries instead of overwriting the file
 - generates target `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
+- generates target `docs/ai/workflow-guidance.md` when workflows are selected
 - writes proposal files for conflicts in existing repos unless `--force` is used
 - exposes structured install planning so the GUI and CLI share the same overwrite and progress behavior
 
 ### `scripts/codex_enhancer_cli.py`
-[scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py) is a small command facade over the installer. It adds memorable verbs such as `init`, `inspect`, `packs`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge`, then delegates to [scripts/install_enhancer.py](scripts/install_enhancer.py) so planning, previews, writes, and validation stay in one place.
+[scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py) is a small command facade over the installer. It adds memorable verbs such as `init`, `inspect`, `packs`, `workflows`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge`, then delegates to [scripts/install_enhancer.py](scripts/install_enhancer.py) so planning, previews, writes, and validation stay in one place.
 
 ### `pyproject.toml`
 [pyproject.toml](pyproject.toml) defines the distributable package metadata for the `codex-enhancer` console script. The package version is read from [scripts/enhancer_spec.py](scripts/enhancer_spec.py) so package metadata and installed enhancer manifests stay aligned. [MANIFEST.in](MANIFEST.in) and [codex_enhancer/package_assets.py](codex_enhancer/package_assets.py) keep scaffold assets available to installed wheels and source distributions.
@@ -715,11 +755,12 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 - manual path entry plus folder browsing
 - detected stack-pack selection with recommended defaults for install mode
 - editable manifest-based pack selection for manage-packs mode
+- editable manifest-based workflow selection for manage-workflows mode
 - read-only manifest-based pack context for upgrade and refresh mode
 - a readable preview for install, upgrade, and refresh operations
 - an overwrite acknowledgement gate before destructive install actions
 - a progress bar tied to real install steps
-- a completion dialog that lists the installed stack packs
+- a completion dialog that lists installed stack packs and selected workflows
 - automatic opening of the enhancer README when the install finishes
 
 ### `install_enhancer.bat`
@@ -756,7 +797,7 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 [scaffold/workflow-packs/](scaffold/workflow-packs/) stores optional workflow-pack assets. Workflow packs reuse the stack-pack metadata and fragment format, but they live under a separate root so process guidance does not blur with technology stack guidance.
 
 ### `scripts/stack_packs.py`
-[scripts/stack_packs.py](scripts/stack_packs.py) loads stack-pack-compatible metadata, detects matching packs in a target repo, collects narrow manifest evidence from `package.json`, package-manager signals, and `pyproject.toml`, resolves selection state, and renders the target `AGENTS.md` summary, manifest, and stack-guidance outputs. Phase 3 workflow packs reuse this loader with a separate root and manual marker discovery.
+[scripts/stack_packs.py](scripts/stack_packs.py) loads stack-pack-compatible metadata, detects matching packs in a target repo, collects narrow manifest evidence from `package.json`, package-manager signals, and `pyproject.toml`, resolves stack-pack and workflow-pack selection state, and renders the target `AGENTS.md` summary, manifest, stack-guidance, and workflow-guidance outputs.
 
 ### `scripts/utility_harness.py`
 [scripts/utility_harness.py](scripts/utility_harness.py) resolves the optional Codex Utility Harness state and renders the target `AGENTS.md` summary for that integration.
@@ -765,7 +806,7 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 [tests/test_check.py](tests/test_check.py) gives you regression coverage for the source-repo validator.
 [tests/test_install_enhancer.py](tests/test_install_enhancer.py) verifies dry-run behavior, actual installs, proposal mode, force overwrite on safe paths, and the installed target profile.
 [tests/test_stack_packs.py](tests/test_stack_packs.py) covers the pack registry, detection heuristics, manifest evidence, selection rules, and generated pack-aware guidance.
-[tests/test_stack_packs.py](tests/test_stack_packs.py) also covers the render-only workflow-pack registry that reuses the stack-pack loader.
+[tests/test_stack_packs.py](tests/test_stack_packs.py) also covers the workflow-pack registry that reuses the stack-pack loader.
 [tests/test_utility_harness.py](tests/test_utility_harness.py) covers the Utility Harness mode resolver and summary text.
 
 ### GitHub Actions

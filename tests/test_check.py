@@ -33,6 +33,10 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Use `pip install -e .` for local CLI packaging.
         Build distributable artifacts with `python -m build`.
         Run `python scripts/codex_enhancer_cli.py list-packs` or `codex-enhancer.bat`.
+        Run `python scripts/install_enhancer.py --list-workflows`.
+        Use `--manage-workflows` to manage selected workflows.
+        Manifests record selected_workflows.
+        Audit workflow suggestions can update root `roadmap.md`.
         Preview bundled installs with `--with-spec-kit`.
         Use `--summary`, `--diff`, and `--json` for alternate previews.
         Run `python scripts/codex_enhancer_cli.py audit ../repo`.
@@ -58,6 +62,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Run `{CHECK_COMMAND}` and `{TEST_COMMAND}`.
         Local package metadata lives in `pyproject.toml` and package assets live in `codex_enhancer/package_assets.py`.
         Use `scripts/codex_enhancer_cli.py` and `codex-enhancer.bat` for the friendly command facade.
+        Use `--list-workflows` and `--manage-workflows` for workflow-pack previews.
         Use `--with-spec-kit` only when the user explicitly wants official Spec Kit bootstrapped.
         Use `audit` for installed target adaptation checks.
         Use `spec-sync` for read-only Spec Kit changed-path sync cues.
@@ -123,7 +128,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         Repo-local workflow guidance only.
         Workflow pack loading reuses scripts/stack_packs.py with scaffold/workflow-packs/.
-        workflow-pack installer support is deferred.
+        workflow-pack management stays explicit.
         """,
         "docs/ai/code-review.md": f"""
         # Review
@@ -137,14 +142,14 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "docs/ai/migration-v3.md": """
         # V3 Migration Notes
 
-        Use `--inspect-install`, `--upgrade-enhancer`, `--manage-packs`,
+        Use `--inspect-install`, `--upgrade-enhancer`, `--manage-packs`, `--manage-workflows`,
         `--manage-spec-kit-bridge`, `--spec-kit-report`, `--spec-kit-sync-report`,
         `--refresh-generated`, and `audit`.
         """,
         "docs/ai/release.md": """
         # Release Checklist
 
-        Run `python -m build`, smoke `codex-enhancer list-packs`,
+        Run `python -m build`, smoke `codex-enhancer list-packs` and `codex-enhancer list-workflows`,
         keep requirements-codex.txt out of production dependencies, and
         keep requirements-codex-readers.txt scoped to helper environments.
         mirror `codex_enhancer/assets/root/`.
@@ -157,6 +162,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         ## Evidence Standards
         Do not infer build, lint, test, coverage, architecture, dependencies, deployment, or security posture from common stack conventions alone.
+
+        Write suggestions to root roadmap.md with the roadmap.md:repository-improvement-audit marker.
 
         Use [repo-audit-finding-schema.md](repo-audit-finding-schema.md)
         and [repo-audit-roadmap-rubric.md](repo-audit-roadmap-rubric.md).
@@ -247,7 +254,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         1. Read repo guidance first.
         2. Build a system map.
         3. For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.
-        4. Stop after the audit. Do not modify files during audit mode.
+        4. Update root `roadmap.md` when requested.
+        5. Stop after the audit. Do not make implementation changes during audit mode.
 
         ## Do not use
         - Do not use for single-file edits.

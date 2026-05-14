@@ -12,12 +12,14 @@ from scripts.stack_packs import (
     detect_stack_packs,
     load_enhancer_install_state,
     load_selected_packs_from_manifest,
+    load_selected_workflows_from_manifest,
     load_stack_pack,
     load_stack_packs,
     render_agents_summary,
     render_install_follow_up_lines,
     render_pack_fragment,
     render_stack_pack_manifest,
+    render_workflow_guidance,
     resolve_manifest_pack_selection,
     resolve_managed_pack_selection,
     resolve_stack_pack_selection,
@@ -90,6 +92,24 @@ class StackPackTests(unittest.TestCase):
 
         self.assertIn("## Repository improvement audit", rendered)
         self.assertIn("repo-audit-finding-schema.md", rendered)
+
+    def test_render_workflow_guidance_records_selected_workflow_pack(self) -> None:
+        workflow_root = Path(__file__).resolve().parents[1] / "scaffold/workflow-packs"
+        packs = load_stack_packs(workflow_root)
+        with repo_fixture("workflow_guidance") as root:
+            detections = detect_stack_packs(root, packs=packs)
+            selections = resolve_manifest_pack_selection(
+                detections,
+                selected_packs=("repository-improvement-audit",),
+                pack_label="workflow pack",
+            )
+
+            rendered = render_workflow_guidance(selections)
+
+            self.assertIn("# Workflow Guidance", rendered)
+            self.assertIn("Selected workflows: `repository-improvement-audit`", rendered)
+            self.assertIn("Pack id: `repository-improvement-audit`", rendered)
+            self.assertIn("repo-audit-roadmap-rubric.md", rendered)
 
     def test_repository_improvement_workflow_pack_is_manual_by_default(self) -> None:
         workflow_root = Path(__file__).resolve().parents[1] / "scaffold/workflow-packs"
@@ -604,6 +624,29 @@ class StackPackTests(unittest.TestCase):
             self.assertIn("package.json scripts: build", manifest)
             self.assertIn("package.json packages: typescript, vite", manifest)
 
+    def test_render_stack_pack_manifest_records_workflow_selection(self) -> None:
+        workflow_root = Path(__file__).resolve().parents[1] / "scaffold/workflow-packs"
+        with repo_fixture("workflow_manifest") as root:
+            workflow_detections = detect_stack_packs(root, packs=load_stack_packs(workflow_root))
+
+            manifest = render_stack_pack_manifest(
+                (),
+                workflow_detections=workflow_detections,
+                selected_workflows=("repository-improvement-audit",),
+                safe_to_regenerate=(
+                    Path("docs/ai/workflow-guidance.md"),
+                    Path(".codex/enhancer/manifest.toml"),
+                ),
+                adapt_manually=(Path("roadmap.md"),),
+            )
+
+            self.assertIn('selected_workflows = ["repository-improvement-audit"]', manifest)
+            self.assertIn("[[detected_workflows]]", manifest)
+            self.assertIn('name = "repository-improvement-audit"', manifest)
+            self.assertIn("selected = true", manifest)
+            self.assertIn('workflow_guidance = "docs/ai/workflow-guidance.md"', manifest)
+            self.assertIn('adapt_manually = ["roadmap.md"]', manifest)
+
     def test_render_stack_pack_manifest_records_utility_harness_state(self) -> None:
         with repo_fixture("pack_manifest_utility") as root:
             detections = detect_stack_packs(root)
@@ -687,12 +730,15 @@ class StackPackTests(unittest.TestCase):
                 schema_version = 1
                 enhancer_version = "%s"
                 selected_packs = ["python-service"]
+                selected_workflows = ["repository-improvement-audit"]
                 """ % ENHANCER_VERSION,
             )
 
             selected = load_selected_packs_from_manifest(root)
+            workflows = load_selected_workflows_from_manifest(root)
 
             self.assertEqual(selected, ("python-service",))
+            self.assertEqual(workflows, ("repository-improvement-audit",))
 
     def test_load_enhancer_install_state_reads_version_ownership_and_lifecycle(self) -> None:
         with repo_fixture("pack_install_state") as root:
@@ -703,6 +749,7 @@ class StackPackTests(unittest.TestCase):
                 schema_version = %s
                 enhancer_version = "%s"
                 selected_packs = ["python-service"]
+                selected_workflows = ["repository-improvement-audit"]
 
                 [lifecycle]
                 state = "active"
@@ -717,6 +764,14 @@ class StackPackTests(unittest.TestCase):
                 reason = "found pyproject.toml"
                 evidence = ["found pyproject.toml"]
 
+                [[detected_workflows]]
+                name = "repository-improvement-audit"
+                selected = true
+                recommended = false
+                detected = false
+                reason = "missing detection signal"
+                evidence = ["missing detection signal"]
+
                 [managed_outputs]
                 safe_to_regenerate = ["docs/ai/stack-guidance.md"]
                 adapt_manually = ["AGENTS.md"]
@@ -728,6 +783,7 @@ class StackPackTests(unittest.TestCase):
             self.assertEqual(state.schema_version, ENHANCER_MANIFEST_SCHEMA_VERSION)
             self.assertEqual(state.enhancer_version, ENHANCER_VERSION)
             self.assertEqual(state.selected_packs, ("python-service",))
+            self.assertEqual(state.selected_workflows, ("repository-improvement-audit",))
             self.assertEqual(state.safe_to_regenerate, ("docs/ai/stack-guidance.md",))
             self.assertEqual(state.adapt_manually, ("AGENTS.md",))
             self.assertEqual(state.lifecycle_state, "active")
@@ -735,6 +791,8 @@ class StackPackTests(unittest.TestCase):
             self.assertEqual(state.managed_sections, ("AGENTS.md:stack-packs",))
             self.assertEqual(state.pack_evidence[0].name, "python-service")
             self.assertEqual(state.pack_evidence[0].evidence, ("found pyproject.toml",))
+            self.assertEqual(state.workflow_evidence[0].name, "repository-improvement-audit")
+            self.assertEqual(state.workflow_evidence[0].evidence, ("missing detection signal",))
 
     def test_load_enhancer_install_state_accepts_legacy_schema_one(self) -> None:
         with repo_fixture("pack_install_state_legacy_schema") as root:

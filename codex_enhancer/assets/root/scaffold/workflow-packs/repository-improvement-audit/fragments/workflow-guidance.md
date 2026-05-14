@@ -7,6 +7,15 @@ The audit should:
 - separate confirmed findings from hypotheses
 - use the finding schema in `docs/ai/repo-audit-finding-schema.md`
 - prioritize work with the rubric in `docs/ai/repo-audit-roadmap-rubric.md`
-- stop before editing files, staging changes, installing packages, or beginning implementation
+- write suggested changes to root `roadmap.md` when the user wants a durable roadmap
+- preserve existing `roadmap.md` content outside the managed audit section, and update only that section when the marker pair already exists
+- stop before staging changes, installing packages, editing code/config/tests, or beginning implementation
 
 Do not infer build, lint, test, coverage, architecture, dependencies, deployment, or security posture from common stack conventions alone.
+
+Managed roadmap markers:
+
+```text
+<!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit start -->
+<!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit end -->
+```

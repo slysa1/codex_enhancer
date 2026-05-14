@@ -5,7 +5,7 @@ description: Audit a whole repository before implementation. Use when the user a
 
 # Full repository improvement audit
 
-Run a read-only repository audit before implementation.
+Run a no-implementation repository audit before follow-up work.
 
 1. Read repo guidance first:
    - `AGENTS.md`
@@ -35,11 +35,24 @@ Run a read-only repository audit before implementation.
    - Improvement Roadmap
    - Testing and Verification Plan
    - Open Questions
-9. Stop after the audit. Do not modify files during audit mode.
+9. When the user asks for a durable roadmap, write or update root `roadmap.md`:
+   - create it if missing
+   - append a managed audit section if no audit markers exist
+   - update only the managed audit section if the marker pair already exists
+   - preserve all content outside the managed audit section
+10. Stop after the audit. Do not make implementation changes during audit mode.
+
+Use these exact markers for the managed `roadmap.md` section:
+
+```text
+<!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit start -->
+<!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit end -->
+```
 
 ## Do not use
 
 - Do not use for single-file edits or narrow implementation tasks.
 - Do not use for normal PR review unless the user asks for a repo-wide audit.
 - Do not make implementation changes during audit mode.
+- Do not modify files during audit mode except the requested root `roadmap.md` audit artifact.
 - Do not invent commands, architecture, coverage, dependencies, or risks not supported by inspected files.

@@ -152,6 +152,18 @@ def build_parser() -> argparse.ArgumentParser:
     packs.add_argument("--remove", "--remove-pack", action="append", default=[], dest="remove_pack")
     packs.add_argument("--set", "--set-pack", action="append", default=[], dest="set_pack")
 
+    workflows = subparsers.add_parser(
+        "workflows",
+        help="manage selected workflow packs for an installed target",
+    )
+    workflows.set_defaults(action="workflows")
+    workflows.add_argument("target", help="target repository path")
+    add_write_options(workflows, include_force=False)
+    add_output_options(workflows, include_plan_options=True)
+    workflows.add_argument("--add", "--add-workflow", action="append", default=[], dest="add_workflow")
+    workflows.add_argument("--remove", "--remove-workflow", action="append", default=[], dest="remove_workflow")
+    workflows.add_argument("--set", "--set-workflow", action="append", default=[], dest="set_workflow")
+
     list_packs = subparsers.add_parser(
         "list-packs",
         help="print available stack packs",
@@ -160,6 +172,15 @@ def build_parser() -> argparse.ArgumentParser:
     list_packs.add_argument("target", nargs="?", help="optional target repository path")
     add_mode_options(list_packs)
     add_output_options(list_packs, include_plan_options=False)
+
+    list_workflows = subparsers.add_parser(
+        "list-workflows",
+        help="print available workflow packs",
+    )
+    list_workflows.set_defaults(action="list_workflows")
+    list_workflows.add_argument("target", nargs="?", help="optional target repository path")
+    add_mode_options(list_workflows)
+    add_output_options(list_workflows, include_plan_options=False)
 
     gui = subparsers.add_parser(
         "gui",
@@ -323,6 +344,13 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         append_output_args(installer_args, args)
         return installer_args
 
+    if args.action == "list_workflows":
+        installer_args = ["--list-workflows", "--mode", selected_mode(args)]
+        if args.target:
+            installer_args.extend(["--target", args.target])
+        append_output_args(installer_args, args)
+        return installer_args
+
     installer_args = ["--target", args.target]
 
     if args.action == "install":
@@ -410,6 +438,20 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
             installer_args.extend(["--remove-pack", pack])
         for pack in args.set_pack:
             installer_args.extend(["--set-pack", pack])
+        return installer_args
+
+    if args.action == "workflows":
+        installer_args.append("--manage-workflows")
+        if args.write:
+            installer_args.append("--write")
+        append_write_safety_args(installer_args, args)
+        append_output_args(installer_args, args)
+        for workflow in args.add_workflow:
+            installer_args.extend(["--add-workflow", workflow])
+        for workflow in args.remove_workflow:
+            installer_args.extend(["--remove-workflow", workflow])
+        for workflow in args.set_workflow:
+            installer_args.extend(["--set-workflow", workflow])
         return installer_args
 
     raise ValueError(f"Unsupported codex-enhancer action: {args.action}")

@@ -26,14 +26,16 @@ else:
 
 from codex_enhancer.package_assets import asset_path
 from scripts.install_enhancer import (
-    GENERATED_OUTPUT_DESTINATIONS,
     EXTERNAL_STEP_ORDER_NOTE,
+    REGENERABLE_OUTPUT_DESTINATIONS,
+    REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW,
     SOURCE_ALIGNED_UPGRADE_DESTINATIONS,
     InstallPlan,
     apply_install_plan,
     build_overwrite_confirmation_message,
     build_install_plan,
     build_pack_management_plan,
+    build_workflow_management_plan,
     build_upgrade_plan,
     format_after_install_preview,
     format_conflict_severity_lines,
@@ -52,6 +54,7 @@ PRODUCT_README = asset_path("README.md")
 OPERATION_CHOICES = (
     ("Install or update scaffold", "install"),
     ("Manage stack packs", "manage-packs"),
+    ("Manage workflow packs", "manage-workflows"),
     ("Upgrade or reconcile existing install", "upgrade-enhancer"),
     ("Refresh managed outputs", "refresh-generated"),
 )
@@ -93,6 +96,11 @@ MANAGE_PACK_INTRO = (
     "Pack management reads the target repo's existing enhancer manifest, lets you change "
     "the selected set, and updates only the managed AGENTS section plus generated pack outputs. "
     "Enable a pack only when its guidance matches real code in the repo."
+)
+MANAGE_WORKFLOW_INTRO = (
+    "Workflow management reads the target repo's existing enhancer manifest, lets you change "
+    "selected reusable workflow guidance, and updates only generated workflow outputs. "
+    "The repository-improvement audit workflow also maintains a managed section in roadmap.md."
 )
 UPGRADE_PACK_INTRO = (
     "Upgrade keeps the selected packs from the target repo's existing enhancer manifest. "
@@ -142,6 +150,8 @@ def operation_label(plan: InstallPlan) -> str:
         return "Refresh managed outputs"
     if plan.operation == "manage-packs":
         return "Manage stack packs"
+    if plan.operation == "manage-workflows":
+        return "Manage workflow packs"
     if plan.operation == "manage-spec-kit-bridge":
         return "Manage Spec Kit bridge"
     if plan.operation == "upgrade-enhancer":
@@ -154,6 +164,8 @@ def action_verb(plan: InstallPlan) -> str:
         return "refresh"
     if plan.operation == "manage-packs":
         return "manage packs"
+    if plan.operation == "manage-workflows":
+        return "manage workflows"
     if plan.operation == "manage-spec-kit-bridge":
         return "manage Spec Kit bridge"
     if plan.operation == "upgrade-enhancer":
@@ -162,7 +174,7 @@ def action_verb(plan: InstallPlan) -> str:
 
 
 def requires_confirmation(plan: InstallPlan) -> bool:
-    return plan.operation not in {"refresh-generated", "manage-packs"} and bool(overwrite_paths(plan))
+    return plan.operation not in {"refresh-generated", "manage-packs", "manage-workflows"} and bool(overwrite_paths(plan))
 
 
 def progress_total(plan: InstallPlan) -> int:
@@ -192,6 +204,11 @@ def build_plan_preview(plan: InstallPlan) -> str:
             "Pack management behavior: update selected packs, the managed AGENTS section, "
             "and generated pack outputs only."
         )
+    elif plan.operation == "manage-workflows":
+        lines.append(
+            "Workflow management behavior: update selected workflows, generated workflow guidance, "
+            "the manifest, and workflow-owned managed outputs only."
+        )
     elif plan.operation == "upgrade-enhancer":
         lines.append(
             "Upgrade behavior: overwrite tracked managed outputs and source-aligned copies; "
@@ -211,6 +228,17 @@ def build_plan_preview(plan: InstallPlan) -> str:
         lines.extend(("", *ownership_lines))
 
     lines.extend(["", "Stack packs:", *format_pack_entries(plan.pack_selections)])
+    if plan.workflow_selections or plan.operation == "manage-workflows":
+        lines.extend(
+            [
+                "",
+                "Workflow packs:",
+                *format_pack_entries(
+                    plan.workflow_selections,
+                    manifest_label="selected workflows",
+                ),
+            ]
+        )
     bridge_entries = format_spec_kit_entries(plan)
     if bridge_entries:
         lines.extend(["", "Spec Kit bridge:", *bridge_entries])
@@ -252,7 +280,11 @@ def format_section_entries(entries: list[str]) -> list[str]:
     return [f"- {entry}" for entry in entries]
 
 
-def format_pack_entries(selections: tuple[PackSelection, ...]) -> list[str]:
+def format_pack_entries(
+    selections: tuple[PackSelection, ...],
+    *,
+    manifest_label: str = "selected packs",
+) -> list[str]:
     if not selections:
         return ["- none"]
 
@@ -268,9 +300,12 @@ def format_pack_entries(selections: tuple[PackSelection, ...]) -> list[str]:
         if selection.selected or selection.recommended or selection.detected:
             entries.append(f"  {format_pack_decision_hint(selection.pack)}")
     if selected_names:
-        entries.append("- Manifest selected packs: " + ", ".join(f"`{name}`" for name in selected_names))
+        entries.append(
+            f"- Manifest {manifest_label}: "
+            + ", ".join(f"`{name}`" for name in selected_names)
+        )
     else:
-        entries.append("- Manifest selected packs: none")
+        entries.append(f"- Manifest {manifest_label}: none")
     return entries
 
 
@@ -321,7 +356,7 @@ def format_upgrade_sections(plan: InstallPlan) -> list[str]:
             if item.action == "proposal"
             else f"{item.action}: {item.write_path.as_posix()}"
         )
-        if item.destination in GENERATED_OUTPUT_DESTINATIONS:
+        if item.destination in REGENERABLE_OUTPUT_DESTINATIONS:
             generated_entries.append(entry)
         elif item.destination in SOURCE_ALIGNED_UPGRADE_DESTINATIONS:
             direct_entries.append(entry)
@@ -353,17 +388,22 @@ def build_preview_follow_up(plan: InstallPlan) -> list[str]:
         return ["After upgrade:", *format_next_steps(plan, write=True)]
     if plan.operation == "manage-packs":
         return ["After pack management:", *format_next_steps(plan, write=True)]
+    if plan.operation == "manage-workflows":
+        return ["After workflow management:", *format_next_steps(plan, write=True)]
     return format_after_install_preview(plan)
 
 
 def build_completion_message(plan: InstallPlan) -> str:
     selected_names = selected_pack_names(plan.pack_selections)
+    selected_workflows = selected_pack_names(plan.workflow_selections)
     lines = [
         (
             "Codex Enhancer managed outputs were refreshed successfully."
             if plan.operation == "refresh-generated"
             else "Codex Enhancer stack packs were updated successfully."
             if plan.operation == "manage-packs"
+            else "Codex Enhancer workflow packs were updated successfully."
+            if plan.operation == "manage-workflows"
             else "Codex Enhancer upgrade reconcile completed successfully."
             if plan.operation == "upgrade-enhancer"
             else "Codex Enhancer was installed successfully."
@@ -383,6 +423,23 @@ def build_completion_message(plan: InstallPlan) -> str:
         lines.extend(f"- {name}" for name in selected_names)
     else:
         lines.append("- none selected")
+    if plan.operation == "manage-workflows" or selected_workflows:
+        lines.extend(
+            [
+                "",
+                (
+                    "Selected workflow packs now:"
+                    if plan.operation == "manage-workflows"
+                    else "Workflow packs from the target manifest:"
+                ),
+            ]
+        )
+        if selected_workflows:
+            lines.extend(f"- {name}" for name in selected_workflows)
+        else:
+            lines.append("- none selected")
+        if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_workflows:
+            lines.append("- roadmap.md managed audit section is present")
     if plan.utility_harness is not None and plan.utility_harness.enabled:
         lines.extend(
             [
@@ -755,7 +812,10 @@ class InstallerApp:
         return self._operation_value() == "refresh-generated"
 
     def _is_manage_operation(self) -> bool:
-        return self._operation_value() == "manage-packs"
+        return self._operation_value() in {"manage-packs", "manage-workflows"}
+
+    def _is_manage_workflow_operation(self) -> bool:
+        return self._operation_value() == "manage-workflows"
 
     def _is_upgrade_operation(self) -> bool:
         return self._operation_value() == "upgrade-enhancer"
@@ -793,9 +853,16 @@ class InstallerApp:
             self.mode_combo.configure(state="disabled")
             set_spec_kit_state("disabled")
             set_utility_state("disabled")
-            self.pack_intro.configure(text=MANAGE_PACK_INTRO)
-            self.review_button.configure(text="Review pack changes")
-            self.install_button.configure(text="Apply pack changes")
+            if self._is_manage_workflow_operation():
+                self.pack_frame.configure(text="Workflow packs")
+                self.pack_intro.configure(text=MANAGE_WORKFLOW_INTRO)
+                self.review_button.configure(text="Review workflow changes")
+                self.install_button.configure(text="Apply workflow changes")
+            else:
+                self.pack_frame.configure(text="Stack packs")
+                self.pack_intro.configure(text=MANAGE_PACK_INTRO)
+                self.review_button.configure(text="Review pack changes")
+                self.install_button.configure(text="Apply pack changes")
             return
 
         if is_upgrade:
@@ -805,6 +872,7 @@ class InstallerApp:
             self.mode_combo.configure(state="disabled")
             set_spec_kit_state("readonly")
             set_utility_state("readonly")
+            self.pack_frame.configure(text="Stack packs")
             self.pack_intro.configure(text=UPGRADE_PACK_INTRO)
             self.review_button.configure(text="Review upgrade plan")
             self.install_button.configure(text="Apply upgrade reconcile")
@@ -814,6 +882,7 @@ class InstallerApp:
         self.force_check.configure(state="normal")
         set_spec_kit_state("readonly")
         set_utility_state("readonly")
+        self.pack_frame.configure(text="Stack packs")
         self.pack_intro.configure(text=INSTALL_PACK_INTRO)
         self.review_button.configure(text="Review install plan")
         self.install_button.configure(text="Install enhancer")
@@ -835,10 +904,16 @@ class InstallerApp:
             )
             self.status_var.set("Inputs changed. Review the refresh plan again before running it.")
         elif self._is_manage_operation():
-            self._show_pack_placeholder(
-                "Inputs changed. Review pack changes again to read pack selection from the target manifest."
-            )
-            self.status_var.set("Inputs changed. Review pack changes again before applying them.")
+            if self._is_manage_workflow_operation():
+                self._show_pack_placeholder(
+                    "Inputs changed. Review workflow changes again to read workflow selection from the target manifest."
+                )
+                self.status_var.set("Inputs changed. Review workflow changes again before applying them.")
+            else:
+                self._show_pack_placeholder(
+                    "Inputs changed. Review pack changes again to read pack selection from the target manifest."
+                )
+                self.status_var.set("Inputs changed. Review pack changes again before applying them.")
         elif self._is_upgrade_operation():
             self._show_pack_placeholder(
                 "Inputs changed. Review the upgrade plan again to read pack selection from the target manifest."
@@ -894,7 +969,11 @@ class InstallerApp:
             if self._is_refresh_operation():
                 self._show_pack_placeholder("No valid refresh pack view is available yet.")
             elif self._is_manage_operation():
-                self._show_pack_placeholder("No valid pack-management view is available yet.")
+                self._show_pack_placeholder(
+                    "No valid workflow-management view is available yet."
+                    if self._is_manage_workflow_operation()
+                    else "No valid pack-management view is available yet."
+                )
             elif self._is_upgrade_operation():
                 self._show_pack_placeholder("No valid upgrade pack view is available yet.")
             else:
@@ -922,7 +1001,11 @@ class InstallerApp:
             if self._is_refresh_operation():
                 self.status_var.set("Refresh plan looks ready.")
             elif self._is_manage_operation():
-                self.status_var.set("Pack changes look ready.")
+                self.status_var.set(
+                    "Workflow changes look ready."
+                    if self._is_manage_workflow_operation()
+                    else "Pack changes look ready."
+                )
             elif self._is_upgrade_operation():
                 self.status_var.set("Upgrade plan looks ready.")
             else:
@@ -952,6 +1035,12 @@ class InstallerApp:
                 utility_harness_mode=self._utility_harness_mode_value(),
             )
         if is_manage:
+            if self._is_manage_workflow_operation():
+                return build_workflow_management_plan(
+                    Path(raw_target),
+                    set_workflows=set_packs,
+                    require_changes=False,
+                )
             return build_pack_management_plan(
                 Path(raw_target),
                 set_packs=set_packs,
@@ -987,7 +1076,12 @@ class InstallerApp:
 
     def _populate_pack_controls(self, plan: InstallPlan, *, interactive: bool) -> None:
         self._clear_pack_controls()
-        for row_index, selection in enumerate(plan.pack_selections):
+        selections = (
+            plan.workflow_selections
+            if plan.operation == "manage-workflows"
+            else plan.pack_selections
+        )
+        for row_index, selection in enumerate(selections):
             variable = tk.BooleanVar(value=selection.selected)
             if interactive:
                 variable.trace_add("write", self._on_pack_toggle)
@@ -1059,12 +1153,13 @@ class InstallerApp:
 
         self.current_plan = plan
         self._set_preview_text(build_plan_preview(plan))
+        noun = "Workflow selection" if self._is_manage_workflow_operation() else "Pack selection"
         if requires_confirmation(plan) and not self.confirm_overwrite_var.get():
             self.status_var.set(
-                "Pack selection updated. Review the overwrite list carefully, then install."
+                f"{noun} updated. Review the overwrite list carefully, then install."
             )
         else:
-            self.status_var.set("Pack selection updated.")
+            self.status_var.set(f"{noun} updated.")
         self._refresh_install_button()
 
     def _selected_pack_names_from_ui(self) -> tuple[str, ...]:
@@ -1155,6 +1250,8 @@ class InstallerApp:
             self.status_var.set("Starting refresh...")
         elif plan.operation == "manage-packs":
             self.status_var.set("Starting pack management...")
+        elif plan.operation == "manage-workflows":
+            self.status_var.set("Starting workflow management...")
         elif plan.operation == "upgrade-enhancer":
             self.status_var.set("Starting upgrade...")
         else:
@@ -1181,6 +1278,8 @@ class InstallerApp:
             self.status_var.set("Refresh complete.")
         elif plan.operation == "manage-packs":
             self.status_var.set("Pack management complete.")
+        elif plan.operation == "manage-workflows":
+            self.status_var.set("Workflow management complete.")
         elif plan.operation == "upgrade-enhancer":
             self.status_var.set("Upgrade complete.")
         else:

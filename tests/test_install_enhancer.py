@@ -21,6 +21,7 @@ from scripts.install_enhancer import (
     build_pack_management_plan,
     build_spec_kit_bridge_management_plan,
     build_upgrade_plan,
+    build_workflow_management_plan,
     discover_commands,
     format_next_steps,
     inspect_install,
@@ -2544,6 +2545,227 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertEqual(exit_code, 1)
             self.assertIn("--set-pack cannot be combined", output)
 
+    def test_list_workflows_without_target_prints_available_workflow_names(self) -> None:
+        exit_code, output = run_installer(["--list-workflows"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Available workflow packs:", output)
+        self.assertIn("repository-improvement-audit", output)
+
+    def test_manage_workflows_adds_repository_audit_workflow_and_roadmap(self) -> None:
+        with repo_fixture("manage_workflow_add") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            write_file(
+                install_target,
+                "roadmap.md",
+                """
+                # Existing Roadmap
+
+                Keep this product-owned roadmap note.
+                """,
+            )
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-workflows",
+                    "--add-workflow",
+                    "repository-improvement-audit",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Planned Codex Enhancer workflow-pack management plan", output)
+            self.assertIn("repository-improvement-audit: added by --add-workflow", output)
+            self.assertIn('Manifest preview selected_workflows = ["repository-improvement-audit"]', output)
+            self.assertIn("- overwrite: .codex/enhancer/manifest.toml", output)
+            self.assertIn("- create: docs/ai/workflow-guidance.md", output)
+            self.assertIn("- overwrite: roadmap.md", output)
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-workflows",
+                    "--add-workflow",
+                    "repository-improvement-audit",
+                    "--write",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Applying Codex Enhancer workflow-pack management plan", output)
+
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            workflow_guidance = (install_target / "docs/ai/workflow-guidance.md").read_text(encoding="utf-8")
+            roadmap = (install_target / "roadmap.md").read_text(encoding="utf-8")
+
+            self.assertIn('selected_workflows = ["repository-improvement-audit"]', manifest)
+            self.assertIn("[[detected_workflows]]", manifest)
+            self.assertIn('workflow_guidance = "docs/ai/workflow-guidance.md"', manifest)
+            self.assertIn('"roadmap.md"', manifest)
+            self.assertIn("Pack id: `repository-improvement-audit`", workflow_guidance)
+            self.assertIn("Keep this product-owned roadmap note.", roadmap)
+            self.assertIn("codex-enhancer:managed-section roadmap.md:repository-improvement-audit start", roadmap)
+            self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
+
+    def test_manage_workflows_preserves_existing_audit_roadmap_section(self) -> None:
+        with repo_fixture("manage_workflow_existing_roadmap") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+            self.assertEqual(exit_code, 0)
+            write_file(
+                install_target,
+                "roadmap.md",
+                """
+                # Roadmap
+
+                <!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit start -->
+                ## Repository Improvement Audit
+
+                - P1: Preserve this audit finding.
+                <!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit end -->
+
+                Outside note.
+                """,
+            )
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-workflows",
+                    "--add-workflow",
+                    "repository-improvement-audit",
+                    "--write",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            roadmap = (install_target / "roadmap.md").read_text(encoding="utf-8")
+            self.assertNotIn("- P1: Preserve this audit finding.", roadmap)
+            self.assertIn("No audit findings recorded yet.", roadmap)
+            self.assertIn("Outside note.", roadmap)
+
+    def test_target_validation_rejects_reversed_repository_audit_roadmap_markers(self) -> None:
+        with repo_fixture("manage_workflow_reversed_roadmap") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+            self.assertEqual(exit_code, 0)
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-workflows",
+                    "--add-workflow",
+                    "repository-improvement-audit",
+                    "--write",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            write_file(
+                install_target,
+                "roadmap.md",
+                """
+                # Roadmap
+
+                <!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit end -->
+                reversed content
+                <!-- codex-enhancer:managed-section roadmap.md:repository-improvement-audit start -->
+                """,
+            )
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any(
+                    "roadmap.md has reversed repository-improvement audit managed markers" in error
+                    for error in errors
+                )
+            )
+
+    def test_target_validation_requires_selected_workflow_state_to_match_detection_records(self) -> None:
+        with repo_fixture("install_workflow_state_drift") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+            self.assertEqual(exit_code, 0)
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-workflows",
+                    "--add-workflow",
+                    "repository-improvement-audit",
+                    "--write",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            manifest_path = install_target / ".codex/enhancer/manifest.toml"
+            manifest_text = manifest_path.read_text(encoding="utf-8").replace(
+                'selected_workflows = ["repository-improvement-audit"]',
+                "selected_workflows = []",
+            )
+            if manifest_text == manifest_path.read_text(encoding="utf-8"):
+                self.fail("manifest fixture mutation did not change selected_workflows")
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any(
+                    "detected_workflows selected flags are stale for unselected workflows" in error
+                    for error in errors
+                )
+            )
+
+    def test_manage_workflows_rejects_invalid_flag_combinations(self) -> None:
+        with repo_fixture("manage_workflow_invalid") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--add-workflow", "repository-improvement-audit"]
+            )
+            self.assertEqual(exit_code, 1)
+            self.assertIn("require --manage-workflows", output)
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--manage-workflows"]
+            )
+            self.assertEqual(exit_code, 1)
+            self.assertIn("--manage-workflows requires --add-workflow", output)
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-workflows",
+                    "--add-workflow",
+                    "repository-improvement-audit",
+                    "--set-workflow",
+                    "repository-improvement-audit",
+                ]
+            )
+            self.assertEqual(exit_code, 1)
+            self.assertIn("--set-workflow cannot be combined", output)
+
     def test_force_overwrite_updates_existing_agents(self) -> None:
         with repo_fixture("install_force") as install_target:
             write_file(
@@ -2817,6 +3039,32 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertIn("Codex Enhancer stack packs were updated successfully.", message)
             self.assertIn("Selected stack packs now:", message)
             self.assertIn("- python-service", message)
+
+    def test_gui_workflow_management_preview_and_completion_message(self) -> None:
+        with repo_fixture("install_preview_workflows") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+            self.assertEqual(exit_code, 0)
+
+            plan = build_workflow_management_plan(
+                install_target,
+                add_workflows=("repository-improvement-audit",),
+            )
+            preview = build_plan_preview(plan)
+            message = build_completion_message(plan)
+
+            self.assertIn("Operation: Manage workflow packs", preview)
+            self.assertIn("Workflow management behavior:", preview)
+            self.assertIn("Workflow packs:", preview)
+            self.assertIn("Manifest selected workflows: `repository-improvement-audit`", preview)
+            self.assertIn("After workflow management:", preview)
+            self.assertIn("Codex Enhancer workflow packs were updated successfully.", message)
+            self.assertIn("Selected workflow packs now:", message)
+            self.assertIn("- repository-improvement-audit", message)
+            self.assertIn("roadmap.md managed audit section is present", message)
 
     def test_gui_refresh_preview_uses_refresh_wording(self) -> None:
         with repo_fixture("install_preview_refresh") as install_target:

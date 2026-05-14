@@ -18,7 +18,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [docs/ai/migration-v3.md](docs/ai/migration-v3.md): upgrade and review notes for the v3 managed-section lifecycle.
 - [docs/ai/roadmap.md](docs/ai/roadmap.md): phased roadmap for stack packs, installer UX, and planned enhancer evolution.
 - [docs/ai/release.md](docs/ai/release.md): package build and release-readiness checklist.
-- [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md): read-only full repository improvement audit workflow.
+- [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md): full repository improvement audit workflow and managed roadmap artifact rules.
 - [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md): evidence-backed finding fields and severity/confidence rubrics for repo audits.
 - [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md): prioritization rules for turning audit findings into roadmap buckets.
 - [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md): ownership rules and phased plan for optional GitHub Spec Kit integration.
@@ -27,9 +27,9 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [codex-enhancer](codex-enhancer) and [codex-enhancer.bat](codex-enhancer.bat): friendly source-checkout command shims over the installer.
 - [install_enhancer.bat](install_enhancer.bat): Windows launcher that opens the GUI installer.
 - [scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py): thin `codex-enhancer` subcommand facade over the installer core.
-- [scripts/install_enhancer.py](scripts/install_enhancer.py): bootstrap installer, pack manager, and refresh/reconcile planner for target repos.
-- [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py): GUI wrapper for previewing, confirming, and applying installs, pack changes, upgrades, and refreshes.
-- [scripts/stack_packs.py](scripts/stack_packs.py): loader, detection layer, and manifest renderer for optional stack packs.
+- [scripts/install_enhancer.py](scripts/install_enhancer.py): bootstrap installer, pack and workflow manager, and refresh/reconcile planner for target repos.
+- [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py): GUI wrapper for previewing, confirming, and applying installs, pack/workflow changes, upgrades, and refreshes.
+- [scripts/stack_packs.py](scripts/stack_packs.py): loader, detection layer, and manifest renderer for optional stack packs and workflow packs.
 - [scripts/spec_kit_bridge.py](scripts/spec_kit_bridge.py): detection, bridge-mode resolution, feature/sync reporting, and rendering helpers for optional official Spec Kit integration surfaces.
 - [scripts/utility_harness.py](scripts/utility_harness.py): mode resolver and summary renderer for the optional Codex Utility Harness.
 - [scripts/enhancer_spec.py](scripts/enhancer_spec.py): shared install and validation spec.
@@ -37,7 +37,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [scripts/check.py](scripts/check.py): deterministic validation for the enhancer source repo.
 - [scaffold/target-repo/](scaffold/target-repo/): install scaffold for files that should differ in target repos.
 - [scaffold/stack-packs/](scaffold/stack-packs/): file-based registry for optional stack packs and their fragments.
-- [scaffold/workflow-packs/](scaffold/workflow-packs/): render-only workflow-pack registry that reuses the stack-pack loader shape.
+- [scaffold/workflow-packs/](scaffold/workflow-packs/): optional workflow-pack registry that reuses the stack-pack loader shape.
 - [tests/](tests/): unit tests for the validator and installer.
 - [.github/workflows/validate.yml](.github/workflows/validate.yml): CI that mirrors the local validation commands.
 
@@ -64,8 +64,12 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - `python scripts/codex_enhancer_cli.py spec-sync <path> --feature <feature> --changed <path>` - compare changed paths against existing Spec Kit feature artifacts without editing them.
 - `python scripts/codex_enhancer_cli.py bridge <path> --attach-spec-kit` - preview a Spec Kit bridge mode update for an installed target.
 - `python scripts/codex_enhancer_cli.py list-packs` - friendly command for listing available stack packs.
+- `python scripts/install_enhancer.py --list-workflows` - list available workflow packs from the installer core.
+- `python scripts/codex_enhancer_cli.py list-workflows` - friendly command for listing available workflow packs.
+- `python scripts/codex_enhancer_cli.py workflows <path> --add repository-improvement-audit` - preview selecting the audit workflow and managed `roadmap.md` artifact.
 - `python scripts/install_enhancer.py --target <path> --mode new` - preview an install into a target repo.
 - `python scripts/install_enhancer.py --target <path> --manage-packs --add-pack <name>` - preview a pack-selection change for an installed target.
+- `python scripts/install_enhancer.py --target <path> --manage-workflows --add-workflow repository-improvement-audit` - preview a workflow-selection change for an installed target.
 - `python scripts/install_enhancer.py --target <path> --mode existing --utility-harness-mode install` - preview installing optional Codex helper tools into a target repo.
 - `install_enhancer.bat` - open the Windows GUI installer.
 

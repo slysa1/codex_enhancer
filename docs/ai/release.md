@@ -15,10 +15,10 @@ Use this checklist before publishing or handing off a Codex Enhancer package bui
 3. Run `python -m unittest discover -s tests -p "test_*.py" -v`.
 4. Run `python -m build` from a clean working tree or a deliberate release branch.
 5. Install the built wheel into a fresh virtual environment.
-6. Run `codex-enhancer list-packs` from that environment.
+6. Run `codex-enhancer list-packs` and `codex-enhancer list-workflows` from that environment.
 7. Preview an install with `codex-enhancer init <probe-repo> --new`.
 8. Preview the full optional helper bundle with `codex-enhancer init <probe-repo> --new --with-spec-kit --utility-harness`.
-9. Confirm CI or a local clean-room run performs the same wheel smoke path on each supported OS: build artifacts, install the wheel into a fresh virtual environment, run `codex-enhancer list-packs`, preview a basic install, and preview the optional helper bundle without `--write`.
+9. Confirm CI or a local clean-room run performs the same wheel smoke path on each supported OS: build artifacts, install the wheel into a fresh virtual environment, run `codex-enhancer list-packs`, run `codex-enhancer list-workflows`, preview a basic install, and preview the optional helper bundle without `--write`.
 10. Confirm the packaged optional helper assets include `requirements-codex.txt`, `requirements-codex-minimal.txt`, `requirements-codex-readers.txt`, `requirements-codex-analysis.txt`, and `requirements-codex-cli.txt`.
 
 ## Validation Boundary
