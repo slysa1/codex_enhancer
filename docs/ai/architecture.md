@@ -9,19 +9,20 @@ This repository contains the enhancer itself, not an application stack. The work
 3. [pyproject.toml](../../pyproject.toml) and [MANIFEST.in](../../MANIFEST.in): package metadata for exposing the distributable `codex-enhancer` command.
 4. [docs/ai/](../ai/): durable guidance that would bloat `AGENTS.md` if kept inline, including the current architecture notes, review checklist, [v3 migration notes](./migration-v3.md), [release checklist](./release.md), the phased [design roadmap](./roadmap.md), the [repository improvement audit workflow](./repo-improvement-audit.md), the [Spec Kit bridge contract](./spec-kit-bridge.md), and the [Utility Harness contract](./utility-harness.md).
 5. [codex_enhancer/package_assets.py](../../codex_enhancer/package_assets.py): package asset lookup for scaffold inputs in both source checkouts and installed wheels.
-6. [.codex/skills/](../../.codex/skills/): narrow, repeatable procedures that are worth reusing.
-7. [codex-enhancer](../../codex-enhancer), [codex-enhancer.bat](../../codex-enhancer.bat), and [scripts/codex_enhancer_cli.py](../../scripts/codex_enhancer_cli.py): thin source-checkout command facade over the installer core, including concise previews, adaptation audits, diff previews, and JSON output.
-8. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, pack management, upgrade/reconcile, and guided install or managed-output refresh flow.
-9. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus pack management, upgrade/reconcile, and safe generated-output refreshes.
-10. [scripts/stack_packs.py](../../scripts/stack_packs.py), [scaffold/stack-packs/](../../scaffold/stack-packs/), and [scaffold/workflow-packs/](../../scaffold/workflow-packs/): file-based registry, loader, manifest-evidence collector, and renderer for optional stack packs plus explicit workflow-pack management that reuses the same metadata shape. Selected workflow packs may carry target-facing docs or skills, but unselected workflows stay out of the base scaffold.
-11. [scripts/spec_kit_bridge.py](../../scripts/spec_kit_bridge.py): bridge-aware detection, bridge-mode resolution, feature/sync reporting, and summary helpers for optional official Spec Kit installs.
-12. [scripts/utility_harness.py](../../scripts/utility_harness.py): mode resolution and summary helpers for the optional Codex Utility Harness.
-13. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
-14. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.
-15. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for the enhancer source repo.
-16. [scaffold/target-repo/](../../scaffold/target-repo/): target-repo files that should not be copied verbatim from the source repo.
-17. [tests/](../../tests/): regression protection for the validator, installer core, command facade, GUI-facing helpers, stack-pack loader, Spec Kit bridge detector, and Utility Harness resolver.
-18. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
+6. [.codex/skills/](../../.codex/skills/): narrow, repeatable enhancer-owned procedures that are worth reusing.
+7. [.agents/skills/](../../.agents/skills/): external compatibility surface for official Spec Kit or other agent-tool skills. The enhancer may detect it, but it is not an enhancer-managed output root.
+8. [codex-enhancer](../../codex-enhancer), [codex-enhancer.bat](../../codex-enhancer.bat), and [scripts/codex_enhancer_cli.py](../../scripts/codex_enhancer_cli.py): thin source-checkout command facade over the installer core, including concise previews, adaptation audits, diff previews, and JSON output.
+9. [install_enhancer.bat](../../install_enhancer.bat) and [scripts/install_enhancer_gui.py](../../scripts/install_enhancer_gui.py): Windows-first installer entrypoint for manual repo selection, overwrite review, pack management, upgrade/reconcile, and guided install or managed-output refresh flow.
+10. [scripts/install_enhancer.py](../../scripts/install_enhancer.py): bootstrap installer core for new and existing repos plus pack management, upgrade/reconcile, and safe generated-output refreshes.
+11. [scripts/stack_packs.py](../../scripts/stack_packs.py), [scaffold/stack-packs/](../../scaffold/stack-packs/), and [scaffold/workflow-packs/](../../scaffold/workflow-packs/): file-based registry, loader, manifest-evidence collector, and renderer for optional stack packs plus explicit workflow-pack management that reuses the same metadata shape. Selected workflow packs may carry target-facing docs or skills, but unselected workflows stay out of the base scaffold.
+12. [scripts/spec_kit_bridge.py](../../scripts/spec_kit_bridge.py): bridge-aware detection, bridge-mode resolution, feature/sync reporting, and summary helpers for optional official Spec Kit installs.
+13. [scripts/utility_harness.py](../../scripts/utility_harness.py): mode resolution and summary helpers for the optional Codex Utility Harness.
+14. [scripts/enhancer_spec.py](../../scripts/enhancer_spec.py): shared install and validation spec.
+15. [scripts/enhancer_validator.py](../../scripts/enhancer_validator.py): reusable validation engine.
+16. [scripts/check.py](../../scripts/check.py): deterministic integrity checks for the enhancer source repo.
+17. [scaffold/target-repo/](../../scaffold/target-repo/): target-repo files that should not be copied verbatim from the source repo.
+18. [tests/](../../tests/): regression protection for the validator, installer core, command facade, GUI-facing helpers, stack-pack loader, Spec Kit bridge detector, and Utility Harness resolver.
+19. [.github/workflows/validate.yml](../../.github/workflows/validate.yml): CI that mirrors the local commands.
 
 ## Decision Guide
 
@@ -41,6 +42,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - Evals or regression fixtures once the repo owns behavior that can actually regress
 - Stack-specific helper scripts once real install, build, lint, or test commands exist
 - Additional skills only after repeated use proves they remove real prompt repetition
+- `.agents/skills/` detection for external tools, without making it an enhancer-owned output root
 - Optional stack packs only if they stay file-based, visible, evidence-backed, and conservative as described in [roadmap.md](./roadmap.md)
 - Further repository-improvement audit workflow expansion only after selected target docs/skills, generated workflow guidance, and the managed `roadmap.md` audit section prove useful without a background audit runner
 - An optional Spec Kit bridge only if it stays repo-local, keeps ownership boundaries explicit, and complements official Spec Kit instead of vendoring or replacing it
@@ -65,6 +67,7 @@ This repository contains the enhancer itself, not an application stack. The work
 - If a new rule applies repo-wide, put the short version in [AGENTS.md](../../AGENTS.md) and the detail in [docs/ai/](../ai/).
 - If a new rule applies only to one subtree, add a nested `AGENTS.md` there.
 - If a new skill needs more than one narrow procedure, split it or reconsider whether it should be a doc instead.
+- Keep enhancer-owned skills under `.codex/skills/`; `.agents/skills/` is external and must not be written by enhancer install flows.
 - If a script needs third-party dependencies, justify them in the same change.
 - If package metadata changes, keep the console script, README install guidance, source validation requirements, packaged assets, and packaging tests aligned.
 - If release expectations change, keep [release.md](./release.md), packaging tests, and README build guidance aligned.

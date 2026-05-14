@@ -45,6 +45,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         and `python scripts/codex_enhancer_cli.py bridge ../repo --attach-spec-kit`.
         Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_gui.py`.
         Workflow packs live in `scaffold/workflow-packs/` and reuse `scripts/stack_packs.py`.
+        `.agents/skills/` is an external compatibility surface, not enhancer-managed output.
         Read [docs/ai/migration-v3.md](docs/ai/migration-v3.md) before upgrading existing installs.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the completed product maturity roadmap.
         See [docs/ai/release.md](docs/ai/release.md) before building packages.
@@ -82,7 +83,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         See [docs/ai/architecture.md](docs/ai/architecture.md),
         [docs/ai/code-review.md](docs/ai/code-review.md),
         [docs/ai/migration-v3.md](docs/ai/migration-v3.md),
-        [.codex/skills/](.codex/skills/), and [tests/](tests/).
+        [.codex/skills/](.codex/skills/), [.agents/skills/](.agents/skills/), and [tests/](tests/).
         """,
         "install_enhancer.bat": """
         @echo off
@@ -131,6 +132,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Repo-local workflow guidance only.
         Workflow pack loading reuses scripts/stack_packs.py with scaffold/workflow-packs/.
         workflow-pack management stays explicit.
+        .agents/skills/ is not an enhancer-managed output root.
         """,
         "docs/ai/code-review.md": f"""
         # Review
@@ -205,6 +207,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Treat official Spec Kit files as separately owned.
         Bootstrap may use `uvx` or `--spec-kit-exe`.
         Use spec-report and spec-sync for read-only summaries and bridge for bridge mode changes.
+        Detect .agents/skills/speckit-* but do not mirror, migrate, or overwrite .agents/skills/.
         """,
         "docs/ai/utility-harness.md": """
         # Codex Utility Harness
@@ -220,6 +223,10 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         # Skills
 
         Keep skills narrow.
+        Do not mirror enhancer-owned skills into `.agents/skills/`.
+        """,
+        ".agents/skills/speckit-plan/SKILL.md": """
+        # External Spec Kit skill fixture
         """,
         ".codex/skills/plan-change/SKILL.md": """
         ---
@@ -347,6 +354,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scaffold/target-repo/docs/ai/spec-kit-bridge.md": """
         # Spec Kit Bridge template
+
+        If `.agents/skills/` exists, do not mirror, migrate, or overwrite files there.
         """,
         "scaffold/target-repo/docs/ai/utility-harness.md": """
         # Utility Harness template
@@ -953,6 +962,31 @@ class ValidateTests(unittest.TestCase):
                     "scaffold/target-repo/docs/ai/utility-harness.md is missing required text"
                     in error
                     and "## Audit Use" in error
+                    for error in errors
+                )
+            )
+
+    def test_skill_root_policy_drift_is_reported(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root)
+            write_file(
+                root,
+                "docs/ai/spec-kit-bridge.md",
+                """
+                # Spec Kit Bridge
+
+                Treat official Spec Kit files as separately owned.
+                Bootstrap may use `uvx` or `--spec-kit-exe`.
+                Use spec-report and spec-sync for read-only summaries and bridge for bridge mode changes.
+                """,
+            )
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "docs/ai/spec-kit-bridge.md is missing required text" in error
+                    and ".agents/skills/speckit-*" in error
                     for error in errors
                 )
             )

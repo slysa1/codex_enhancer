@@ -738,6 +738,11 @@ For no-implementation whole-repo improvement audits and the managed `roadmap.md`
 
 Skills in this repo are intentionally narrow. If a procedure is too broad, too generic, or needs lots of reference material, it probably belongs in `docs/ai/` instead.
 
+### `.agents/skills/`
+[.agents/skills/](.agents/skills/) is treated as an external compatibility surface, not an enhancer-managed output root. Codex Enhancer detects `.agents/skills/speckit-*` as an official Spec Kit command surface when present, but enhancer-owned skills continue to install under `.codex/skills/` only.
+
+Do not mirror, migrate, or overwrite `.agents/skills/` from enhancer install flows. If a target repo has both roots, keep ownership explicit: `.codex/skills/` for enhancer-owned workflow skills, `.agents/skills/` for external or official-tool skills.
+
 ### `scripts/install_enhancer.py`
 [scripts/install_enhancer.py](scripts/install_enhancer.py) is the bootstrap entrypoint. It:
 - scaffolds enhancer files into a target repo
@@ -952,6 +957,7 @@ Check:
 |-- codex-enhancer.bat
 |-- install_enhancer.bat
 |-- .codex/skills/
+|-- .agents/skills/
 |-- docs/ai/
 |-- scripts/check.py
 |-- scripts/codex_enhancer_cli.py

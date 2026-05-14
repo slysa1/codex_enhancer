@@ -8,5 +8,6 @@ This file applies to everything under [.codex/skills/](../skills/).
 - Keep `SKILL.md` concise and operational; prefer short workflows over essays.
 - Every skill must include a `## Do not use` section with explicit boundaries.
 - Do not add `agents/openai.yaml`, extra docs, scripts, or references unless the skill truly needs them.
+- Do not mirror enhancer-owned skills into `.agents/skills/`; that root is external/Spec Kit-owned compatibility surface.
 - If a workflow needs many references or multiple procedures, document it in [docs/ai/](../../docs/ai/) instead of creating a broad skill.
 - After any skill edit, run `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`.

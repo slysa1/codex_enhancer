@@ -13,7 +13,7 @@ The current `4.2` record is the focused repository-improvement audit workflow be
 | `2.x` through `3.4` | Historical design record | Use for architecture context, shipped rationale, and regression expectations. Do not treat these sections as current TODOs. |
 | `4.0` | Completed baseline | Use as the product-maturity bar that the enhancer should not regress below. |
 | `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
-| `4.2` | Explicit workflow-pack management, selected target audit assets, specialist audit skills, and bounded audit-input helper implemented; remaining expansion is explicit follow-up work | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, Phase 5 selected target docs/skill integration, Phase 6 specialist audit skills, and Phase 7 bounded Utility Harness audit input inventory are implemented. `.agents/skills` work is being handled as a focused follow-up slice. |
+| `4.2` | Explicit workflow-pack management, selected target audit assets, specialist audit skills, bounded audit-input helper, and skill-root compatibility policy implemented | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, Phase 5 selected target docs/skill integration, Phase 6 specialist audit skills, Phase 7 bounded Utility Harness audit input inventory, and Phase 8 `.agents/skills` compatibility policy are implemented. |
 
 ## Current Priorities
 - Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
@@ -40,9 +40,8 @@ Do not model repository-improvement auditing as a stack pack. Stack packs descri
 
 ### Non-Goals
 - no default audit docs or skill in every target-repo scaffold install
-- no `.agents/skills` migration
-- no specialist audit skills yet
-- no static-analysis integrations or invented audit commands
+- no enhancer-owned `.agents/skills` output root or dual-root migration
+- no external static-analysis integrations or invented audit commands
 - no implementation work during audit mode
 
 ### Current Implementation Status
@@ -54,9 +53,7 @@ Implemented:
 - Phase 5 selected target-repo audit docs and `full-repo-improvement-audit` skill installation for the repository-improvement audit workflow.
 - Phase 6 specialist audit skills for repo mapping, quality, tests, security, performance, and developer experience.
 - Phase 7 bounded Utility Harness helper for inventorying audit evidence inputs, roadmap targets, and recorded validation commands without executing repo code.
-
-Deferred:
-- `.agents/skills` compatibility or migration beyond the current `.codex/skills` output policy.
+- Phase 8 explicit skill-root policy: `.codex/skills/` is the enhancer-owned skill root, while `.agents/skills/` is detected only as an external/Spec Kit compatibility surface and must not be overwritten by enhancer install flows.
 
 ### Files Added In Phase 1
 - `.codex/skills/full-repo-improvement-audit/SKILL.md`
@@ -381,6 +378,9 @@ Acceptance criteria:
 - audit docs explain how to use static-analysis inputs cautiously, Utility Harness installs include `tools/ai/audit_inputs.py`, and no default workflow runs unverified tools.
 
 #### Phase 8: `.agents/skills` Compatibility Or Migration
+Status:
+- implemented as a compatibility policy, not a migration. Codex Enhancer supports `.agents/skills/` by detecting it as an external/Spec Kit skill surface, while enhancer-owned skills remain under `.codex/skills/` only.
+
 Objective:
 - decide whether Codex Enhancer should support `.agents/skills` as an enhancer-owned skill root, keep it as an external/Spec Kit footprint, or support explicit dual output.
 
@@ -390,17 +390,17 @@ Files to change:
 - `docs/ai/roadmap.md`
 - `scripts/enhancer_spec.py`
 - `scripts/enhancer_validator.py`
-- `scripts/install_enhancer.py`
-- packaging and installer tests, if asset output changes
+- installer tests proving external `.agents/skills/` files are preserved
 
 Files deliberately not added:
 - no silent duplication of every skill into both roots.
 - no migration that rewrites official Spec Kit-owned `.agents/skills`.
+- no enhancer-owned `.agents/skills` output root.
 
 Implementation notes:
-- current enhancer-owned skills live under `.codex/skills/`.
-- current `.agents/skills` handling is tied to official Spec Kit detection and should remain separately owned unless a focused compatibility decision changes that.
-- if dual-root support is chosen, make ownership, validation, and packaging rules explicit.
+- enhancer-owned skills live under `.codex/skills/`.
+- `.agents/skills/` handling is tied to external and official Spec Kit detection.
+- target installs and selected workflow assets must not write enhancer skills into `.agents/skills/`.
 
 Validation commands:
 - `python scripts/check.py`
@@ -408,8 +408,8 @@ Validation commands:
 - packaged wheel smoke tests if packaged skill assets change.
 
 Tests to add or update:
-- validator tests for whichever skill roots are supported.
-- Spec Kit bridge tests proving official `.agents/skills` files are not overwritten.
+- validator tests for the documented skill-root policy.
+- installer tests proving external `.agents/skills` files are not overwritten.
 
 Risks:
 - skill-root compatibility can blur enhancer ownership with official Spec Kit or other agent tools.
@@ -419,9 +419,7 @@ Acceptance criteria:
 
 ### Deferred Future Work
 - default target-repo scaffold integration; selected workflow assets are enough until repeated target use proves more is needed
-- `.agents/skills` compatibility or migration until a focused compatibility decision justifies it
-- specialist audit skills until repeated audits expose stable sub-procedures
-- new static-analysis tooling until it can be grounded in existing project tools and optional helper dependencies
+- automatic external scanner orchestration until it can be grounded in existing project tools and optional helper dependencies
 - issue creation, PR templates, or audit report generators until users ask for handoff automation after audits
 
 ### Validation
@@ -434,7 +432,7 @@ The workflow could become broad AI bureaucracy instead of a narrow useful audit.
 ### Acceptance Criteria
 - the skill is concise, operational, no-implementation by default, and has a clear `## Do not use` section
 - audit docs define when to use the workflow, evidence standards, finding schema, and roadmap prioritization
-- roadmap language keeps target scaffold, specialist skills, static-analysis helpers, and `.agents/skills` compatibility deferred
+- roadmap language keeps default target scaffold integration, external scanners, issue creation, PR templates, and audit report generators out of scope until repeated use proves they are needed
 - validation passes with explicit installer/CLI/GUI workflow-pack management and without adding a hidden runtime
 
 ## Historical Design Record: 2.x Through 3.4

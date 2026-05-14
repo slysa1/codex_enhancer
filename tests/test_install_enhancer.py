@@ -1675,6 +1675,28 @@ class InstallEnhancerTests(unittest.TestCase):
             for line in GITIGNORE_LINES:
                 self.assertIn(line, gitignore)
 
+    def test_install_preserves_external_agents_skills_root(self) -> None:
+        with repo_fixture("install_agents_skills_external") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            write_file(
+                install_target,
+                ".agents/skills/custom-audit/SKILL.md",
+                "# External skill\n\nThis file is not enhancer-owned.\n",
+            )
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            external_skill = install_target / ".agents/skills/custom-audit/SKILL.md"
+            self.assertEqual(
+                external_skill.read_text(encoding="utf-8"),
+                "# External skill\n\nThis file is not enhancer-owned.\n",
+            )
+            self.assertTrue((install_target / ".codex/skills/adapt-enhancer/SKILL.md").exists())
+            self.assertFalse((install_target / ".agents/skills/adapt-enhancer/SKILL.md").exists())
+
     def test_utility_harness_install_adds_helper_files_and_manifest_state(self) -> None:
         with repo_fixture("install_utility") as install_target:
             write_file(install_target, "README.md", "# Demo\n")
@@ -2668,8 +2690,12 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertTrue(
                 (install_target / ".codex/skills/full-repo-improvement-audit/SKILL.md").exists()
             )
+            self.assertFalse(
+                (install_target / ".agents/skills/full-repo-improvement-audit/SKILL.md").exists()
+            )
             for skill_name in AUDIT_SPECIALIST_SKILL_NAMES:
                 self.assertTrue((install_target / f".codex/skills/{skill_name}/SKILL.md").exists())
+                self.assertFalse((install_target / f".agents/skills/{skill_name}/SKILL.md").exists())
             self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
 
     def test_manage_workflows_proposes_existing_audit_workflow_doc(self) -> None:

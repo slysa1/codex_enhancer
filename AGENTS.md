@@ -24,6 +24,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md): ownership rules and phased plan for optional GitHub Spec Kit integration.
 - [docs/ai/utility-harness.md](docs/ai/utility-harness.md): contract for the optional Codex Utility Harness helper tools.
 - [.codex/skills/](.codex/skills/): repo-local skills for repeated procedures. Read [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md) before editing or adding skills.
+- [.agents/skills/](.agents/skills/): external skill-root compatibility surface for checked-in Spec Kit skills; Codex Enhancer detects it but does not manage it.
 - [codex-enhancer](codex-enhancer) and [codex-enhancer.bat](codex-enhancer.bat): friendly source-checkout command shims over the installer.
 - [install_enhancer.bat](install_enhancer.bat): Windows launcher that opens the GUI installer.
 - [scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py): thin `codex-enhancer` subcommand facade over the installer core.
@@ -78,6 +79,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - Prefer `AGENTS.md`, concise docs, narrow skills, and small scripts over packages, daemons, or hidden state.
 - Add nested `AGENTS.md` files only when a subtree has materially different rules.
 - Add repo-local skills only for repeated, narrow procedures with clear triggers and explicit "do not use" boundaries.
+- Keep enhancer-owned skills under `.codex/skills/`; do not mirror or migrate them into `.agents/skills/`.
 - Add scripts only when they provide deterministic validation or remove repeated manual steps.
 - Keep the shared spec, source validator, installer, scaffold, and tests aligned in the same patch.
 - Keep local commands and CI in sync. If one changes, update the other in the same patch.

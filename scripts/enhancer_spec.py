@@ -244,6 +244,8 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "repo-performance-audit",
             "repo-dx-audit",
             "scaffold/workflow-packs/",
+            ".agents/skills/",
+            "external compatibility surface",
             "scripts/stack_packs.py",
             "--list-workflows",
             "--manage-workflows",
@@ -279,6 +281,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "docs/ai/spec-kit-bridge.md",
             "docs/ai/utility-harness.md",
             ".codex/skills/",
+            ".agents/skills/",
             "audit",
             "spec-sync",
             "scripts/utility_harness.py",
@@ -292,6 +295,8 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "scripts/stack_packs.py",
             "scaffold/workflow-packs/",
             "workflow-pack management",
+            ".agents/skills/",
+            "not an enhancer-managed output root",
         ),
         Path("docs/ai/code-review.md"): (
             CHECK_COMMAND,
@@ -366,6 +371,12 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "spec-sync",
             "bridge",
             "official Spec Kit files",
+            ".agents/skills/speckit-*",
+            "do not mirror, migrate, or overwrite",
+        ),
+        Path("scaffold/target-repo/docs/ai/spec-kit-bridge.md"): (
+            ".agents/skills/",
+            "do not mirror, migrate, or overwrite",
         ),
         Path("docs/ai/utility-harness.md"): (
             "## Audit Use",
