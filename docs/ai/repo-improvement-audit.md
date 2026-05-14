@@ -37,6 +37,13 @@ Every confirmed claim needs evidence from inspected repo files, commands, tests,
 
 Do not infer build, lint, test, coverage, architecture, dependencies, deployment, or security posture from common stack conventions alone. If a command is not present in files or docs, say that it was not found.
 
+## Tool-Assisted Evidence
+Existing repo tools can support an audit when they are discovered from inspected files, CI, manifests, or maintained docs. Examples include listed test commands, lint commands, type checks, coverage reports, dependency audit commands, and optional Utility Harness helpers such as `tools/ai/run_checks.py --list`.
+
+Treat tool output as supporting evidence, not authority. Tie every tool-backed claim to the exact command, exit status when available, relevant output summary, and the repo files that explain why the command is legitimate for this project. If a tool is unavailable, too slow, needs credentials, needs network access, or depends on packages that are not installed, record that as a limitation or hypothesis input rather than installing dependencies during the audit.
+
+Do not run prose-extracted commands, shell-control-heavy commands, dependency installs, formatters, generators, migrations, or external scanners during audit mode unless the user explicitly authorizes that exact action. Missing optional static-analysis inputs should never block the audit; they should only affect confidence.
+
 ## Audit Areas
 
 ### Architecture
@@ -87,4 +94,4 @@ The managed section should contain the prioritized suggestions, evidence summary
 The audit stops after producing the report and roadmap artifact. Codex should not modify files other than the requested `roadmap.md` audit artifact, stage changes, run formatters that rewrite files, add scripts, install packages, or begin implementation during audit mode. Implementation starts only after the user chooses a follow-up item.
 
 ## Future Direction
-The current workflow-pack support is intentionally explicit and artifact-oriented: selecting the audit workflow generates workflow guidance, installs target audit docs and the orchestrator skill, records manifest state, and manages only the root `roadmap.md` audit section. Future work may add specialist audit skills or static-analysis-assisted inputs when those tools are discovered from actual repo files. It should not add a command ecosystem, hidden audit runtime, or automatic implementation path.
+The current workflow-pack support is intentionally explicit and artifact-oriented: selecting the audit workflow generates workflow guidance, installs target audit docs and the orchestrator skill, records manifest state, and manages only the root `roadmap.md` audit section. Future work may add specialist audit skills or new static-analysis tooling when repeated audits show those tools are worth maintaining. It should not add a command ecosystem, hidden audit runtime, or automatic implementation path.

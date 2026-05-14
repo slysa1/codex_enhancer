@@ -30,6 +30,11 @@ The Utility Harness is an optional integration that installs repo-local helper t
 - Safe generated outputs remain limited to `docs/ai/stack-guidance.md`, `docs/ai/spec-kit-bridge.md`, and `.codex/enhancer/manifest.toml`.
 - Upgrade should propose harness file drift rather than silently overwriting local edits.
 
+## Audit Use
+During a repository improvement audit, harness output can support findings only when it is tied back to inspected repo files and explicit commands. Use `tools/ai/run_checks.py --list` before running anything so prose-extracted commands remain visible and inert by default.
+
+Do not install helper dependencies, run `--include-prose`, use `--allow-shell`, or run expensive analysis helpers during audit mode unless the user explicitly authorizes that action. Missing optional helper packages should be recorded as an audit limitation, not silently worked around.
+
 ## Non-Goals
 - no automatic dependency installation
 - no production dependency pollution

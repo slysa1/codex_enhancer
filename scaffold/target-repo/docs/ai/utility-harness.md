@@ -55,3 +55,8 @@ python tools/ai/run_checks.py --dry-run
 - Use `run_checks.py --list` first. By default, prose-extracted commands are listed but not run; use `--include-prose` only after reviewing them.
 - Use `run_checks.py --allow-shell` only after reviewing commands that contain shell control operators.
 - Do not add OCR, background indexing, daemon behavior, or automatic dependency installation.
+
+## Audit Use
+During a repository improvement audit, treat helper output as supporting evidence only. Tie any tool-backed claim to inspected repo files, the exact command, exit status when available, and a concise output summary.
+
+Do not install helper dependencies, run prose-extracted commands, enable shell-control execution, or run expensive analysis helpers during audit mode unless the user explicitly authorizes that action. Missing optional helper packages should lower confidence or become a limitation, not block the audit.

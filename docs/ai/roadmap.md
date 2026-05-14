@@ -13,13 +13,13 @@ The current `4.2` record is the focused repository-improvement audit workflow be
 | `2.x` through `3.4` | Historical design record | Use for architecture context, shipped rationale, and regression expectations. Do not treat these sections as current TODOs. |
 | `4.0` | Completed baseline | Use as the product-maturity bar that the enhancer should not regress below. |
 | `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
-| `4.2` | Explicit workflow-pack management and selected target audit assets implemented; later expansion deferred | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, and Phase 5 selected target docs/skill integration are implemented. Specialist-skill, static-analysis, and `.agents/skills` work requires new evidence. |
+| `4.2` | Explicit workflow-pack management, selected target audit assets, and cautious tool-evidence guidance implemented; later expansion deferred | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, Phase 5 selected target docs/skill integration, and Phase 7 documentation-only static-analysis evidence boundaries are implemented. Specialist skills, new analysis tooling, and `.agents/skills` work require new evidence. |
 
 ## Current Priorities
 - Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
 - Keep the `4.2` repository-improvement audit workflow no-implementation until a user explicitly chooses follow-up implementation work. The selected workflow may write or update only the managed audit section in root `roadmap.md`.
 - Treat `4.1 Step 7` candidates as deferred. Do not start install profiles, transactional writes, dependency regrouping, license strategy, or richer GUI QA without fresh evidence that the smaller completed work is not enough.
-- Do not add automatic audit execution, specialist audit skills, static-analysis tooling, or `.agents/skills` migration until a later focused change justifies it.
+- Do not add automatic audit execution, specialist audit skills, static-analysis tooling, or `.agents/skills` migration until a later focused change justifies it. Existing repo tools may inform audits only as supporting evidence.
 
 ## 4.2 Repository Improvement Audit Workflow
 
@@ -52,9 +52,10 @@ Implemented:
 - Phase 3 workflow-pack assets under `scaffold/workflow-packs/`, reusing the existing stack-pack loader metadata shape.
 - Phase 4 explicit installer, CLI, and GUI workflow-pack management, including manifest state, generated `docs/ai/workflow-guidance.md`, and a managed root `roadmap.md` audit section for the repository-improvement audit workflow.
 - Phase 5 selected target-repo audit docs and `full-repo-improvement-audit` skill installation for the repository-improvement audit workflow.
+- Phase 7 documentation-only guidance for using existing repo commands and optional helper outputs as supporting evidence without installing dependencies or adding analyzers.
 
 Deferred:
-- specialist audit skills, static-analysis-assisted inputs, and `.agents/skills` compatibility or migration.
+- specialist audit skills, new static-analysis tooling or helpers, and `.agents/skills` compatibility or migration.
 
 ### Files Added In Phase 1
 - `.codex/skills/full-repo-improvement-audit/SKILL.md`
@@ -333,6 +334,9 @@ Acceptance criteria:
 - each specialist has a clear trigger, non-goals, and a concrete audit output contract.
 
 #### Phase 7: Static-Analysis-Assisted Inputs
+Status:
+- implemented only as cautious documentation for existing repo tools and optional helper outputs. New tooling remains deferred.
+
 Objective:
 - allow audits to use existing repo tools and optional helper scripts as evidence without inventing commands or installing dependencies automatically.
 
@@ -352,6 +356,7 @@ Implementation notes:
 - prefer commands already recorded in manifests, CI, or `AGENTS.md`.
 - label tool output as supporting evidence or hypothesis input.
 - keep missing optional dependencies as explicit messages, not silent fallbacks.
+- do not add analyzers, dependency installs, or a background audit command in this phase.
 
 Validation commands:
 - `python scripts/check.py`
@@ -408,7 +413,7 @@ Acceptance criteria:
 - default target-repo scaffold integration; selected workflow assets are enough until repeated target use proves more is needed
 - `.agents/skills` compatibility or migration until a focused compatibility decision justifies it
 - specialist audit skills until repeated audits expose stable sub-procedures
-- static-analysis-assisted inputs until they can be grounded in existing project tools and optional helper dependencies
+- new static-analysis tooling until it can be grounded in existing project tools and optional helper dependencies
 - issue creation, PR templates, or audit report generators until users ask for handoff automation after audits
 
 ### Validation

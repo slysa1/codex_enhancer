@@ -163,6 +163,10 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         ## Evidence Standards
         Do not infer build, lint, test, coverage, architecture, dependencies, deployment, or security posture from common stack conventions alone.
 
+        ## Tool-Assisted Evidence
+        Treat tool output as supporting evidence, not authority.
+        Do not run prose-extracted commands, shell-control-heavy commands, dependency installs, formatters, generators, migrations, or external scanners during audit mode unless the user explicitly authorizes that exact action.
+
         Write suggestions to root roadmap.md with the roadmap.md:repository-improvement-audit marker.
 
         Use [repo-audit-finding-schema.md](repo-audit-finding-schema.md)
@@ -204,6 +208,10 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         # Codex Utility Harness
 
         Keep requirements-codex.txt out of production dependencies.
+
+        ## Audit Use
+        Use tools/ai/run_checks.py --list before running commands.
+        Missing optional helper packages should be recorded as an audit limitation.
         """,
         ".codex/skills/AGENTS.md": """
         # Skills
@@ -253,9 +261,11 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
 
         1. Read repo guidance first.
         2. Build a system map.
-        3. For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.
-        4. Update root `roadmap.md` when requested.
-        5. Stop after the audit. Do not make implementation changes during audit mode.
+        3. Use existing tool output only as supporting evidence.
+        4. do not install packages, run formatters/generators/migrations, run prose-extracted commands, or run external scanners during audit mode without explicit user authorization.
+        5. For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.
+        6. Update root `roadmap.md` when requested.
+        7. Stop after the audit. Do not make implementation changes during audit mode.
 
         ## Do not use
         - Do not use for single-file edits.
@@ -335,6 +345,10 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scaffold/target-repo/docs/ai/utility-harness.md": """
         # Utility Harness template
+
+        ## Audit Use
+        Use `tools/ai/run_checks.py --list` before running helpers during audits.
+        Missing optional helper packages should lower confidence or become a limitation.
         """,
         "scaffold/target-repo/.codex/skills/adapt-enhancer/SKILL.md": """
         ---
@@ -626,8 +640,19 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-improvement-audit.md": """
         # Repository Improvement Audit
 
+        ## Audit Order
+        Stop before implementation.
+
+        ## Evidence Standards
+        Do not infer build, lint, test, coverage, architecture, dependencies, deployment, or security posture from common stack conventions alone.
+
+        ## Tool-Assisted Evidence
+        Treat tool output as supporting evidence, not authority.
+        Do not run prose-extracted commands, shell-control-heavy commands, dependency installs, formatters, generators, migrations, or external scanners during audit mode unless the user explicitly authorizes that exact action.
+
         Use [repo-audit-finding-schema.md](repo-audit-finding-schema.md)
         and [repo-audit-roadmap-rubric.md](repo-audit-roadmap-rubric.md).
+        Use `roadmap.md:repository-improvement-audit` markers in `roadmap.md`.
         """,
         "scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-audit-finding-schema.md": """
         # Repository Audit Finding Schema
@@ -642,6 +667,14 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         ---
 
         # Audit
+
+        1. Read repo guidance first.
+        2. Build a system map.
+        3. Use existing tool output only as supporting evidence.
+        4. do not install packages, run formatters/generators/migrations, run prose-extracted commands, or run external scanners during audit mode without explicit user authorization.
+        5. For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.
+        6. Write durable findings to root `roadmap.md`.
+        7. Stop after the audit. Do not make implementation changes during audit mode.
 
         ## Do not use
         - Do not use for single-file edits.
@@ -767,6 +800,83 @@ class ValidateTests(unittest.TestCase):
                 any(
                     "docs/ai/repo-improvement-audit.md is missing required text" in error
                     and "## Evidence Standards" in error
+                    for error in errors
+                )
+            )
+
+    def test_target_audit_workflow_doc_drift_is_reported(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root)
+            write_file(
+                root,
+                "scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-improvement-audit.md",
+                """
+                # Repository Improvement Audit
+
+                Use [repo-audit-finding-schema.md](repo-audit-finding-schema.md)
+                and [repo-audit-roadmap-rubric.md](repo-audit-roadmap-rubric.md).
+                """,
+            )
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-improvement-audit.md is missing required text"
+                    in error
+                    and "## Tool-Assisted Evidence" in error
+                    for error in errors
+                )
+            )
+
+    def test_target_audit_workflow_skill_drift_is_reported(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root)
+            write_file(
+                root,
+                "scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/full-repo-improvement-audit/SKILL.md",
+                """
+                ---
+                name: full-repo-improvement-audit
+                description: Audit a whole repository before implementation. Use when the user asks for a repo-wide improvement audit.
+                ---
+
+                # Audit
+
+                ## Do not use
+                - Do not use for single-file edits.
+                """,
+            )
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/full-repo-improvement-audit/SKILL.md is missing required text"
+                    in error
+                    and "Use existing tool output only as supporting evidence" in error
+                    for error in errors
+                )
+            )
+
+    def test_target_utility_harness_audit_guidance_drift_is_reported(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root)
+            write_file(
+                root,
+                "scaffold/target-repo/docs/ai/utility-harness.md",
+                """
+                # Utility Harness template
+                """,
+            )
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "scaffold/target-repo/docs/ai/utility-harness.md is missing required text"
+                    in error
+                    and "## Audit Use" in error
                     for error in errors
                 )
             )
