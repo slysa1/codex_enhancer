@@ -2552,6 +2552,25 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
         self.assertIn("Available workflow packs:", output)
         self.assertIn("repository-improvement-audit", output)
 
+    def test_install_does_not_add_audit_workflow_assets_by_default(self) -> None:
+        with repo_fixture("install_no_workflow_assets") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertFalse((install_target / "docs/ai/workflow-guidance.md").exists())
+            self.assertFalse((install_target / "docs/ai/repo-improvement-audit.md").exists())
+            self.assertFalse((install_target / "docs/ai/repo-audit-finding-schema.md").exists())
+            self.assertFalse((install_target / "docs/ai/repo-audit-roadmap-rubric.md").exists())
+            self.assertFalse(
+                (install_target / ".codex/skills/full-repo-improvement-audit/SKILL.md").exists()
+            )
+            self.assertFalse((install_target / "roadmap.md").exists())
+            self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
+
     def test_manage_workflows_adds_repository_audit_workflow_and_roadmap(self) -> None:
         with repo_fixture("manage_workflow_add") as install_target:
             write_file(install_target, "README.md", "# Demo\n")
@@ -2585,6 +2604,10 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertIn("repository-improvement-audit: added by --add-workflow", output)
             self.assertIn('Manifest preview selected_workflows = ["repository-improvement-audit"]', output)
             self.assertIn("- overwrite: .codex/enhancer/manifest.toml", output)
+            self.assertIn("- create: docs/ai/repo-improvement-audit.md", output)
+            self.assertIn("- create: docs/ai/repo-audit-finding-schema.md", output)
+            self.assertIn("- create: docs/ai/repo-audit-roadmap-rubric.md", output)
+            self.assertIn("- create: .codex/skills/full-repo-improvement-audit/SKILL.md", output)
             self.assertIn("- create: docs/ai/workflow-guidance.md", output)
             self.assertIn("- overwrite: roadmap.md", output)
 
@@ -2609,11 +2632,62 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertIn('selected_workflows = ["repository-improvement-audit"]', manifest)
             self.assertIn("[[detected_workflows]]", manifest)
             self.assertIn('workflow_guidance = "docs/ai/workflow-guidance.md"', manifest)
+            self.assertIn('"docs/ai/repo-improvement-audit.md"', manifest)
+            self.assertIn('"docs/ai/repo-audit-finding-schema.md"', manifest)
+            self.assertIn('"docs/ai/repo-audit-roadmap-rubric.md"', manifest)
+            self.assertIn('".codex/skills/full-repo-improvement-audit/SKILL.md"', manifest)
             self.assertIn('"roadmap.md"', manifest)
             self.assertIn("Pack id: `repository-improvement-audit`", workflow_guidance)
             self.assertIn("Keep this product-owned roadmap note.", roadmap)
             self.assertIn("codex-enhancer:managed-section roadmap.md:repository-improvement-audit start", roadmap)
+            self.assertTrue((install_target / "docs/ai/repo-improvement-audit.md").exists())
+            self.assertTrue((install_target / "docs/ai/repo-audit-finding-schema.md").exists())
+            self.assertTrue((install_target / "docs/ai/repo-audit-roadmap-rubric.md").exists())
+            self.assertTrue(
+                (install_target / ".codex/skills/full-repo-improvement-audit/SKILL.md").exists()
+            )
             self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
+
+    def test_manage_workflows_proposes_existing_audit_workflow_doc(self) -> None:
+        with repo_fixture("manage_workflow_existing_doc") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+            self.assertEqual(exit_code, 0)
+            write_file(
+                install_target,
+                "docs/ai/repo-improvement-audit.md",
+                """
+                # Custom Audit Notes
+
+                Keep this repo-owned audit note.
+                """,
+            )
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--manage-workflows",
+                    "--add-workflow",
+                    "repository-improvement-audit",
+                    "--write",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(
+                "- proposal: .codex/enhancer-proposals/docs/ai/repo-improvement-audit.md",
+                output,
+            )
+            live_doc = (install_target / "docs/ai/repo-improvement-audit.md").read_text(encoding="utf-8")
+            proposal = (
+                install_target
+                / ".codex/enhancer-proposals/docs/ai/repo-improvement-audit.md"
+            ).read_text(encoding="utf-8")
+            self.assertIn("Keep this repo-owned audit note.", live_doc)
+            self.assertIn("## Evidence Standards", proposal)
 
     def test_manage_workflows_preserves_existing_audit_roadmap_section(self) -> None:
         with repo_fixture("manage_workflow_existing_roadmap") as install_target:
@@ -2690,6 +2764,29 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertTrue(
                 any(
                     "roadmap.md has reversed repository-improvement audit managed markers" in error
+                    for error in errors
+                )
+            )
+
+    def test_target_validation_requires_selected_audit_workflow_assets(self) -> None:
+        with repo_fixture("manage_workflow_missing_asset") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+            exit_code, _ = run_installer(
+                ["--target", str(install_target), "--mode", "existing", "--write", "--force"]
+            )
+            self.assertEqual(exit_code, 0)
+            manifest_path = install_target / ".codex/enhancer/manifest.toml"
+            manifest_text = manifest_path.read_text(encoding="utf-8").replace(
+                "selected_workflows = []",
+                'selected_workflows = ["repository-improvement-audit"]',
+            )
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+
+            errors = validate_profile(install_target, TARGET_VALIDATION_PROFILE)
+
+            self.assertTrue(
+                any(
+                    "Missing repository improvement audit workflow file: docs/ai/repo-audit-finding-schema.md" in error
                     for error in errors
                 )
             )

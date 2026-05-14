@@ -37,7 +37,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [scripts/check.py](scripts/check.py): deterministic validation for the enhancer source repo.
 - [scaffold/target-repo/](scaffold/target-repo/): install scaffold for files that should differ in target repos.
 - [scaffold/stack-packs/](scaffold/stack-packs/): file-based registry for optional stack packs and their fragments.
-- [scaffold/workflow-packs/](scaffold/workflow-packs/): optional workflow-pack registry that reuses the stack-pack loader shape.
+- [scaffold/workflow-packs/](scaffold/workflow-packs/): optional workflow-pack registry and selected target docs/skills that reuse the stack-pack loader shape.
 - [tests/](tests/): unit tests for the validator and installer.
 - [.github/workflows/validate.yml](.github/workflows/validate.yml): CI that mirrors the local validation commands.
 

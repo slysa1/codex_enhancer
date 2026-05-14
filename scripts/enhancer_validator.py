@@ -10,6 +10,7 @@ from pathlib import Path
 from scripts.enhancer_spec import (
     ENHANCER_MANIFEST_SCHEMA_VERSION,
     MANAGED_SECTIONS,
+    REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW_COPY_ASSETS,
     ValidationProfile,
 )
 from scripts.spec_kit_bridge import SPEC_KIT_BRIDGE_SKILLS
@@ -692,13 +693,17 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
             )
 
     adapt_manually = managed_outputs.get("adapt_manually", [])
-    if not isinstance(adapt_manually, list) or any(not isinstance(item, str) for item in adapt_manually):
+    adapt_manually_valid = isinstance(adapt_manually, list) and all(
+        isinstance(item, str) for item in adapt_manually
+    )
+    adapt_manually_set = set(adapt_manually) if adapt_manually_valid else set()
+    if not adapt_manually_valid:
         add_error(
             errors,
             ".codex/enhancer/manifest.toml must define managed_outputs.adapt_manually as a list of strings",
             "Keep managed_outputs.adapt_manually as a TOML string array.",
         )
-    elif "AGENTS.md" not in adapt_manually:
+    elif "AGENTS.md" not in adapt_manually_set:
         add_error(
             errors,
             ".codex/enhancer/manifest.toml should list AGENTS.md under managed_outputs.adapt_manually",
@@ -706,13 +711,26 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
         )
     if (
         REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_workflows
-        and "roadmap.md" not in adapt_manually
+        and "roadmap.md" not in adapt_manually_set
     ):
         add_error(
             errors,
             ".codex/enhancer/manifest.toml should list roadmap.md under managed_outputs.adapt_manually when the repository-improvement audit workflow is selected",
             "Treat roadmap.md as repo-owned content with an enhancer-managed audit section.",
         )
+    if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_workflows:
+        expected_audit_outputs = {
+            asset.destination.as_posix()
+            for asset in REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW_COPY_ASSETS
+        }
+        missing_audit_outputs = sorted(expected_audit_outputs - adapt_manually_set)
+        if missing_audit_outputs:
+            add_error(
+                errors,
+                ".codex/enhancer/manifest.toml should list selected audit workflow docs and skills under managed_outputs.adapt_manually: "
+                + ", ".join(missing_audit_outputs),
+                "Treat selected workflow-pack docs and skills as target-owned guidance to adapt manually.",
+            )
 
     stack_guidance = load_text(stack_guidance_path)
     agents_text = load_text(agents_path) if agents_path.exists() else ""
@@ -770,6 +788,13 @@ def check_stack_pack_outputs(root: Path, profile: ValidationProfile, errors: lis
                         "Regenerate workflow guidance or add the missing selected-workflow section.",
                     )
         if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_workflows:
+            for asset in REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW_COPY_ASSETS:
+                if not (root / asset.destination).exists():
+                    add_error(
+                        errors,
+                        f"Missing repository improvement audit workflow file: {asset.destination.as_posix()}",
+                        "Rerun workflow management or remove repository-improvement-audit from selected_workflows.",
+                    )
             roadmap_path = root / "roadmap.md"
             if not roadmap_path.exists():
                 add_error(

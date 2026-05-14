@@ -220,7 +220,7 @@ python scripts/codex_enhancer_cli.py list-workflows
 Current shipped workflows:
 - `repository-improvement-audit`
 
-Select workflow packs explicitly after an enhancer install. Workflow packs do not run audits by themselves, install dependencies, or change application code. They record selection state in `.codex/enhancer/manifest.toml`, generate `docs/ai/workflow-guidance.md`, and keep process guidance separate from technology stack packs.
+Select workflow packs explicitly after an enhancer install. Workflow packs do not run audits by themselves, install dependencies, or change application code. They record selection state in `.codex/enhancer/manifest.toml`, generate `docs/ai/workflow-guidance.md`, and keep process guidance separate from technology stack packs. Workflow-specific docs and skills are installed only when the workflow is selected.
 
 To select the repository-improvement audit workflow:
 
@@ -229,7 +229,7 @@ python scripts/install_enhancer.py --target ../my-existing-repo --manage-workflo
 python scripts/codex_enhancer_cli.py workflows ../my-existing-repo --add repository-improvement-audit --summary --diff
 ```
 
-When `repository-improvement-audit` is selected, the plan also creates or updates root `roadmap.md`. Existing roadmap content is preserved outside the managed audit section, and an existing managed audit section is updated in place rather than duplicated.
+When `repository-improvement-audit` is selected, the plan also installs the target audit docs, adds the `full-repo-improvement-audit` skill, and creates or updates root `roadmap.md`. Existing roadmap content is preserved outside the managed audit section, and an existing managed audit section is updated in place rather than duplicated.
 
 ### Choosing Stack Packs
 
@@ -256,7 +256,7 @@ Common combinations:
 
 Workflow packs are optional process guidance bundles. They reuse the same loader and manifest format as stack packs, but they live under [scaffold/workflow-packs/](scaffold/workflow-packs/) so cross-cutting workflows do not blur with technology-stack guidance.
 
-Use `repository-improvement-audit` when a target repo should support a no-implementation audit before follow-up work. It adds workflow guidance for architecture mapping, evidence-backed findings, roadmap prioritization, and the managed root `roadmap.md` artifact. Skip it when the target only needs normal adaptation, bounded PR review, or direct implementation.
+Use `repository-improvement-audit` when a target repo should support a no-implementation audit before follow-up work. It adds workflow guidance, target audit docs, an orchestrator skill, roadmap prioritization rules, and the managed root `roadmap.md` artifact. Skip it when the target only needs normal adaptation, bounded PR review, or direct implementation.
 
 Preview a new-repo install:
 
@@ -694,7 +694,7 @@ What they do:
 - `python scripts/install_enhancer.py --target ... --spec-kit-sync-report`: prints a read-only changed-path sync report for existing Spec Kit artifacts
 - `python scripts/install_enhancer.py --target ... --manage-spec-kit-bridge --spec-kit-mode <mode>`: previews a bridge-mode update for an installed target
 - `python scripts/install_enhancer.py --target ... --manage-packs --add-pack <name>`: previews a pack-selection change for an installed target
-- `python scripts/install_enhancer.py --target ... --manage-workflows --add-workflow <name>`: previews a workflow-selection change for an installed target and updates the managed `roadmap.md` audit section for `repository-improvement-audit`
+- `python scripts/install_enhancer.py --target ... --manage-workflows --add-workflow <name>`: previews a workflow-selection change for an installed target and installs selected workflow-owned guidance for `repository-improvement-audit`
 - `python scripts/install_enhancer.py --target ... --utility-harness-mode install`: previews installing optional Codex/operator helper tools
 - `python scripts/install_enhancer.py --target ...`: previews or applies a scaffold install into another repo
 - `install_enhancer.bat`: opens the Windows GUI installer
@@ -736,7 +736,7 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 - lists and resolves shipped workflow packs through the same loader under a separate workflow root
 - supports recommended-pack selection plus explicit include/exclude overrides in the CLI
 - manages selected packs after install with manifest deltas and managed-section updates
-- manages selected workflows after install with manifest deltas, workflow guidance, and the managed `roadmap.md` audit section when selected
+- manages selected workflows after install with manifest deltas, workflow guidance, selected workflow docs/skills, and the managed `roadmap.md` audit section when selected
 - renders a compact selected-pack summary into the target `AGENTS.md`
 - merges `.gitignore` entries instead of overwriting the file
 - generates target `docs/ai/stack-guidance.md` and `.codex/enhancer/manifest.toml`
@@ -794,10 +794,10 @@ Skills in this repo are intentionally narrow. If a procedure is too broad, too g
 [scaffold/stack-packs/](scaffold/stack-packs/) stores the file-based stack-pack registry. Each pack lives in its own directory with `pack.toml` plus small markdown fragments that the installer can detect and render into target guidance.
 
 ### `scaffold/workflow-packs/`
-[scaffold/workflow-packs/](scaffold/workflow-packs/) stores optional workflow-pack assets. Workflow packs reuse the stack-pack metadata and fragment format, but they live under a separate root so process guidance does not blur with technology stack guidance.
+[scaffold/workflow-packs/](scaffold/workflow-packs/) stores optional workflow-pack assets. Workflow packs reuse the stack-pack metadata and fragment format, but they live under a separate root so process guidance does not blur with technology stack guidance. Selected workflows may also carry target-facing docs and skills under their own `target/` subtree.
 
 ### `scripts/stack_packs.py`
-[scripts/stack_packs.py](scripts/stack_packs.py) loads stack-pack-compatible metadata, detects matching packs in a target repo, collects narrow manifest evidence from `package.json`, package-manager signals, and `pyproject.toml`, resolves stack-pack and workflow-pack selection state, and renders the target `AGENTS.md` summary, manifest, stack-guidance, and workflow-guidance outputs.
+[scripts/stack_packs.py](scripts/stack_packs.py) loads stack-pack-compatible metadata, detects matching packs in a target repo, collects narrow manifest evidence from `package.json`, package-manager signals, and `pyproject.toml`, resolves stack-pack and workflow-pack selection state, and renders the target `AGENTS.md` summary, manifest, stack-guidance, and workflow-guidance outputs. The installer owns any selected workflow-specific copy assets.
 
 ### `scripts/utility_harness.py`
 [scripts/utility_harness.py](scripts/utility_harness.py) resolves the optional Codex Utility Harness state and renders the target `AGENTS.md` summary for that integration.

@@ -11,7 +11,7 @@ V3 keeps the same thin, repo-local model. The major change is safer lifecycle ma
 - Current manifests also record the optional Utility Harness state under `[integrations.utility_harness]`.
 - Target `AGENTS.md` now wraps both the selected-stack-pack summary and the Spec Kit bridge summary in visible managed-section comments.
 - `--manage-packs` updates the selected-stack-pack managed section plus `docs/ai/stack-guidance.md`, `docs/ai/spec-kit-bridge.md`, and `.codex/enhancer/manifest.toml`.
-- `--manage-workflows` updates selected workflow state, `docs/ai/workflow-guidance.md`, `.codex/enhancer/manifest.toml`, and for `repository-improvement-audit` the managed audit section in root `roadmap.md`.
+- `--manage-workflows` updates selected workflow state, `docs/ai/workflow-guidance.md`, `.codex/enhancer/manifest.toml`, and for `repository-improvement-audit` the selected target audit docs, orchestrator skill, and managed audit section in root `roadmap.md`.
 - `--manage-spec-kit-bridge` updates the managed Spec Kit bridge section plus generated bridge guidance and manifest state without a full upgrade.
 - `--refresh-generated` rebuilds only generated outputs from the installed manifest selection, selected workflows, and bridge state.
 - `--upgrade-enhancer` preserves selected packs, selected workflows, and installed bridge state unless overridden, refreshes safe generated outputs, updates valid managed sections in place, and writes repo-owned scaffold drift as proposals.
@@ -45,7 +45,7 @@ Use `--manage-workflows` after the target reports as current:
 python scripts/install_enhancer.py --target <repo> --manage-workflows --add-workflow repository-improvement-audit --write
 ```
 
-Use `--set-workflow` when you want the exact selected workflow set. Use `--remove-workflow` when removing one workflow while keeping the rest. Selecting `repository-improvement-audit` creates or updates root `roadmap.md` by writing only the managed audit section and preserving all content outside that section.
+Use `--set-workflow` when you want the exact selected workflow set. Use `--remove-workflow` when removing one workflow while keeping the rest. Selecting `repository-improvement-audit` creates target audit docs and the `full-repo-improvement-audit` skill when missing, proposes them when target-owned files already exist, and creates or updates root `roadmap.md` by writing only the managed audit section while preserving all content outside that section.
 
 ## Change Spec Kit Bridge State
 Use `--manage-spec-kit-bridge` with explicit bridge flags when a current installed repo needs to attach to, turn off, or adjust official Spec Kit bridge guidance without a full enhancer upgrade:
@@ -89,7 +89,7 @@ Apply with `--write` after reviewing the proposed `requirements-codex.txt`, `too
 - Confirm every selected pack has a compact summary inside the managed `AGENTS.md:selected-stack-packs` section.
 - Confirm `docs/ai/stack-guidance.md` contains deeper guidance for every selected pack.
 - Confirm `docs/ai/workflow-guidance.md` contains guidance for every selected workflow.
-- If `repository-improvement-audit` is selected, confirm root `roadmap.md` has exactly one managed `roadmap.md:repository-improvement-audit` marker pair and preserves repo-owned roadmap content outside it.
+- If `repository-improvement-audit` is selected, confirm `docs/ai/repo-improvement-audit.md`, `docs/ai/repo-audit-finding-schema.md`, `docs/ai/repo-audit-roadmap-rubric.md`, `.codex/skills/full-repo-improvement-audit/SKILL.md`, and root `roadmap.md` exist; root `roadmap.md` should have exactly one managed `roadmap.md:repository-improvement-audit` marker pair and preserve repo-owned roadmap content outside it.
 - Confirm `.codex/enhancer/manifest.toml` records `[integrations.spec_kit]` and that the bridge mode matches the repo's actual intent.
 - Confirm `.codex/enhancer/manifest.toml` records `[integrations.utility_harness]` and that installed harness files exist only when the repo intentionally wants them.
 - Confirm the managed `AGENTS.md:spec-kit-bridge` section and `docs/ai/spec-kit-bridge.md` agree on bridge mode, command surface, and ownership.

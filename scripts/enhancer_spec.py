@@ -171,6 +171,10 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("scaffold/workflow-packs/repository-improvement-audit/fragments/agents-summary.md"),
         Path("scaffold/workflow-packs/repository-improvement-audit/fragments/workflow-guidance.md"),
         Path("scaffold/workflow-packs/repository-improvement-audit/fragments/review-notes.md"),
+        Path("scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-improvement-audit.md"),
+        Path("scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-audit-finding-schema.md"),
+        Path("scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-audit-roadmap-rubric.md"),
+        Path("scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/full-repo-improvement-audit/SKILL.md"),
     ),
     line_limits={
         Path("AGENTS.md"): 140,
@@ -487,6 +491,26 @@ OPTIONAL_UTILITY_HARNESS_COPY_ASSETS = (
     CopyAsset(
         source_path=Path("scaffold/target-repo/docs/ai/utility-harness.md"),
         destination=Path("docs/ai/utility-harness.md"),
+    ),
+)
+
+
+REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW_COPY_ASSETS = (
+    CopyAsset(
+        source_path=Path("scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-improvement-audit.md"),
+        destination=Path("docs/ai/repo-improvement-audit.md"),
+    ),
+    CopyAsset(
+        source_path=Path("scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-audit-finding-schema.md"),
+        destination=Path("docs/ai/repo-audit-finding-schema.md"),
+    ),
+    CopyAsset(
+        source_path=Path("scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-audit-roadmap-rubric.md"),
+        destination=Path("docs/ai/repo-audit-roadmap-rubric.md"),
+    ),
+    CopyAsset(
+        source_path=Path("scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/full-repo-improvement-audit/SKILL.md"),
+        destination=Path(".codex/skills/full-repo-improvement-audit/SKILL.md"),
     ),
 )
 

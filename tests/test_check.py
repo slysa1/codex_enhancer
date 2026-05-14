@@ -623,6 +623,29 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "scaffold/workflow-packs/repository-improvement-audit/fragments/review-notes.md": """
         Repository audit review notes.
         """,
+        "scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-improvement-audit.md": """
+        # Repository Improvement Audit
+
+        Use [repo-audit-finding-schema.md](repo-audit-finding-schema.md)
+        and [repo-audit-roadmap-rubric.md](repo-audit-roadmap-rubric.md).
+        """,
+        "scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-audit-finding-schema.md": """
+        # Repository Audit Finding Schema
+        """,
+        "scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-audit-roadmap-rubric.md": """
+        # Repository Audit Roadmap Rubric
+        """,
+        "scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/full-repo-improvement-audit/SKILL.md": """
+        ---
+        name: full-repo-improvement-audit
+        description: Audit a whole repository before implementation. Use when the user asks for a repo-wide improvement audit.
+        ---
+
+        # Audit
+
+        ## Do not use
+        - Do not use for single-file edits.
+        """,
     }
 
     for relative_path, content in files.items():

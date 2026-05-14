@@ -22,6 +22,7 @@ if __package__ in (None, ""):
 from codex_enhancer.package_assets import asset_path, read_asset_text
 from scripts.enhancer_spec import (
     CHECK_COMMAND,
+    CopyAsset,
     ENHANCER_MANIFEST_SCHEMA_VERSION,
     ENHANCER_VERSION,
     GITIGNORE_LINES,
@@ -30,6 +31,7 @@ from scripts.enhancer_spec import (
     MANAGED_SECTIONS,
     OPTIONAL_SPEC_KIT_TEMPLATE_ASSETS,
     OPTIONAL_UTILITY_HARNESS_COPY_ASSETS,
+    REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW_COPY_ASSETS,
     SPEC_KIT_BRIDGE_TEMPLATE_PATH,
     TEST_COMMAND,
 )
@@ -1167,6 +1169,35 @@ def plan_utility_harness_writes(
     return writes
 
 
+def selected_workflow_copy_assets(
+    workflow_selections: tuple[PackSelection, ...],
+) -> tuple[CopyAsset, ...]:
+    selected_names = selected_pack_names(workflow_selections)
+    if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_names:
+        return REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW_COPY_ASSETS
+    return ()
+
+
+def plan_workflow_copy_writes(
+    target: Path,
+    force: bool,
+    workflow_selections: tuple[PackSelection, ...],
+) -> list[PlannedWrite]:
+    writes: list[PlannedWrite] = []
+    for asset in selected_workflow_copy_assets(workflow_selections):
+        content = read_asset_text(asset.source_path)
+        planned = _plan_changed_write(
+            target,
+            asset.destination,
+            content,
+            asset.source_path.as_posix(),
+            existing_action="overwrite" if force else "proposal",
+        )
+        if planned is not None:
+            writes.append(planned)
+    return writes
+
+
 def plan_generated_writes(
     target: Path,
     force: bool,
@@ -1235,6 +1266,9 @@ def workflow_managed_destinations(
     if selected_names or (target / WORKFLOW_GUIDANCE_DESTINATION).exists():
         destinations.append(WORKFLOW_GUIDANCE_DESTINATION)
     if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_names:
+        destinations.extend(
+            asset.destination for asset in REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW_COPY_ASSETS
+        )
         destinations.append(ROADMAP_DESTINATION)
     return tuple(destinations)
 
@@ -1566,6 +1600,18 @@ def build_upgrade_plan(
             if planned is not None:
                 writes.append(planned)
 
+    for asset in selected_workflow_copy_assets(workflow_selections):
+        content = read_asset_text(asset.source_path)
+        planned = _plan_changed_write(
+            resolved_target,
+            asset.destination,
+            content,
+            asset.source_path.as_posix(),
+            existing_action="proposal",
+        )
+        if planned is not None:
+            writes.append(planned)
+
     for planned in plan_generated_writes(
         resolved_target,
         force=True,
@@ -1819,6 +1865,13 @@ def build_workflow_management_plan(
     )
 
     writes: list[PlannedWrite] = []
+    writes.extend(
+        plan_workflow_copy_writes(
+            resolved_target,
+            force=False,
+            workflow_selections=workflow_selections,
+        )
+    )
     for planned in plan_generated_writes(
         resolved_target,
         force=True,
@@ -2506,7 +2559,7 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
     elif plan.operation == "manage-spec-kit-bridge":
         lines.append("- Spec Kit bridge management keeps the installed pack selection and updates only enhancer-owned bridge guidance and generated outputs.")
     elif plan.operation == "manage-workflows":
-        lines.append("- Workflow management keeps the installed stack-pack selection and updates only workflow guidance plus generated outputs.")
+        lines.append("- Workflow management keeps the installed stack-pack selection and updates workflow guidance plus selected workflow-owned outputs.")
     elif plan.operation == "refresh-generated":
         lines.append("- Stack guidance, the Spec Kit bridge guide, and the pack manifest will be regenerated from the existing target manifest.")
     else:
@@ -2540,7 +2593,7 @@ def format_workflow_lines(plan: InstallPlan) -> list[str]:
         lines.append("- Manifest preview selected_workflows = []")
     if REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW in selected_names:
         lines.append(
-            "- Repository improvement audits will maintain a managed section in root `roadmap.md`."
+            "- Repository improvement audits install target audit docs, an orchestrator skill, and a managed section in root `roadmap.md`."
         )
     if plan.operation == "manage-workflows":
         lines.append(
@@ -2632,11 +2685,14 @@ def format_output_ownership_lines(plan: InstallPlan) -> list[str]:
         if summary.safe_to_regenerate:
             lines.append("- Regenerated managed outputs: " + _format_conflict_paths(summary.safe_to_regenerate))
         if summary.adapt_manually:
-            lines.append("- Managed sections updated in place: " + _format_conflict_paths(summary.adapt_manually))
+            if plan.operation == "manage-workflows":
+                lines.append("- Repo-owned workflow outputs: " + _format_conflict_paths(summary.adapt_manually))
+            else:
+                lines.append("- Managed sections updated in place: " + _format_conflict_paths(summary.adapt_manually))
         if plan.operation == "manage-spec-kit-bridge":
             lines.append("- Official Spec Kit files stay untouched.")
         elif plan.operation == "manage-workflows":
-            lines.append("- Repo-owned roadmap content outside managed markers stays untouched.")
+            lines.append("- Existing repo-owned workflow files are proposed instead of silently overwritten.")
         else:
             lines.append("- Repo-owned content outside managed markers stays untouched.")
         return lines

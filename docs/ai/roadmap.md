@@ -6,20 +6,20 @@ This roadmap records the phased enhancer design from the shipped `2.x` stack-pac
 Sections through `3.4` are retained as design history and implementation context. The `4.0` product maturity work is retained as the completed audit-backed roadmap for first-time-user polish, safer command execution, packaging confidence, and integration-ready installer output. The `4.1` section is retained as the completed follow-up baseline from the first-time-user product audit.
 
 ## Roadmap Status At A Glance
-The only active `4.2` item is the focused repository-improvement audit workflow below. Sections before `4.0` are historical design records, and `4.0` plus `4.1` are completed baselines whose acceptance criteria should be preserved rather than re-implemented.
+The current `4.2` record is the focused repository-improvement audit workflow below. Sections before `4.0` are historical design records, and `4.0` plus `4.1` are completed baselines whose acceptance criteria should be preserved rather than re-implemented.
 
 | Section | Status | How to read it |
 |---------|--------|----------------|
 | `2.x` through `3.4` | Historical design record | Use for architecture context, shipped rationale, and regression expectations. Do not treat these sections as current TODOs. |
 | `4.0` | Completed baseline | Use as the product-maturity bar that the enhancer should not regress below. |
 | `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
-| `4.2` | Explicit workflow-pack management implemented; later expansion deferred | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, and Phase 4 installer/CLI/GUI workflow selection are implemented. Target scaffold, specialist-skill, static-analysis, and `.agents/skills` work requires new evidence. |
+| `4.2` | Explicit workflow-pack management and selected target audit assets implemented; later expansion deferred | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, and Phase 5 selected target docs/skill integration are implemented. Specialist-skill, static-analysis, and `.agents/skills` work requires new evidence. |
 
 ## Current Priorities
 - Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
 - Keep the `4.2` repository-improvement audit workflow no-implementation until a user explicitly chooses follow-up implementation work. The selected workflow may write or update only the managed audit section in root `roadmap.md`.
 - Treat `4.1 Step 7` candidates as deferred. Do not start install profiles, transactional writes, dependency regrouping, license strategy, or richer GUI QA without fresh evidence that the smaller completed work is not enough.
-- Do not add target-repo scaffold integration, automatic audit execution, specialist audit skills, static-analysis tooling, or `.agents/skills` migration until a later focused change justifies it.
+- Do not add automatic audit execution, specialist audit skills, static-analysis tooling, or `.agents/skills` migration until a later focused change justifies it.
 
 ## 4.2 Repository Improvement Audit Workflow
 
@@ -29,16 +29,17 @@ Add a reusable, read-only full repository improvement audit workflow that helps 
 ### Integration Recommendation
 The audit workflow should live first as source-repo durable docs plus one normal repo-local skill under `.codex/skills/`. That matches the current enhancer philosophy: visible repo-local guidance, narrow repeatable skills, deterministic validation, and no hidden runtime.
 
-Do not model repository-improvement auditing as a stack pack. Stack packs describe technology-shaped guidance selected from local target evidence, while this audit workflow is a cross-cutting process. If target repos later need installable audit guidance, add an explicit optional workflow-pack asset category rather than stretching `scaffold/stack-packs/`.
+Do not model repository-improvement auditing as a stack pack. Stack packs describe technology-shaped guidance selected from local target evidence, while this audit workflow is a cross-cutting process. Installable audit guidance belongs in the explicit optional workflow-pack category under `scaffold/workflow-packs/`, not in `scaffold/stack-packs/`.
 
 ### Scope
 - one concise source-repo orchestrator skill under `.codex/skills/`
 - durable docs under `docs/ai/` for the audit workflow, finding schema, and roadmap rubric
 - source validation metadata so the new workflow assets stay present and well-formed
+- optional workflow-pack assets for explicitly selected target docs and skill
 - root repo-map updates so maintainers can discover the workflow
 
 ### Non-Goals
-- no target-repo scaffold integration
+- no default audit docs or skill in every target-repo scaffold install
 - no `.agents/skills` migration
 - no specialist audit skills yet
 - no static-analysis integrations or invented audit commands
@@ -50,9 +51,10 @@ Implemented:
 - Phase 2 source validation and repo-map alignment using existing required-file, content, markdown-link, and skill-frontmatter checks.
 - Phase 3 workflow-pack assets under `scaffold/workflow-packs/`, reusing the existing stack-pack loader metadata shape.
 - Phase 4 explicit installer, CLI, and GUI workflow-pack management, including manifest state, generated `docs/ai/workflow-guidance.md`, and a managed root `roadmap.md` audit section for the repository-improvement audit workflow.
+- Phase 5 selected target-repo audit docs and `full-repo-improvement-audit` skill installation for the repository-improvement audit workflow.
 
 Deferred:
-- target-repo scaffold integration, specialist audit skills, static-analysis-assisted inputs, and `.agents/skills` compatibility or migration.
+- specialist audit skills, static-analysis-assisted inputs, and `.agents/skills` compatibility or migration.
 
 ### Files Added In Phase 1
 - `.codex/skills/full-repo-improvement-audit/SKILL.md`
@@ -259,6 +261,9 @@ Acceptance criteria:
 - `repository-improvement-audit` selection creates root `roadmap.md` if missing, appends the managed audit section if markers are absent, and updates the managed audit section in place when markers already exist while preserving content outside it.
 
 #### Phase 5: Target-Repo Scaffold Integration
+Status:
+- implemented for explicitly selected `repository-improvement-audit` workflow packs.
+
 Objective:
 - make installed targets aware of selected audit workflow packs without forcing audit guidance into every install.
 
@@ -276,6 +281,7 @@ Files deliberately not added:
 Implementation notes:
 - keep base target scaffold focused on adaptation, validation, stack guidance, Spec Kit bridge, and optional Utility Harness.
 - treat workflow-pack outputs as managed or repo-owned explicitly in the manifest.
+- install selected audit workflow docs and the orchestrator skill from `scaffold/workflow-packs/repository-improvement-audit/target/`, not from the default target scaffold.
 
 Validation commands:
 - `python scripts/check.py`
@@ -399,7 +405,7 @@ Acceptance criteria:
 - the repository has one explicit skill-root policy, tests enforce it, and target installs do not overwrite external skill surfaces.
 
 ### Deferred Future Work
-- default target-repo scaffold integration until explicit workflow selection proves too much friction
+- default target-repo scaffold integration; selected workflow assets are enough until repeated target use proves more is needed
 - `.agents/skills` compatibility or migration until a focused compatibility decision justifies it
 - specialist audit skills until repeated audits expose stable sub-procedures
 - static-analysis-assisted inputs until they can be grounded in existing project tools and optional helper dependencies
