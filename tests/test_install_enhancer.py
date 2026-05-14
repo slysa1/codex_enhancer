@@ -36,6 +36,7 @@ from scripts.install_enhancer_gui import (
     compute_window_geometry,
 )
 from scripts.enhancer_spec import (
+    AUDIT_SPECIALIST_SKILL_NAMES,
     ENHANCER_MANIFEST_SCHEMA_VERSION,
     ENHANCER_VERSION,
     GITIGNORE_LINES,
@@ -2568,6 +2569,8 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertFalse(
                 (install_target / ".codex/skills/full-repo-improvement-audit/SKILL.md").exists()
             )
+            for skill_name in AUDIT_SPECIALIST_SKILL_NAMES:
+                self.assertFalse((install_target / f".codex/skills/{skill_name}/SKILL.md").exists())
             self.assertFalse((install_target / "roadmap.md").exists())
             self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
 
@@ -2608,6 +2611,7 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertIn("- create: docs/ai/repo-audit-finding-schema.md", output)
             self.assertIn("- create: docs/ai/repo-audit-roadmap-rubric.md", output)
             self.assertIn("- create: .codex/skills/full-repo-improvement-audit/SKILL.md", output)
+            self.assertIn("- create: .codex/skills/repo-test-audit/SKILL.md", output)
             self.assertIn("- create: docs/ai/workflow-guidance.md", output)
             self.assertIn("- overwrite: roadmap.md", output)
 
@@ -2636,8 +2640,11 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertIn('"docs/ai/repo-audit-finding-schema.md"', manifest)
             self.assertIn('"docs/ai/repo-audit-roadmap-rubric.md"', manifest)
             self.assertIn('".codex/skills/full-repo-improvement-audit/SKILL.md"', manifest)
+            for skill_name in AUDIT_SPECIALIST_SKILL_NAMES:
+                self.assertIn(f'".codex/skills/{skill_name}/SKILL.md"', manifest)
             self.assertIn('"roadmap.md"', manifest)
             self.assertIn("Pack id: `repository-improvement-audit`", workflow_guidance)
+            self.assertIn("`repo-test-audit`", workflow_guidance)
             self.assertIn("Keep this product-owned roadmap note.", roadmap)
             self.assertIn("codex-enhancer:managed-section roadmap.md:repository-improvement-audit start", roadmap)
             self.assertTrue((install_target / "docs/ai/repo-improvement-audit.md").exists())
@@ -2646,6 +2653,8 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertTrue(
                 (install_target / ".codex/skills/full-repo-improvement-audit/SKILL.md").exists()
             )
+            for skill_name in AUDIT_SPECIALIST_SKILL_NAMES:
+                self.assertTrue((install_target / f".codex/skills/{skill_name}/SKILL.md").exists())
             self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
 
     def test_manage_workflows_proposes_existing_audit_workflow_doc(self) -> None:

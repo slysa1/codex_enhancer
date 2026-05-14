@@ -37,6 +37,17 @@ Every confirmed claim needs evidence from inspected repo files, commands, tests,
 
 Do not infer build, lint, test, coverage, architecture, dependencies, deployment, or security posture from common stack conventions alone. If a command is not present in files or docs, say that it was not found.
 
+## Specialist Skills
+The `full-repo-improvement-audit` skill remains the orchestrator. Use specialist skills only for bounded audit sub-passes:
+- `repo-map`
+- `repo-quality-audit`
+- `repo-test-audit`
+- `repo-security-audit`
+- `repo-performance-audit`
+- `repo-dx-audit`
+
+Specialist output feeds the final audit report; it does not replace the orchestrator or start implementation.
+
 ## Tool-Assisted Evidence
 Existing repo tools can support an audit when they are discovered from inspected files, CI, manifests, or maintained docs. Examples include listed test commands, lint commands, type checks, coverage reports, dependency audit commands, and optional Utility Harness helpers such as `tools/ai/run_checks.py --list`.
 

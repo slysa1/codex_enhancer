@@ -13,13 +13,13 @@ The current `4.2` record is the focused repository-improvement audit workflow be
 | `2.x` through `3.4` | Historical design record | Use for architecture context, shipped rationale, and regression expectations. Do not treat these sections as current TODOs. |
 | `4.0` | Completed baseline | Use as the product-maturity bar that the enhancer should not regress below. |
 | `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
-| `4.2` | Explicit workflow-pack management, selected target audit assets, and cautious tool-evidence guidance implemented; later expansion deferred | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, Phase 5 selected target docs/skill integration, and Phase 7 documentation-only static-analysis evidence boundaries are implemented. Specialist skills, new analysis tooling, and `.agents/skills` work require new evidence. |
+| `4.2` | Explicit workflow-pack management, selected target audit assets, specialist audit skills, and cautious tool-evidence guidance implemented; remaining expansion is explicit follow-up work | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, Phase 5 selected target docs/skill integration, Phase 6 specialist audit skills, and Phase 7 documentation-only static-analysis evidence boundaries are implemented. New analysis tooling and `.agents/skills` work are being handled as focused follow-up slices. |
 
 ## Current Priorities
 - Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
 - Keep the `4.2` repository-improvement audit workflow no-implementation until a user explicitly chooses follow-up implementation work. The selected workflow may write or update only the managed audit section in root `roadmap.md`.
 - Treat `4.1 Step 7` candidates as deferred. Do not start install profiles, transactional writes, dependency regrouping, license strategy, or richer GUI QA without fresh evidence that the smaller completed work is not enough.
-- Do not add automatic audit execution, specialist audit skills, static-analysis tooling, or `.agents/skills` migration until a later focused change justifies it. Existing repo tools may inform audits only as supporting evidence.
+- Do not add automatic audit execution or hidden implementation paths. Existing repo tools may inform audits only as supporting evidence, and new helper or skill-root work must stay explicit, opt-in, and tested.
 
 ## 4.2 Repository Improvement Audit Workflow
 
@@ -52,10 +52,11 @@ Implemented:
 - Phase 3 workflow-pack assets under `scaffold/workflow-packs/`, reusing the existing stack-pack loader metadata shape.
 - Phase 4 explicit installer, CLI, and GUI workflow-pack management, including manifest state, generated `docs/ai/workflow-guidance.md`, and a managed root `roadmap.md` audit section for the repository-improvement audit workflow.
 - Phase 5 selected target-repo audit docs and `full-repo-improvement-audit` skill installation for the repository-improvement audit workflow.
+- Phase 6 specialist audit skills for repo mapping, quality, tests, security, performance, and developer experience.
 - Phase 7 documentation-only guidance for using existing repo commands and optional helper outputs as supporting evidence without installing dependencies or adding analyzers.
 
 Deferred:
-- specialist audit skills, new static-analysis tooling or helpers, and `.agents/skills` compatibility or migration.
+- new static-analysis tooling or helpers, and `.agents/skills` compatibility or migration.
 
 ### Files Added In Phase 1
 - `.codex/skills/full-repo-improvement-audit/SKILL.md`
@@ -300,8 +301,11 @@ Acceptance criteria:
 - no-workflow-pack installs remain minimal; selected installs receive coherent audit guidance and pass target validation.
 
 #### Phase 6: Specialist Audit Skills
+Status:
+- implemented as narrow specialist helpers under the full audit orchestrator.
+
 Objective:
-- split the orchestrator only after repeated audit use shows durable sub-procedures deserve separate invocation.
+- split the orchestrator into narrow helper skills now that the workflow has an explicit user decision to stop deferring the stable audit sub-procedures.
 
 Files to change:
 - `.codex/skills/repo-map/SKILL.md`, if justified
@@ -313,8 +317,8 @@ Files to change:
 - docs and validator fixtures for whichever skills are actually added
 
 Files deliberately not added:
-- no full suite of specialist skills in one pass.
-- no specialist skill without a narrow trigger and repeated-use evidence.
+- no standalone audit products that bypass `full-repo-improvement-audit`.
+- no implementation, remediation, or report-generator skills.
 
 Implementation notes:
 - keep `full-repo-improvement-audit` as the orchestrator.
@@ -328,7 +332,7 @@ Tests to add or update:
 - skill-frontmatter and required-skill checks only for shipped specialists.
 
 Risks:
-- skill sprawl makes Codex routing noisier and less predictable.
+- skill sprawl makes Codex routing noisier and less predictable unless each specialist stays a bounded sub-pass.
 
 Acceptance criteria:
 - each specialist has a clear trigger, non-goals, and a concrete audit output contract.

@@ -622,6 +622,14 @@ Use [.codex/skills/full-repo-improvement-audit/SKILL.md](.codex/skills/full-repo
 
 Keep the audit evidence-backed and stop before implementation. The durable workflow, finding schema, roadmap artifact rule, and prioritization rubric live in [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md), [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md), and [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
 
+Specialist audit helper skills are available for bounded sub-passes under the orchestrator:
+- `repo-map`
+- `repo-quality-audit`
+- `repo-test-audit`
+- `repo-security-audit`
+- `repo-performance-audit`
+- `repo-dx-audit`
+
 #### `adapt-enhancer`
 Use [.codex/skills/adapt-enhancer/SKILL.md](.codex/skills/adapt-enhancer/SKILL.md) when:
 - you installed this enhancer into a different repository

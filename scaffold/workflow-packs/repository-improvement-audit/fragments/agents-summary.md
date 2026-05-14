@@ -1,3 +1,4 @@
 - Use `full-repo-improvement-audit` for no-implementation whole-repo improvement audits before follow-up work.
+- Use specialist audit skills only as bounded sub-passes under the full audit orchestrator.
 - Keep confirmed findings evidence-backed and keep low-confidence concerns under hypotheses.
 - Write or update the managed section in root `roadmap.md` for durable suggested changes, then stop; implementation starts only after the user chooses follow-up work.

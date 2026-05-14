@@ -46,6 +46,16 @@ Do not run prose-extracted commands, shell-control-heavy commands, dependency in
 
 ## Audit Areas
 
+The `full-repo-improvement-audit` skill remains the orchestrator. Specialist audit skills are now available for bounded sub-passes when the audit needs a sharper lens:
+- `repo-map` for system shape, entry points, commands, integrations, and ownership boundaries
+- `repo-quality-audit` for maintainability, complexity, duplication, type boundaries, and local conventions
+- `repo-test-audit` for tests, CI, validation commands, fixtures, missing coverage, and reliability risks
+- `repo-security-audit` for auth, input handling, secrets, dependency boundaries, filesystem/network access, and risky commands
+- `repo-performance-audit` for performance-sensitive paths, measurements, scale risks, and hypotheses
+- `repo-dx-audit` for onboarding, docs, command discovery, CI feedback, generated artifacts, and AI guidance
+
+Specialist output feeds the final audit report; it does not replace the orchestrator or start implementation.
+
 ### Architecture
 Map the repo purpose, top-level directories, major components, entry points, ownership boundaries, integration points, and unclear areas. Look for circular dependencies, misplaced responsibilities, unowned generated output, or guidance that no longer matches the repo.
 
@@ -94,4 +104,4 @@ The managed section should contain the prioritized suggestions, evidence summary
 The audit stops after producing the report and roadmap artifact. Codex should not modify files other than the requested `roadmap.md` audit artifact, stage changes, run formatters that rewrite files, add scripts, install packages, or begin implementation during audit mode. Implementation starts only after the user chooses a follow-up item.
 
 ## Future Direction
-The current workflow-pack support is intentionally explicit and artifact-oriented: selecting the audit workflow generates workflow guidance, installs target audit docs and the orchestrator skill, records manifest state, and manages only the root `roadmap.md` audit section. Future work may add specialist audit skills or new static-analysis tooling when repeated audits show those tools are worth maintaining. It should not add a command ecosystem, hidden audit runtime, or automatic implementation path.
+The current workflow-pack support is intentionally explicit and artifact-oriented: selecting the audit workflow generates workflow guidance, installs target audit docs and the audit skills, records manifest state, and manages only the root `roadmap.md` audit section. Future static-analysis tooling should remain bounded, optional, and evidence-oriented. It should not add a command ecosystem, hidden audit runtime, or automatic implementation path.

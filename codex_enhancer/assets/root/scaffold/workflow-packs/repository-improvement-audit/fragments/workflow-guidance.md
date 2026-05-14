@@ -4,6 +4,7 @@ The audit should:
 - read repo guidance, docs, package files, CI, tests, scripts, and existing agent instructions first
 - map architecture, entry points, validation commands, dependencies, integration points, and unclear areas
 - review code quality, tests, reliability, security-sensitive flows, performance-sensitive paths, and developer experience
+- use `repo-map`, `repo-quality-audit`, `repo-test-audit`, `repo-security-audit`, `repo-performance-audit`, and `repo-dx-audit` as bounded specialist sub-passes when useful
 - separate confirmed findings from hypotheses
 - use the finding schema in `docs/ai/repo-audit-finding-schema.md`
 - prioritize work with the rubric in `docs/ai/repo-audit-roadmap-rubric.md`

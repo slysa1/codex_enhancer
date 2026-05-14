@@ -14,6 +14,31 @@ SUPPORTED_ENHANCER_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, ENHANCER_MANIFEST
 CHECK_COMMAND = "python scripts/check.py"
 TEST_COMMAND = 'python -m unittest discover -s tests -p "test_*.py" -v'
 
+AUDIT_SPECIALIST_SKILL_NAMES = (
+    "repo-map",
+    "repo-quality-audit",
+    "repo-test-audit",
+    "repo-security-audit",
+    "repo-performance-audit",
+    "repo-dx-audit",
+)
+
+SOURCE_AUDIT_SPECIALIST_SKILL_PATHS = tuple(
+    Path(".codex/skills") / name / "SKILL.md" for name in AUDIT_SPECIALIST_SKILL_NAMES
+)
+TARGET_AUDIT_SPECIALIST_SKILL_PATHS = tuple(
+    Path("scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills")
+    / name
+    / "SKILL.md"
+    for name in AUDIT_SPECIALIST_SKILL_NAMES
+)
+AUDIT_SPECIALIST_SKILL_REQUIREMENTS = (
+    "Run as a no-implementation specialist sub-pass",
+    "Output contract:",
+    "Report only evidence-backed findings and return control to `full-repo-improvement-audit`",
+    "## Do not use",
+)
+
 GITIGNORE_LINES = (
     "__pycache__/",
     "*.py[cod]",
@@ -106,6 +131,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path(".codex/skills/review-prep/SKILL.md"),
         Path(".codex/skills/adapt-enhancer/SKILL.md"),
         Path(".codex/skills/full-repo-improvement-audit/SKILL.md"),
+        *SOURCE_AUDIT_SPECIALIST_SKILL_PATHS,
         Path("scripts/check.py"),
         Path("scripts/codex_enhancer_cli.py"),
         Path("scripts/enhancer_spec.py"),
@@ -175,6 +201,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-audit-finding-schema.md"),
         Path("scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-audit-roadmap-rubric.md"),
         Path("scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/full-repo-improvement-audit/SKILL.md"),
+        *TARGET_AUDIT_SPECIALIST_SKILL_PATHS,
     ),
     line_limits={
         Path("AGENTS.md"): 140,
@@ -186,6 +213,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "review-prep",
             "adapt-enhancer",
             "full-repo-improvement-audit",
+            *AUDIT_SPECIALIST_SKILL_NAMES,
         }
     ),
     content_requirements={
@@ -208,6 +236,12 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "docs/ai/repo-audit-roadmap-rubric.md",
             "docs/ai/utility-harness.md",
             "full-repo-improvement-audit",
+            "repo-map",
+            "repo-quality-audit",
+            "repo-test-audit",
+            "repo-security-audit",
+            "repo-performance-audit",
+            "repo-dx-audit",
             "scaffold/workflow-packs/",
             "scripts/stack_packs.py",
             "--list-workflows",
@@ -350,7 +384,17 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.",
             "root `roadmap.md`",
             "Stop after the audit. Do not make implementation changes during audit mode.",
+            "repo-map",
+            "repo-quality-audit",
+            "repo-test-audit",
+            "repo-security-audit",
+            "repo-performance-audit",
+            "repo-dx-audit",
         ),
+        **{
+            path: AUDIT_SPECIALIST_SKILL_REQUIREMENTS
+            for path in SOURCE_AUDIT_SPECIALIST_SKILL_PATHS
+        },
         Path("scaffold/workflow-packs/repository-improvement-audit/target/docs/ai/repo-improvement-audit.md"): (
             "## Evidence Standards",
             "## Tool-Assisted Evidence",
@@ -371,7 +415,17 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.",
             "root `roadmap.md`",
             "Stop after the audit. Do not make implementation changes during audit mode.",
+            "repo-map",
+            "repo-quality-audit",
+            "repo-test-audit",
+            "repo-security-audit",
+            "repo-performance-audit",
+            "repo-dx-audit",
         ),
+        **{
+            path: AUDIT_SPECIALIST_SKILL_REQUIREMENTS
+            for path in TARGET_AUDIT_SPECIALIST_SKILL_PATHS
+        },
         Path(".github/workflows/validate.yml"): (
             CHECK_COMMAND,
             TEST_COMMAND,
@@ -547,6 +601,15 @@ REPOSITORY_IMPROVEMENT_AUDIT_WORKFLOW_COPY_ASSETS = (
     CopyAsset(
         source_path=Path("scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/full-repo-improvement-audit/SKILL.md"),
         destination=Path(".codex/skills/full-repo-improvement-audit/SKILL.md"),
+    ),
+    *(
+        CopyAsset(
+            source_path=Path("scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills")
+            / name
+            / "SKILL.md",
+            destination=Path(".codex/skills") / name / "SKILL.md",
+        )
+        for name in AUDIT_SPECIALIST_SKILL_NAMES
     ),
 )
 

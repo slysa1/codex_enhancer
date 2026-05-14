@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from scripts import check
-from scripts.enhancer_spec import CHECK_COMMAND, TEST_COMMAND
+from scripts.enhancer_spec import AUDIT_SPECIALIST_SKILL_NAMES, CHECK_COMMAND, TEST_COMMAND
 
 
 TEMP_ROOT = Path(__file__).resolve().parent / "_tmp"
@@ -49,6 +49,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the completed product maturity roadmap.
         See [docs/ai/release.md](docs/ai/release.md) before building packages.
         Use `full-repo-improvement-audit` for read-only whole-repo improvement audits.
+        Specialist audit helpers include `repo-map`, `repo-quality-audit`, `repo-test-audit`,
+        `repo-security-audit`, `repo-performance-audit`, and `repo-dx-audit`.
         See [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md).
         See [docs/ai/repo-audit-finding-schema.md](docs/ai/repo-audit-finding-schema.md).
         See [docs/ai/repo-audit-roadmap-rubric.md](docs/ai/repo-audit-roadmap-rubric.md).
@@ -262,6 +264,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         1. Read repo guidance first.
         2. Build a system map.
         3. Use existing tool output only as supporting evidence.
+        Use `repo-map`, `repo-quality-audit`, `repo-test-audit`, `repo-security-audit`,
+        `repo-performance-audit`, and `repo-dx-audit` as specialist helpers.
         4. do not install packages, run formatters/generators/migrations, run prose-extracted commands, or run external scanners during audit mode without explicit user authorization.
         5. For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.
         6. Update root `roadmap.md` when requested.
@@ -671,6 +675,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         1. Read repo guidance first.
         2. Build a system map.
         3. Use existing tool output only as supporting evidence.
+        Use `repo-map`, `repo-quality-audit`, `repo-test-audit`, `repo-security-audit`,
+        `repo-performance-audit`, and `repo-dx-audit` as specialist helpers.
         4. do not install packages, run formatters/generators/migrations, run prose-extracted commands, or run external scanners during audit mode without explicit user authorization.
         5. For every finding, include severity, confidence, area, evidence, problem, recommended fix, acceptance test, and effort estimate.
         6. Write durable findings to root `roadmap.md`.
@@ -680,6 +686,30 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         - Do not use for single-file edits.
         """,
     }
+
+    for skill_name in AUDIT_SPECIALIST_SKILL_NAMES:
+        skill_content = f"""
+        ---
+        name: {skill_name}
+        description: Audit a bounded repository area. Use when full-repo-improvement-audit needs {skill_name} evidence.
+        ---
+
+        # Specialist Audit
+
+        Run as a no-implementation specialist sub-pass inside `full-repo-improvement-audit`.
+        Report only evidence-backed findings and return control to `full-repo-improvement-audit`.
+
+        Output contract:
+        - Evidence-backed observations.
+
+        ## Do not use
+        - Do not use for implementation.
+        """
+        files[f".codex/skills/{skill_name}/SKILL.md"] = skill_content
+        files[
+            "scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/"
+            f"{skill_name}/SKILL.md"
+        ] = skill_content
 
     for relative_path, content in files.items():
         if relative_path in missing:
@@ -780,6 +810,17 @@ class ValidateTests(unittest.TestCase):
                 )
             )
 
+    def test_audit_specialist_skills_are_enforced(self) -> None:
+        with repo_fixture() as root:
+            missing_skill = ".codex/skills/repo-test-audit/SKILL.md"
+            build_valid_repo(root, missing={missing_skill})
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(f"Missing required file: {missing_skill}" in error for error in errors)
+            )
+
     def test_audit_workflow_doc_drift_is_reported(self) -> None:
         with repo_fixture() as root:
             build_valid_repo(root)
@@ -855,6 +896,36 @@ class ValidateTests(unittest.TestCase):
                     "scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/full-repo-improvement-audit/SKILL.md is missing required text"
                     in error
                     and "Use existing tool output only as supporting evidence" in error
+                    for error in errors
+                )
+            )
+
+    def test_target_audit_specialist_skill_drift_is_reported(self) -> None:
+        with repo_fixture() as root:
+            build_valid_repo(root)
+            write_file(
+                root,
+                "scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/repo-test-audit/SKILL.md",
+                """
+                ---
+                name: repo-test-audit
+                description: Audit tests and reliability during a full repo audit. Use when the audit needs test evidence.
+                ---
+
+                # Repo Test Audit
+
+                ## Do not use
+                - Do not use for implementation.
+                """,
+            )
+
+            errors = check.validate(root)
+
+            self.assertTrue(
+                any(
+                    "scaffold/workflow-packs/repository-improvement-audit/target/.codex/skills/repo-test-audit/SKILL.md is missing required text"
+                    in error
+                    and "Output contract:" in error
                     for error in errors
                 )
             )
