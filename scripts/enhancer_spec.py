@@ -162,6 +162,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("scaffold/target-repo/requirements-codex-readers.txt"),
         Path("scaffold/target-repo/requirements-codex-analysis.txt"),
         Path("scaffold/target-repo/requirements-codex-cli.txt"),
+        Path("scaffold/target-repo/tools/ai/audit_inputs.py"),
         Path("scaffold/target-repo/tools/ai/inspect_repo.py"),
         Path("scaffold/target-repo/tools/ai/read_any.py"),
         Path("scaffold/target-repo/tools/ai/summarize_tree.py"),
@@ -368,11 +369,13 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         ),
         Path("docs/ai/utility-harness.md"): (
             "## Audit Use",
+            "tools/ai/audit_inputs.py",
             "tools/ai/run_checks.py --list",
             "Missing optional helper packages should be recorded as an audit limitation",
         ),
         Path("scaffold/target-repo/docs/ai/utility-harness.md"): (
             "## Audit Use",
+            "tools/ai/audit_inputs.py",
             "tools/ai/run_checks.py --list",
             "Missing optional helper packages",
         ),
@@ -561,6 +564,10 @@ OPTIONAL_UTILITY_HARNESS_COPY_ASSETS = (
     CopyAsset(
         source_path=Path("scaffold/target-repo/requirements-codex-cli.txt"),
         destination=Path("requirements-codex-cli.txt"),
+    ),
+    CopyAsset(
+        source_path=Path("scaffold/target-repo/tools/ai/audit_inputs.py"),
+        destination=Path("tools/ai/audit_inputs.py"),
     ),
     CopyAsset(
         source_path=Path("scaffold/target-repo/tools/ai/inspect_repo.py"),

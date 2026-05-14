@@ -1698,6 +1698,7 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertTrue((install_target / "requirements-codex-readers.txt").exists())
             self.assertTrue((install_target / "requirements-codex-analysis.txt").exists())
             self.assertTrue((install_target / "requirements-codex-cli.txt").exists())
+            self.assertTrue((install_target / "tools/ai/audit_inputs.py").exists())
             self.assertTrue((install_target / "tools/ai/inspect_repo.py").exists())
             self.assertTrue((install_target / "tools/ai/read_any.py").exists())
             self.assertTrue((install_target / "tools/ai/summarize_tree.py").exists())
@@ -1710,6 +1711,7 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn('mode = "install"', manifest)
             self.assertIn('state = "installed"', manifest)
             self.assertIn('"requirements-codex-readers.txt"', manifest)
+            self.assertIn('"tools/ai/audit_inputs.py"', manifest)
             self.assertIn('"tools/ai/run_checks.py"', manifest)
             self.assertIn("Codex Utility Harness is installed", agents)
             self.assertEqual(validate_profile(install_target, TARGET_VALIDATION_PROFILE), [])
@@ -1726,6 +1728,18 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("enhancer:check", listed_checks.stdout)
             self.assertIn("trust=confirmed", listed_checks.stdout)
             self.assertNotIn("tools/ai/run_checks.py", listed_checks.stdout)
+
+            audit_inputs = subprocess.run(
+                [sys.executable, "-B", "tools/ai/audit_inputs.py", "--json"],
+                cwd=install_target,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(audit_inputs.returncode, 0)
+            self.assertIn('"schema_version": 1', audit_inputs.stdout)
+            self.assertIn('"validation_commands"', audit_inputs.stdout)
 
     def test_utility_harness_run_checks_does_not_execute_prose_commands_by_default(self) -> None:
         with repo_fixture("utility_prose_safety") as install_target:
@@ -1854,6 +1868,7 @@ class InstallEnhancerTests(unittest.TestCase):
             manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
             self.assertIn("[integrations.utility_harness]", manifest)
             self.assertIn('state = "installed"', manifest)
+            self.assertTrue((install_target / "tools/ai/audit_inputs.py").exists())
             self.assertTrue((install_target / "tools/ai/run_checks.py").exists())
 
     def test_new_repo_install_produces_valid_target_profile(self) -> None:
@@ -3111,6 +3126,7 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
 
             self.assertIn("Utility Harness:", preview)
             self.assertIn("Mode: install (installed)", preview)
+            self.assertIn("tools/ai/audit_inputs.py", preview)
             self.assertIn("tools/ai/run_checks.py", preview)
 
     def test_gui_pack_management_preview_and_completion_message(self) -> None:

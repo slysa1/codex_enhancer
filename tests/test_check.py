@@ -212,6 +212,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Keep requirements-codex.txt out of production dependencies.
 
         ## Audit Use
+        Use tools/ai/audit_inputs.py before writing audit roadmaps.
         Use tools/ai/run_checks.py --list before running commands.
         Missing optional helper packages should be recorded as an audit limitation.
         """,
@@ -351,6 +352,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         # Utility Harness template
 
         ## Audit Use
+        Use `tools/ai/audit_inputs.py` before writing audit roadmaps.
         Use `tools/ai/run_checks.py --list` before running helpers during audits.
         Missing optional helper packages should lower confidence or become a limitation.
         """,
@@ -409,6 +411,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scaffold/target-repo/requirements-codex-cli.txt": """
         rich
+        """,
+        "scaffold/target-repo/tools/ai/audit_inputs.py": """
+        # utility harness audit inputs tool
         """,
         "scaffold/target-repo/tools/ai/inspect_repo.py": """
         # utility harness inspect repo tool

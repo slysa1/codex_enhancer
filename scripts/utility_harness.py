@@ -18,6 +18,7 @@ UTILITY_HARNESS_DEPENDENCY_FILES = (
 )
 UTILITY_HARNESS_DOC = Path("docs/ai/utility-harness.md")
 UTILITY_HARNESS_TOOL_FILES = (
+    Path("tools/ai/audit_inputs.py"),
     Path("tools/ai/inspect_repo.py"),
     Path("tools/ai/read_any.py"),
     Path("tools/ai/summarize_tree.py"),

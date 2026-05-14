@@ -1073,6 +1073,7 @@ def check_utility_harness_outputs(root: Path, manifest: dict[str, object], error
         for snippet in (
             "requirements-codex.txt",
             "requirements-codex-readers.txt",
+            "tools/ai/audit_inputs.py",
             "tools/ai/inspect_repo.py",
             "Do not add these packages to production dependency files",
         ):

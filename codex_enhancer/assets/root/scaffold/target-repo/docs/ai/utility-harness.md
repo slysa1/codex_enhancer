@@ -9,6 +9,7 @@ The Utility Harness is an optional Codex/operator toolbox for inspecting this re
 - [requirements-codex-readers.txt](../../requirements-codex-readers.txt): PDF, Office, spreadsheet, HTML, Markdown, YAML, and TOML reader helpers.
 - [requirements-codex-analysis.txt](../../requirements-codex-analysis.txt): optional code-analysis helpers.
 - [requirements-codex-cli.txt](../../requirements-codex-cli.txt): optional richer CLI/config helpers.
+- [tools/ai/audit_inputs.py](../../tools/ai/audit_inputs.py): no-execution inventory of audit evidence inputs, roadmap targets, and recorded validation commands.
 - [tools/ai/inspect_repo.py](../../tools/ai/inspect_repo.py): compact repository inspection report.
 - [tools/ai/read_any.py](../../tools/ai/read_any.py): text extraction for common source, data, document, slide, spreadsheet, and PDF formats.
 - [tools/ai/summarize_tree.py](../../tools/ai/summarize_tree.py): bounded project tree printer.
@@ -42,6 +43,7 @@ python -m pip install -r requirements-codex-cli.txt
 ## Common Commands
 ```bash
 python tools/ai/inspect_repo.py
+python tools/ai/audit_inputs.py
 python tools/ai/summarize_tree.py --max-depth 3 --max-entries 250
 python tools/ai/read_any.py <path>
 python tools/ai/run_checks.py --list
@@ -57,6 +59,6 @@ python tools/ai/run_checks.py --dry-run
 - Do not add OCR, background indexing, daemon behavior, or automatic dependency installation.
 
 ## Audit Use
-During a repository improvement audit, treat helper output as supporting evidence only. Tie any tool-backed claim to inspected repo files, the exact command, exit status when available, and a concise output summary.
+During a repository improvement audit, treat helper output as supporting evidence only. Use `tools/ai/audit_inputs.py` to find candidate evidence files and the roadmap target before writing recommendations. Tie any tool-backed claim to inspected repo files, the exact command, exit status when available, and a concise output summary.
 
 Do not install helper dependencies, run prose-extracted commands, enable shell-control execution, or run expensive analysis helpers during audit mode unless the user explicitly authorizes that action. Missing optional helper packages should lower confidence or become a limitation, not block the audit.

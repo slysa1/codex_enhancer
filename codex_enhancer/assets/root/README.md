@@ -68,7 +68,7 @@ Concrete before/after workflow:
 - An install scaffold under [scaffold/target-repo/](scaffold/target-repo/)
 - A small regression suite in [tests/](tests/)
 - GitHub Actions validation in [.github/workflows/validate.yml](.github/workflows/validate.yml)
-- An optional Codex Utility Harness for repo-local inspection, mixed-format reading, tree summaries, and recorded validation commands
+- An optional Codex Utility Harness for repo-local inspection, audit input inventories, mixed-format reading, tree summaries, and recorded validation commands
 
 ## Who This Is For
 Use Codex Enhancer if you want Codex to work better inside a real repository by default:
@@ -360,6 +360,7 @@ requirements-codex-minimal.txt
 requirements-codex-readers.txt
 requirements-codex-analysis.txt
 requirements-codex-cli.txt
+tools/ai/audit_inputs.py
 tools/ai/inspect_repo.py
 tools/ai/read_any.py
 tools/ai/summarize_tree.py
@@ -504,6 +505,7 @@ When the Spec Kit bridge is active, the target install also adds:
 
 When the Utility Harness is active, the target install also adds:
 - `requirements-codex.txt`
+- `tools/ai/audit_inputs.py`
 - `tools/ai/inspect_repo.py`
 - `tools/ai/read_any.py`
 - `tools/ai/summarize_tree.py`

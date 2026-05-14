@@ -13,7 +13,7 @@ The current `4.2` record is the focused repository-improvement audit workflow be
 | `2.x` through `3.4` | Historical design record | Use for architecture context, shipped rationale, and regression expectations. Do not treat these sections as current TODOs. |
 | `4.0` | Completed baseline | Use as the product-maturity bar that the enhancer should not regress below. |
 | `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
-| `4.2` | Explicit workflow-pack management, selected target audit assets, specialist audit skills, and cautious tool-evidence guidance implemented; remaining expansion is explicit follow-up work | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, Phase 5 selected target docs/skill integration, Phase 6 specialist audit skills, and Phase 7 documentation-only static-analysis evidence boundaries are implemented. New analysis tooling and `.agents/skills` work are being handled as focused follow-up slices. |
+| `4.2` | Explicit workflow-pack management, selected target audit assets, specialist audit skills, and bounded audit-input helper implemented; remaining expansion is explicit follow-up work | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, Phase 5 selected target docs/skill integration, Phase 6 specialist audit skills, and Phase 7 bounded Utility Harness audit input inventory are implemented. `.agents/skills` work is being handled as a focused follow-up slice. |
 
 ## Current Priorities
 - Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
@@ -53,10 +53,10 @@ Implemented:
 - Phase 4 explicit installer, CLI, and GUI workflow-pack management, including manifest state, generated `docs/ai/workflow-guidance.md`, and a managed root `roadmap.md` audit section for the repository-improvement audit workflow.
 - Phase 5 selected target-repo audit docs and `full-repo-improvement-audit` skill installation for the repository-improvement audit workflow.
 - Phase 6 specialist audit skills for repo mapping, quality, tests, security, performance, and developer experience.
-- Phase 7 documentation-only guidance for using existing repo commands and optional helper outputs as supporting evidence without installing dependencies or adding analyzers.
+- Phase 7 bounded Utility Harness helper for inventorying audit evidence inputs, roadmap targets, and recorded validation commands without executing repo code.
 
 Deferred:
-- new static-analysis tooling or helpers, and `.agents/skills` compatibility or migration.
+- `.agents/skills` compatibility or migration beyond the current `.codex/skills` output policy.
 
 ### Files Added In Phase 1
 - `.codex/skills/full-repo-improvement-audit/SKILL.md`
@@ -339,7 +339,7 @@ Acceptance criteria:
 
 #### Phase 7: Static-Analysis-Assisted Inputs
 Status:
-- implemented only as cautious documentation for existing repo tools and optional helper outputs. New tooling remains deferred.
+- implemented as cautious documentation plus `tools/ai/audit_inputs.py`, a bounded Utility Harness helper that inventories audit input candidates and recorded validation commands without executing them.
 
 Objective:
 - allow audits to use existing repo tools and optional helper scripts as evidence without inventing commands or installing dependencies automatically.
@@ -347,8 +347,11 @@ Objective:
 Files to change:
 - `docs/ai/repo-improvement-audit.md`
 - `docs/ai/utility-harness.md`
-- Utility Harness tools under `scaffold/target-repo/tools/ai/`, only if a bounded helper earns its place
-- `requirements-codex-analysis.txt`, only for optional Codex/operator tooling with a named use
+- `scaffold/target-repo/tools/ai/audit_inputs.py`
+- `scripts/utility_harness.py`
+- `scripts/enhancer_spec.py`
+- `scripts/enhancer_validator.py`
+- README and package mirror asset files
 - tests for any changed helper behavior
 
 Files deliberately not added:
@@ -361,6 +364,7 @@ Implementation notes:
 - label tool output as supporting evidence or hypothesis input.
 - keep missing optional dependencies as explicit messages, not silent fallbacks.
 - do not add analyzers, dependency installs, or a background audit command in this phase.
+- keep `audit_inputs.py` no-execution: it may reuse the existing file walker and validation command discovery, but it must not run discovered commands.
 
 Validation commands:
 - `python scripts/check.py`
@@ -368,13 +372,13 @@ Validation commands:
 - focused helper smoke tests when helper scripts change.
 
 Tests to add or update:
-- helper tests for bounded output, ignored directories, and missing dependency messages.
+- helper tests for bounded output, ignored directories, audit input categories, and no-execution command discovery.
 
 Risks:
 - tool output can create false confidence if not tied back to inspected files and commands.
 
 Acceptance criteria:
-- audit docs explain how to use static-analysis inputs cautiously and no default workflow runs unverified tools.
+- audit docs explain how to use static-analysis inputs cautiously, Utility Harness installs include `tools/ai/audit_inputs.py`, and no default workflow runs unverified tools.
 
 #### Phase 8: `.agents/skills` Compatibility Or Migration
 Objective:

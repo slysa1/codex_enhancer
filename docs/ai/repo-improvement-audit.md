@@ -38,7 +38,7 @@ Every confirmed claim needs evidence from inspected repo files, commands, tests,
 Do not infer build, lint, test, coverage, architecture, dependencies, deployment, or security posture from common stack conventions alone. If a command is not present in files or docs, say that it was not found.
 
 ## Tool-Assisted Evidence
-Existing repo tools can support an audit when they are discovered from inspected files, CI, manifests, or maintained docs. Examples include listed test commands, lint commands, type checks, coverage reports, dependency audit commands, and optional Utility Harness helpers such as `tools/ai/run_checks.py --list`.
+Existing repo tools can support an audit when they are discovered from inspected files, CI, manifests, or maintained docs. Examples include listed test commands, lint commands, type checks, coverage reports, dependency audit commands, and optional Utility Harness helpers such as `tools/ai/audit_inputs.py` and `tools/ai/run_checks.py --list`.
 
 Treat tool output as supporting evidence, not authority. Tie every tool-backed claim to the exact command, exit status when available, relevant output summary, and the repo files that explain why the command is legitimate for this project. If a tool is unavailable, too slow, needs credentials, needs network access, or depends on packages that are not installed, record that as a limitation or hypothesis input rather than installing dependencies during the audit.
 

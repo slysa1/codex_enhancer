@@ -660,6 +660,7 @@ class StackPackTests(unittest.TestCase):
             self.assertIn('state = "installed"', manifest)
             self.assertIn('requirements_file = "requirements-codex.txt"', manifest)
             self.assertIn('"requirements-codex-readers.txt"', manifest)
+            self.assertIn('"tools/ai/audit_inputs.py"', manifest)
             self.assertIn('"tools/ai/run_checks.py"', manifest)
 
     def test_render_agents_summary_supports_library_package_with_javascript_pack(self) -> None:
