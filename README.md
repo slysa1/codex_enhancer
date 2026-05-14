@@ -117,7 +117,7 @@ To build distributable artifacts from a prepared packaging environment:
 
 ```bash
 python -m build
-python -m pip install dist/codex_enhancer-4.0.0-py3-none-any.whl
+python -m pip install dist/codex_enhancer-4.1.0-py3-none-any.whl
 codex-enhancer list-packs
 ```
 
