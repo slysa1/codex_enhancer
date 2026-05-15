@@ -88,6 +88,23 @@ EXTERNAL_STEP_TIMEOUT_SECONDS = 600
 GIT_STATUS_TIMEOUT_SECONDS = 10
 EXTERNAL_STEP_ORDER = "before-enhancer-writes"
 EXTERNAL_STEP_ORDER_NOTE = "external tools run before enhancer-owned writes"
+POST_WRITE_EXTERNAL_STEP_ORDER = "after-enhancer-writes"
+POST_WRITE_EXTERNAL_STEP_ORDER_NOTE = "external tools run after enhancer-owned writes"
+EXTERNAL_STEP_ORDER_NOTES = {
+    EXTERNAL_STEP_ORDER: EXTERNAL_STEP_ORDER_NOTE,
+    POST_WRITE_EXTERNAL_STEP_ORDER: POST_WRITE_EXTERNAL_STEP_ORDER_NOTE,
+}
+DIRTY_WORKTREE_OVERRIDE_GUIDANCE = (
+    "Why this block exists: enhancer apply can overwrite or regenerate paths such as AGENTS.md, docs/ai/, "
+    ".codex/enhancer/, .codex/skills/, .gitignore, and proposal files.",
+    "Do not override if any listed local change touches those paths or any path shown in the planned writes or diff.",
+    "`--allow-dirty` is for unrelated local work after reviewing the plan; pushed commits are not required.",
+)
+UNVERIFIED_GIT_STATUS_OVERRIDE_GUIDANCE = (
+    "Clean-state verification matters because enhancer apply can overwrite managed guidance, merge .gitignore, "
+    "or run post-write setup steps.",
+    "Use --allow-dirty only after manually checking the target repo and confirming local work is unrelated to planned writes.",
+)
 
 COMMON_GUIDANCE_PATHS = (
     Path("AGENTS.md"),
@@ -139,6 +156,7 @@ class ExternalStep:
     cwd: Path
     label: str
     source_label: str
+    order: str = EXTERNAL_STEP_ORDER
 
 
 @dataclass(frozen=True)
@@ -206,6 +224,14 @@ class DoctorReport:
     python_version: str
     inspection: InstallInspection
     next_steps: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class QuickstartReport:
+    target: Path
+    doctor: DoctorReport
+    recommended_commands: tuple[str, ...]
+    command_lanes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -315,6 +341,85 @@ def resolve_manifest_workflow_selection(
 
 def selected_workflow_names(plan: InstallPlan) -> tuple[str, ...]:
     return selected_pack_names(plan.workflow_selections)
+
+
+def plan_changes_stack_pack_selection(plan: InstallPlan) -> bool:
+    return any(
+        selection.selection_source in {"manage-add", "manage-remove", "manage-set", "manage-set-remove"}
+        for selection in plan.pack_selections
+    )
+
+
+def _external_step_order_note(step: ExternalStep) -> str:
+    return EXTERNAL_STEP_ORDER_NOTES.get(step.order, step.order)
+
+
+def _external_step_runs_before_writes(step: ExternalStep) -> bool:
+    return step.order == EXTERNAL_STEP_ORDER
+
+
+def build_spec_kit_external_steps(
+    target: Path,
+    spec_kit_bridge: SpecKitBridgeConfig,
+) -> tuple[ExternalStep, ...]:
+    if not spec_kit_bridge.bootstrap_command:
+        return ()
+    return (
+        ExternalStep(
+            argv=spec_kit_bridge.bootstrap_command,
+            cwd=target,
+            label="Bootstrap official Spec Kit",
+            source_label="official Spec Kit bootstrap",
+            order=EXTERNAL_STEP_ORDER,
+        ),
+    )
+
+
+def build_utility_harness_dependency_steps(
+    target: Path,
+    *,
+    utility_harness: UtilityHarnessConfig,
+    install_dependencies: bool,
+) -> tuple[ExternalStep, ...]:
+    if not install_dependencies:
+        return ()
+    if not utility_harness.enabled or utility_harness.requirements_file is None:
+        raise ValueError(
+            "Utility Harness dependency installation requires the Utility Harness to be installed or preserved from an existing install."
+        )
+    return (
+        ExternalStep(
+            argv=(
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                utility_harness.requirements_file,
+            ),
+            cwd=target,
+            label="Install Utility Harness dependencies",
+            source_label="Codex Utility Harness dependency files",
+            order=POST_WRITE_EXTERNAL_STEP_ORDER,
+        ),
+    )
+
+
+def build_external_steps(
+    target: Path,
+    *,
+    spec_kit_bridge: SpecKitBridgeConfig,
+    utility_harness: UtilityHarnessConfig,
+    utility_harness_install_dependencies: bool = False,
+) -> tuple[ExternalStep, ...]:
+    return (
+        build_spec_kit_external_steps(target, spec_kit_bridge)
+        + build_utility_harness_dependency_steps(
+            target,
+            utility_harness=utility_harness,
+            install_dependencies=utility_harness_install_dependencies,
+        )
+    )
 
 
 def infer_mode(target: Path) -> str:
@@ -456,6 +561,74 @@ def doctor_next_steps(
         "Add `--diff` if you want planned file content changes before applying.",
         "Re-run with `--write` only after the preview looks right.",
     ]
+
+
+def quickstart_recommended_commands(report: DoctorReport) -> list[str]:
+    target_text = _command_path(report.target)
+    if report.repo_kind == "source-checkout":
+        return [
+            f"{CHECK_COMMAND}",
+            "python scripts/codex_enhancer_cli.py quickstart ../target-repo",
+            "python scripts/codex_enhancer_cli.py init ../target-repo --summary --diff",
+        ]
+
+    if report.repo_kind == "installed-target":
+        if report.inspection.status == "current":
+            return [
+                f"codex-enhancer audit {target_text}",
+                f"codex-enhancer refresh {target_text} --summary",
+            ]
+        return [
+            f"codex-enhancer upgrade {target_text} --summary",
+            f"codex-enhancer upgrade {target_text} --summary --diff",
+        ]
+
+    mode_flag = "--new" if infer_mode(report.target) == "new" else "--existing"
+    return [
+        f"codex-enhancer init {target_text} {mode_flag} --summary --diff",
+        f"codex-enhancer list-packs {target_text}",
+        f"codex-enhancer init {target_text} {mode_flag} --summary --diff --write",
+    ]
+
+
+def quickstart_command_lanes(report: DoctorReport) -> list[str]:
+    target_text = _command_path(report.target)
+    return [
+        "`codex-enhancer doctor <repo>` checks what kind of repo you pointed at.",
+        "`codex-enhancer init <repo> --summary --diff` previews an install into a real target repo.",
+        "`codex-enhancer audit <repo>` checks an installed target for generic inherited guidance after apply.",
+        "`install_enhancer.bat` opens the Windows GUI when you prefer folder picking and confirmation prompts.",
+        f"This report inspected `{target_text}`; pass another path to focus the suggestions there.",
+    ]
+
+
+def build_quickstart_report(target: Path) -> QuickstartReport:
+    resolved_target = target.resolve()
+    if resolved_target.exists():
+        doctor = build_doctor_report(resolved_target)
+    else:
+        inspection = InstallInspection(
+            target=resolved_target,
+            manifest_path=resolved_target / ".codex/enhancer/manifest.toml",
+            source_version=ENHANCER_VERSION,
+            target_version=None,
+            status="not-installed",
+            install_state=None,
+        )
+        doctor = DoctorReport(
+            target=resolved_target,
+            repo_kind="new-target",
+            source_checkout=False,
+            python_version=f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            inspection=inspection,
+            next_steps=tuple(doctor_next_steps(resolved_target, "plain-repo", inspection)),
+        )
+    return QuickstartReport(
+        target=doctor.target,
+        doctor=doctor,
+        recommended_commands=tuple(quickstart_recommended_commands(doctor)),
+        command_lanes=tuple(quickstart_command_lanes(doctor)),
+    )
 
 
 def _format_string_list(values: tuple[str, ...]) -> str:
@@ -628,6 +801,30 @@ def format_doctor_report(report: DoctorReport) -> str:
     )
     lines.append("Next steps:")
     lines.extend(f"- {step}" for step in report.next_steps)
+    return "\n".join(lines)
+
+
+def format_quickstart_report(report: QuickstartReport) -> str:
+    doctor = report.doctor
+    lines = [
+        f"Codex Enhancer quickstart for {report.target}",
+        "- Safety: read-only guide; no files were changed.",
+        f"- Detected repo kind: `{doctor.repo_kind}`",
+        f"- Install status: `{doctor.inspection.status}`",
+        "",
+        "Most useful next commands:",
+    ]
+    lines.extend(f"- `{command}`" for command in report.recommended_commands)
+    lines.extend(
+        [
+            "",
+            "How to choose:",
+            *[f"- {lane}" for lane in report.command_lanes],
+            "",
+            "Ground rule:",
+            "- Preview is the default; files are written only when you add `--write`.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -1479,12 +1676,16 @@ def plan_agents_upgrade_writes(
 def build_upgrade_plan(
     target: Path,
     *,
+    add_packs: tuple[str, ...] = (),
+    remove_packs: tuple[str, ...] = (),
+    set_packs: tuple[str, ...] | None = None,
     spec_kit_mode: str | None = None,
     spec_kit_script: str = "auto",
     spec_kit_command_surface: str = "auto",
     spec_kit_version: str | None = None,
     spec_kit_executable: str | None = None,
     utility_harness_mode: str | None = None,
+    utility_harness_install_dependencies: bool = False,
 ) -> InstallPlan:
     inspection = inspect_install(target)
     if inspection.status == "not-installed":
@@ -1511,9 +1712,12 @@ def build_upgrade_plan(
         mode=utility_harness_mode,
         existing=install_state.utility_harness,
     )
-    pack_selections = resolve_manifest_pack_selection(
+    pack_selections = resolve_managed_pack_selection(
         pack_detections,
-        selected_packs=install_state.selected_packs,
+        current_selected_packs=install_state.selected_packs,
+        add_packs=add_packs,
+        remove_packs=remove_packs,
+        set_packs=set_packs,
     )
     workflow_selections = resolve_manifest_workflow_selection(
         workflow_detections,
@@ -1635,19 +1839,11 @@ def build_upgrade_plan(
 
     gitignore = compute_gitignore_update(resolved_target)
     gitignore_plan = gitignore if gitignore.missing_lines else None
-    external_steps = (
-        tuple(
-            [
-                ExternalStep(
-                    argv=spec_kit_bridge.bootstrap_command,
-                    cwd=resolved_target,
-                    label="Bootstrap official Spec Kit",
-                    source_label="official Spec Kit bootstrap",
-                )
-            ]
-        )
-        if spec_kit_bridge.bootstrap_command
-        else ()
+    external_steps = build_external_steps(
+        resolved_target,
+        spec_kit_bridge=spec_kit_bridge,
+        utility_harness=utility_harness,
+        utility_harness_install_dependencies=utility_harness_install_dependencies,
     )
 
     return InstallPlan(
@@ -2122,6 +2318,7 @@ def build_install_plan(
     spec_kit_version: str | None = None,
     spec_kit_executable: str | None = None,
     utility_harness_mode: str | None = None,
+    utility_harness_install_dependencies: bool = False,
 ) -> InstallPlan:
     resolved_target = target.resolve()
     validate_mode(resolved_target, mode)
@@ -2264,19 +2461,11 @@ def build_install_plan(
             manifest_preview=manifest_preview,
         )
     )
-    external_steps = (
-        tuple(
-            [
-                ExternalStep(
-                    argv=spec_kit_bridge.bootstrap_command,
-                    cwd=resolved_target,
-                    label="Bootstrap official Spec Kit",
-                    source_label="official Spec Kit bootstrap",
-                )
-            ]
-        )
-        if spec_kit_bridge.bootstrap_command
-        else ()
+    external_steps = build_external_steps(
+        resolved_target,
+        spec_kit_bridge=spec_kit_bridge,
+        utility_harness=utility_harness,
+        utility_harness_install_dependencies=utility_harness_install_dependencies,
     )
     return InstallPlan(
         target=resolved_target,
@@ -2335,6 +2524,8 @@ def _resolve_external_executable(executable: str | None) -> str | None:
 
 
 def _external_step_requires_network(step: ExternalStep) -> bool:
+    if len(step.argv) >= 4 and step.argv[1:4] == ("-m", "pip", "install"):
+        return True
     return any(
         argument.startswith(("git+https://", "https://", "http://"))
         for argument in step.argv
@@ -2362,7 +2553,14 @@ def _external_step_recovery_hint(
     if not executable_found:
         if executable == "uvx":
             return "Install uv/uvx or rerun with --spec-kit-exe <path>."
+        if step.label == "Install Utility Harness dependencies":
+            return "Use a Python environment with pip available, or run the displayed pip command manually after fixing Python."
         return "Fix the executable path or rerun with --spec-kit-exe <path>."
+    if step.label == "Install Utility Harness dependencies":
+        return (
+            "Ensure the local helper environment can fetch packages, or run the displayed pip command manually "
+            "from the target repo after reviewing requirements-codex.txt."
+        )
     if requires_network:
         return "Ensure network access can fetch the pinned official Spec Kit ref before rerunning with --write."
     return "If this fails, inspect any official files it created, fix the executable or arguments, then rerun the same enhancer command."
@@ -2385,7 +2583,10 @@ def audit_external_step(step: ExternalStep) -> ExternalStepAudit:
     if not executable_found:
         warnings.append(f"executable `{executable}` is not available on this machine")
     if requires_network:
-        warnings.append("command may need network access to fetch official Spec Kit")
+        if step.label == "Install Utility Harness dependencies":
+            warnings.append("command may need network access to fetch helper packages")
+        else:
+            warnings.append("command may need network access to fetch official Spec Kit")
     return ExternalStepAudit(
         label=step.label,
         source_label=step.source_label,
@@ -2421,8 +2622,8 @@ def external_step_to_dict(step: ExternalStep) -> dict[str, object]:
         "executable_status": audit.executable_status,
         "requires_network": audit.requires_network,
         "pinned_ref": audit.pinned_ref,
-        "order": EXTERNAL_STEP_ORDER,
-        "order_note": EXTERNAL_STEP_ORDER_NOTE,
+        "order": step.order,
+        "order_note": _external_step_order_note(step),
         "warnings": list(audit.warnings),
         "recovery_hint": audit.recovery_hint,
     }
@@ -2432,16 +2633,20 @@ def format_external_step_preview_lines(step: ExternalStep) -> list[str]:
     audit = audit_external_step(step)
     lines = [
         f"- {audit.label}: `{audit.command}`",
+        f"  order: {_external_step_order_note(step)}",
         f"  cwd: `{audit.cwd}`",
         f"  executable: `{audit.executable}` {audit.executable_status}",
     ]
     if audit.pinned_ref:
         lines.append(f"  pinned ref: `{audit.pinned_ref}`")
-    lines.append(
-        "  network: required for official bootstrap source"
-        if audit.requires_network
-        else "  network: no network URL detected"
-    )
+    if audit.requires_network and step.label == "Install Utility Harness dependencies":
+        lines.append("  network: may be required for helper packages")
+    else:
+        lines.append(
+            "  network: required for official bootstrap source"
+            if audit.requires_network
+            else "  network: no network URL detected"
+        )
     for warning in audit.warnings:
         lines.append(f"  warning: {warning}")
     lines.append(f"  recovery: {audit.recovery_hint}")
@@ -2452,6 +2657,7 @@ def format_external_step_summary_lines(step: ExternalStep) -> list[str]:
     audit = audit_external_step(step)
     lines = [
         f"  - {audit.label}: `{audit.command}`",
+        f"    order: {_external_step_order_note(step)}",
         f"    executable: `{audit.executable}` {audit.executable_status}",
     ]
     if audit.pinned_ref:
@@ -2486,7 +2692,7 @@ def format_plan_lines(plan: InstallPlan) -> list[str]:
         lines.extend(utility_lines)
     if plan.external_steps:
         lines.append("External steps:")
-        lines.append(f"- Order: {EXTERNAL_STEP_ORDER_NOTE}.")
+        lines.append("- Order: each command lists whether it runs before or after enhancer-owned writes.")
         for step in plan.external_steps:
             lines.extend(format_external_step_preview_lines(step))
         lines.append("")
@@ -2553,7 +2759,12 @@ def format_pack_lines(plan: InstallPlan) -> list[str]:
     else:
         lines.append("- Manifest preview selected_packs = []")
     if plan.operation == "upgrade-enhancer":
-        lines.append("- Upgrade reconcile keeps the installed pack selection and compares tracked enhancer files against the current source.")
+        if plan_changes_stack_pack_selection(plan):
+            lines.append(
+                "- Upgrade reconcile updates the selected pack set and compares tracked enhancer files against the current source."
+            )
+        else:
+            lines.append("- Upgrade reconcile keeps the installed pack selection and compares tracked enhancer files against the current source.")
     elif plan.operation == "manage-packs":
         lines.append("- Pack management updates the selected target manifest packs, managed AGENTS section, and generated bridge or pack guidance.")
     elif plan.operation == "manage-spec-kit-bridge":
@@ -3261,6 +3472,19 @@ def doctor_to_dict(report: DoctorReport) -> dict[str, object]:
     }
 
 
+def quickstart_to_dict(report: QuickstartReport) -> dict[str, object]:
+    return {
+        "schema_version": PLAN_JSON_SCHEMA_VERSION,
+        "kind": "quickstart-report",
+        "target": str(report.target),
+        "repo_kind": report.doctor.repo_kind,
+        "install_status": report.doctor.inspection.status,
+        "recommended_commands": list(report.recommended_commands),
+        "command_lanes": list(report.command_lanes),
+        "doctor": doctor_to_dict(report.doctor),
+    }
+
+
 def adaptation_audit_to_dict(target: Path) -> dict[str, object]:
     findings = audit_adaptation(target)
     counts = adaptation_severity_counts(findings)
@@ -3318,7 +3542,7 @@ def format_plan_summary_lines(plan: InstallPlan) -> list[str]:
     if plan.utility_harness is not None:
         lines.append(f"- Utility Harness: `{plan.utility_harness.mode}` / `{plan.utility_harness.state}`")
     if plan.external_steps:
-        lines.append(f"- External steps: {len(plan.external_steps)} ({EXTERNAL_STEP_ORDER_NOTE})")
+        lines.append(f"- External steps: {len(plan.external_steps)}")
         for step in plan.external_steps:
             lines.extend(format_external_step_summary_lines(step))
     if summary.critical_proposals or summary.critical_overwrites:
@@ -3420,7 +3644,10 @@ def collect_write_safety_diagnostics(
                 severity=_blocking_or_warning(not allow_dirty),
                 code="git-status-unavailable",
                 message="Target has .git metadata, but `git` was not found; clean state cannot be verified.",
-                details=("Install Git, inspect the target manually, or rerun with --allow-dirty if this is deliberate.",),
+                details=(
+                    "Install Git, inspect the target manually, or rerun with --allow-dirty if this is deliberate.",
+                    *UNVERIFIED_GIT_STATUS_OVERRIDE_GUIDANCE,
+                ),
             )
         )
         return tuple(diagnostics)
@@ -3439,7 +3666,11 @@ def collect_write_safety_diagnostics(
                 severity=_blocking_or_warning(not allow_dirty),
                 code="git-status-unavailable",
                 message="Target has .git metadata, but `git status --short` could not run.",
-                details=(str(error), "Rerun with --allow-dirty only if applying over this state is deliberate."),
+                details=(
+                    str(error),
+                    "Rerun with --allow-dirty only if applying over this state is deliberate.",
+                    *UNVERIFIED_GIT_STATUS_OVERRIDE_GUIDANCE,
+                ),
             )
         )
         return tuple(diagnostics)
@@ -3452,7 +3683,10 @@ def collect_write_safety_diagnostics(
                     f"`git status --short` timed out after {GIT_STATUS_TIMEOUT_SECONDS} seconds; "
                     "clean state cannot be verified."
                 ),
-                details=("Run `git status --short` in the target repo, or rerun with --allow-dirty if this is deliberate.",),
+                details=(
+                    "Run `git status --short` in the target repo, or rerun with --allow-dirty if this is deliberate.",
+                    *UNVERIFIED_GIT_STATUS_OVERRIDE_GUIDANCE,
+                ),
             )
         )
         return tuple(diagnostics)
@@ -3469,7 +3703,10 @@ def collect_write_safety_diagnostics(
                 code="git-status-failed",
                 message="Target has .git metadata, but `git status --short` failed; clean state cannot be verified.",
                 details=(details or (f"git exited with code {completed.returncode}",))
-                + ("Rerun with --allow-dirty only if applying over this state is deliberate.",),
+                + (
+                    "Rerun with --allow-dirty only if applying over this state is deliberate.",
+                    *UNVERIFIED_GIT_STATUS_OVERRIDE_GUIDANCE,
+                ),
             )
         )
         return tuple(diagnostics)
@@ -3487,7 +3724,10 @@ def collect_write_safety_diagnostics(
                 "Review `git status --short` or commit/stash unrelated work first."
             ),
             details=_truncated_status_details(status_lines)
-            + ("Rerun with --allow-dirty only if applying over this state is deliberate.",),
+            + (
+                "Rerun with --allow-dirty only if applying over this state is deliberate.",
+                *DIRTY_WORKTREE_OVERRIDE_GUIDANCE,
+            ),
         )
     )
     return tuple(diagnostics)
@@ -3563,6 +3803,10 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
     proposals = [item for item in plan.writes if item.action == "proposal"]
     bridge_enabled = plan.spec_kit_bridge is not None and plan.spec_kit_bridge.enabled
     utility_enabled = plan.utility_harness is not None and plan.utility_harness.enabled
+    has_spec_bootstrap = any(step.label == "Bootstrap official Spec Kit" for step in plan.external_steps)
+    has_utility_dependency_install = any(
+        step.label == "Install Utility Harness dependencies" for step in plan.external_steps
+    )
     if plan.operation == "upgrade-enhancer":
         if not write:
             lines = [
@@ -3570,8 +3814,10 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
                 "- Re-run this command with `--upgrade-enhancer --write` when the grouped reconcile plan looks correct.",
                 "- If you only need managed outputs today, use `--refresh-generated --write` instead of a full reconcile.",
             ]
-            if plan.external_steps:
+            if has_spec_bootstrap:
                 lines.append("- Official Spec Kit bootstrap will run before enhancer writes during apply.")
+            if has_utility_dependency_install:
+                lines.append("- Utility Harness helper dependencies will install after enhancer files are written.")
             return lines
 
         lines = ["Next steps:"]
@@ -3592,6 +3838,8 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
             lines.append("- Review `docs/ai/spec-kit-bridge.md` and any installed bridge skills before feature work.")
         if utility_enabled:
             lines.append("- Review `docs/ai/utility-harness.md` before installing or running Codex helper dependencies.")
+        if has_utility_dependency_install:
+            lines.append("- Confirm the helper packages were installed into the intended local Python environment.")
         lines.append("- Run `codex-enhancer audit <target>` from an installed CLI, or `python scripts/codex_enhancer_cli.py audit <target>` from the enhancer source checkout.")
         lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
         lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
@@ -3613,8 +3861,10 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
             "Next step:",
             f"- Re-run this command with --write when the {action} looks correct.",
         ]
-        if plan.external_steps:
+        if has_spec_bootstrap:
             lines.append("- Official Spec Kit bootstrap will run before enhancer files are written.")
+        if has_utility_dependency_install:
+            lines.append("- Utility Harness helper dependencies will install after enhancer files are written.")
         return lines
 
     lines = ["Next steps:"]
@@ -3689,6 +3939,8 @@ def format_next_steps(plan: InstallPlan, write: bool) -> list[str]:
         lines.append("- Review `docs/ai/spec-kit-bridge.md` and the bridge skills before using Spec Kit-driven feature branches.")
     if utility_enabled:
         lines.append("- Review `docs/ai/utility-harness.md` and keep `requirements-codex.txt` out of production dependency flows.")
+    if has_utility_dependency_install:
+        lines.append("- Confirm the helper packages were installed into the intended local Python environment.")
     lines.append("- Run `codex-enhancer audit <target>` from an installed CLI, or `python scripts/codex_enhancer_cli.py audit <target>` from the enhancer source checkout.")
     lines.append(f"- Run `{CHECK_COMMAND}` in the target repo.")
     lines.append(f"- Run `{TEST_COMMAND}` in the target repo.")
@@ -3722,10 +3974,11 @@ def run_external_step(step: ExternalStep) -> None:
     if not step.argv:
         raise RuntimeError(f"{step.label} failed because no command was configured.")
     executable = step.argv[0]
+    timing = "before" if _external_step_runs_before_writes(step) else "after"
     if not Path(executable).exists() and shutil.which(executable) is None:
         audit = audit_external_step(step)
         raise RuntimeError(
-            f"{step.label} failed before enhancer-owned files were written because `{executable}` was not found.\n"
+            f"{step.label} failed {timing} enhancer-owned files were written because `{executable}` was not found.\n"
             f"Command: `{audit.command}`\n"
             f"Working directory: `{audit.cwd}`\n"
             f"Recovery: {audit.recovery_hint}"
@@ -3742,7 +3995,7 @@ def run_external_step(step: ExternalStep) -> None:
     except FileNotFoundError as error:
         audit = audit_external_step(step)
         raise RuntimeError(
-            f"{step.label} failed before enhancer-owned files were written because `{executable}` was not found.\n"
+            f"{step.label} failed {timing} enhancer-owned files were written because `{executable}` was not found.\n"
             f"Command: `{audit.command}`\n"
             f"Working directory: `{audit.cwd}`\n"
             f"Recovery: {audit.recovery_hint}"
@@ -3761,11 +4014,12 @@ def run_external_step(step: ExternalStep) -> None:
 
     output_parts = [part.strip() for part in (completed.stdout, completed.stderr) if part.strip()]
     details = "\n".join(output_parts)
-    recovery = (
-        "Recovery: inspect the target for any files written by the external tool, fix the bootstrap problem, "
-        "then rerun the same enhancer command. Enhancer-owned files are written only after external steps succeed."
-    )
     audit = audit_external_step(step)
+    recovery = f"Recovery: {audit.recovery_hint}"
+    if _external_step_runs_before_writes(step):
+        recovery += " Enhancer-owned files are written only after this step succeeds."
+    else:
+        recovery += " Enhancer-owned files may already have been written; rerun the displayed command manually if needed."
     if details:
         raise RuntimeError(
             f"{step.label} failed.\n"
@@ -3853,7 +4107,14 @@ def apply_install_plan(
         )
 
     plan.target.mkdir(parents=True, exist_ok=True)
-    for external_step in plan.external_steps:
+    pre_write_steps = tuple(
+        step for step in plan.external_steps if _external_step_runs_before_writes(step)
+    )
+    post_write_steps = tuple(
+        step for step in plan.external_steps if not _external_step_runs_before_writes(step)
+    )
+
+    for external_step in pre_write_steps:
         run_external_step(external_step)
         current_step += 1
         if progress_callback:
@@ -3906,12 +4167,19 @@ def apply_install_plan(
             )
             progress_callback(current_step, total_steps, message)
 
+    for external_step in post_write_steps:
+        run_external_step(external_step)
+        current_step += 1
+        if progress_callback:
+            progress_callback(current_step, total_steps, external_step.label)
+
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__,
         epilog=(
             "Common previews:\n"
+            "  python scripts/install_enhancer.py --quickstart --target ../repo\n"
             "  python scripts/install_enhancer.py --doctor --target ../repo\n"
             "  python scripts/install_enhancer.py --target ../repo --mode existing --summary\n"
             "  python scripts/install_enhancer.py --target ../repo --mode existing --summary --diff\n"
@@ -3938,6 +4206,11 @@ def main(argv: list[str]) -> int:
         "--doctor",
         action="store_true",
         help="run a read-only first-run diagnostic for a source checkout, installed target, or plain repo",
+    )
+    parser.add_argument(
+        "--quickstart",
+        action="store_true",
+        help="print a concise read-only getting-started guide for the selected path",
     )
     parser.add_argument(
         "--inspect-install",
@@ -4046,7 +4319,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--allow-dirty",
         action="store_true",
-        help="allow --write when git status is dirty or cannot verify a clean target worktree",
+        help="allow --write over unrelated local target changes after reviewing the plan",
     )
     parser.add_argument(
         "--allow-source-target",
@@ -4074,19 +4347,19 @@ def main(argv: list[str]) -> int:
         "--add-pack",
         action="append",
         default=[],
-        help="add a stack pack to an existing installed manifest; repeatable and requires --manage-packs",
+        help="add a stack pack to an existing installed manifest; repeatable with --manage-packs or --upgrade-enhancer",
     )
     parser.add_argument(
         "--remove-pack",
         action="append",
         default=[],
-        help="remove a stack pack from an existing installed manifest; repeatable and requires --manage-packs",
+        help="remove a stack pack from an existing installed manifest; repeatable with --manage-packs or --upgrade-enhancer",
     )
     parser.add_argument(
         "--set-pack",
         action="append",
         default=[],
-        help="replace the installed stack-pack selection with this exact pack set; repeatable and requires --manage-packs",
+        help="replace the installed stack-pack selection with this exact pack set; repeatable with --manage-packs or --upgrade-enhancer",
     )
     parser.add_argument(
         "--add-workflow",
@@ -4135,6 +4408,14 @@ def main(argv: list[str]) -> int:
         "--utility-harness-mode",
         choices=("off", "install"),
         help="install or disable the optional Codex Utility Harness helper files",
+    )
+    parser.add_argument(
+        "--install-utility-harness-dependencies",
+        action="store_true",
+        help=(
+            "after writing Utility Harness files, run python -m pip install -r requirements-codex.txt "
+            "in the target repo"
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -4196,6 +4477,56 @@ def main(argv: list[str]) -> int:
 
     if args.doctor:
         if (
+            args.quickstart
+            or args.list_packs
+            or args.list_workflows
+            or args.inspect_install
+            or args.audit_adaptation
+            or args.spec_kit_report
+            or args.spec_kit_sync_report
+            or args.upgrade_enhancer
+            or args.manage_packs
+            or args.manage_workflows
+            or args.manage_spec_kit_bridge
+            or args.write
+            or args.force
+            or args.allow_dirty
+            or args.allow_source_target
+            or args.refresh_generated
+            or args.mode != "auto"
+            or args.use_recommended_packs
+            or args.pack
+            or args.no_pack
+            or args.add_pack
+            or args.remove_pack
+            or args.set_pack
+            or args.add_workflow
+            or args.remove_workflow
+            or args.set_workflow
+            or args.spec_kit_mode
+            or args.spec_kit_script != "auto"
+            or args.spec_kit_command_surface != "auto"
+            or args.spec_kit_version
+            or args.spec_kit_exe
+            or args.spec_kit_feature
+            or args.spec_kit_changed_path
+            or args.spec_kit_base
+            or args.utility_harness_mode
+            or args.install_utility_harness_dependencies
+            or args.summary
+            or args.diff
+            or args.diff_full
+        ):
+            return fail("--doctor is read-only and can only be combined with --target and --json.")
+        try:
+            report = build_doctor_report(Path(args.target or "."))
+        except ValueError as error:
+            return fail(str(error))
+        emit(format_doctor_report(report), doctor_to_dict(report))
+        return 0
+
+    if args.quickstart:
+        if (
             args.list_packs
             or args.list_workflows
             or args.inspect_install
@@ -4230,16 +4561,17 @@ def main(argv: list[str]) -> int:
             or args.spec_kit_changed_path
             or args.spec_kit_base
             or args.utility_harness_mode
+            or args.install_utility_harness_dependencies
             or args.summary
             or args.diff
             or args.diff_full
         ):
-            return fail("--doctor is read-only and can only be combined with --target and --json.")
+            return fail("--quickstart is read-only and can only be combined with --target and --json.")
         try:
-            report = build_doctor_report(Path(args.target or "."))
+            report = build_quickstart_report(Path(args.target or "."))
         except ValueError as error:
             return fail(str(error))
-        emit(format_doctor_report(report), doctor_to_dict(report))
+        emit(format_quickstart_report(report), quickstart_to_dict(report))
         return 0
 
     if args.list_packs and args.target is None:
@@ -4258,7 +4590,7 @@ def main(argv: list[str]) -> int:
 
     if args.target is None:
         return fail(
-            "Missing required --target. Use --doctor for a read-only check of the current directory, "
+            "Missing required --target. Use --quickstart or --doctor for a read-only check of the current directory, "
             "--list-packs to inspect available stack packs, or --list-workflows to inspect workflow packs without a target repo."
         )
 
@@ -4322,6 +4654,7 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_version
         or args.spec_kit_exe
         or args.utility_harness_mode
+        or args.install_utility_harness_dependencies
         or args.summary
         or args.diff
         or args.diff_full
@@ -4373,6 +4706,7 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_version
         or args.spec_kit_exe
         or args.utility_harness_mode
+        or args.install_utility_harness_dependencies
         or args.summary
         or args.diff
         or args.diff_full
@@ -4418,6 +4752,7 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_changed_path
         or args.spec_kit_base
         or args.utility_harness_mode
+        or args.install_utility_harness_dependencies
         or args.summary
         or args.diff
         or args.diff_full
@@ -4441,14 +4776,11 @@ def main(argv: list[str]) -> int:
         or args.use_recommended_packs
         or args.pack
         or args.no_pack
-        or args.add_pack
-        or args.remove_pack
-        or args.set_pack
         or args.add_workflow
         or args.remove_workflow
         or args.set_workflow
     ):
-        return fail("--upgrade-enhancer keeps the installed pack and workflow selection and cannot be combined with refresh, force, or selection flags.")
+        return fail("--upgrade-enhancer cannot be combined with refresh, force, install-time pack selection, or workflow-selection flags.")
 
     if args.upgrade_enhancer:
         if args.mode == "new":
@@ -4462,6 +4794,10 @@ def main(argv: list[str]) -> int:
                 spec_kit_version=args.spec_kit_version,
                 spec_kit_executable=args.spec_kit_exe,
                 utility_harness_mode=args.utility_harness_mode,
+                add_packs=tuple(args.add_pack),
+                remove_packs=tuple(args.remove_pack),
+                set_packs=tuple(args.set_pack) if args.set_pack else None,
+                utility_harness_install_dependencies=args.install_utility_harness_dependencies,
             )
         except ValueError as error:
             return fail(str(error))
@@ -4482,6 +4818,7 @@ def main(argv: list[str]) -> int:
         or args.remove_workflow
         or args.set_workflow
         or args.utility_harness_mode
+        or args.install_utility_harness_dependencies
     ):
         return fail("--manage-spec-kit-bridge updates bridge state and cannot be combined with force, refresh, Utility Harness, or selection flags.")
 
@@ -4502,8 +4839,10 @@ def main(argv: list[str]) -> int:
             return fail(str(error))
         return emit_plan_and_apply(plan)
 
-    if (args.add_pack or args.remove_pack or args.set_pack) and not args.manage_packs:
-        return fail("--add-pack, --remove-pack, and --set-pack require --manage-packs.")
+    if (args.add_pack or args.remove_pack or args.set_pack) and not (
+        args.manage_packs or args.upgrade_enhancer
+    ):
+        return fail("--add-pack, --remove-pack, and --set-pack require --manage-packs or --upgrade-enhancer.")
 
     if (args.add_workflow or args.remove_workflow or args.set_workflow) and not args.manage_workflows:
         return fail("--add-workflow, --remove-workflow, and --set-workflow require --manage-workflows.")
@@ -4522,6 +4861,7 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_version
         or args.spec_kit_exe
         or args.utility_harness_mode
+        or args.install_utility_harness_dependencies
         or args.add_workflow
         or args.remove_workflow
         or args.set_workflow
@@ -4559,6 +4899,7 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_version
         or args.spec_kit_exe
         or args.utility_harness_mode
+        or args.install_utility_harness_dependencies
     ):
         return fail("--manage-workflows updates installed workflow selection and cannot be combined with pack, Spec Kit, Utility Harness, or install-time selection flags.")
 
@@ -4601,6 +4942,7 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_version
         or args.spec_kit_exe
         or args.utility_harness_mode
+        or args.install_utility_harness_dependencies
     ):
         return fail(
             "--refresh-generated uses the target repo's existing manifest selection and bridge state; "
@@ -4623,6 +4965,7 @@ def main(argv: list[str]) -> int:
             spec_kit_version=args.spec_kit_version,
             spec_kit_executable=args.spec_kit_exe,
             utility_harness_mode=args.utility_harness_mode,
+            utility_harness_install_dependencies=args.install_utility_harness_dependencies,
         )
     except ValueError as error:
         return fail(str(error))

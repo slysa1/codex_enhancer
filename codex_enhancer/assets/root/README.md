@@ -18,18 +18,19 @@ Choose one command lane first:
 
 | Starting point | First read-only command | Then |
 | --- | --- | --- |
-| Fresh clone, no install yet | `python scripts/codex_enhancer_cli.py doctor .` | Run `python scripts/check.py`, then preview a target repo with `python scripts/codex_enhancer_cli.py init ../target-repo --existing --summary --diff`. |
-| Editable local CLI | `python -m pip install -e . --no-deps` | Run `codex-enhancer doctor .`, then `codex-enhancer init ../target-repo --existing --summary --diff`. |
-| Built artifact handed to you | `python -m pip install <wheel-or-sdist>` | Run `codex-enhancer list-packs` and `codex-enhancer list-workflows`, then preview a target repo before using `--write`. |
+| Fresh clone, no install yet | `python scripts/codex_enhancer_cli.py quickstart` | Run `python scripts/check.py`, then preview a target repo with `python scripts/codex_enhancer_cli.py init ../target-repo --existing --summary --diff`. |
+| Editable local CLI | `codex-enhancer quickstart` | Run `codex-enhancer doctor .`, then `codex-enhancer init ../target-repo --existing --summary --diff`. |
+| Built artifact handed to you | `codex-enhancer quickstart` | Run `codex-enhancer list-packs` and `codex-enhancer list-workflows`, then preview a target repo before using `--write`. |
 | Windows GUI | `install_enhancer.bat` | Pick a target folder, review the planned creates/proposals/overwrites, then apply only after the preview makes sense. |
 
 First successful target-repo workflow:
-1. Orient: run `doctor` on the enhancer checkout and on the target repo so you know whether each path is a source checkout, installed target, or plain repo.
-2. Preview: run `init ../target-repo --existing --summary --diff`. Preview is the default; `--dry-run` is accepted when you want to say that explicitly.
-3. Inspect detail only when needed: add `--diff-full` for untruncated large diffs or remove `--summary` for the full human preview.
-4. Apply only after review: rerun with `--write`. If the target repo already has local git changes or looks like the enhancer source checkout, apply is blocked before any files are touched unless you explicitly pass the relevant override.
-5. Adapt: run `audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
-6. Validate in the target repo with the commands shown in its generated `AGENTS.md` and `docs/ai/`.
+1. Quickstart: run `quickstart` when you want the shortest safe path for the repo you are looking at.
+2. Orient: run `doctor` on the enhancer checkout and on the target repo so you know whether each path is a source checkout, installed target, or plain repo.
+3. Preview: run `init ../target-repo --existing --summary --diff`. Preview is the default; `--dry-run` is accepted when you want to say that explicitly.
+4. Inspect detail only when needed: add `--diff-full` for untruncated large diffs or remove `--summary` for the full human preview.
+5. Apply only after review: rerun with `--write`. If the target repo already has local git changes or looks like the enhancer source checkout, apply is blocked before any files are touched unless you explicitly pass the relevant override. The dirty-worktree override is for unrelated local work after preview review; pushed commits are not required.
+6. Adapt: run `audit ../target-repo` and replace inherited generic guidance with the target repo's real commands, layout, and validation rules.
+7. Validate in the target repo with the commands shown in its generated `AGENTS.md` and `docs/ai/`.
 
 Concrete before/after workflow:
 - Before: a small existing repo has a `README.md` and real test command, but no `AGENTS.md`, no durable Codex review rules, and no checked-in validation habit. Each Codex session needs repeated instructions such as "inspect first", "use this test command", and "summarize risks".
@@ -87,7 +88,7 @@ Do not use it if you want a packaged agent runtime, hidden orchestration layer, 
 
 Support policy: package metadata requires Python `>=3.13`, and CI proves Python 3.13 on Ubuntu, Windows, and macOS. Do not claim older Python support until the CI matrix tests it.
 
-The current source-repo implementation has no runtime third-party Python dependencies. The optional Utility Harness can scaffold a target-repo `requirements-codex.txt` for Codex/operator helper tooling, but the installer never installs those packages automatically.
+The current source-repo implementation has no runtime third-party Python dependencies. The optional Utility Harness can scaffold a target-repo `requirements-codex.txt` for Codex/operator helper tooling, and it can explicitly run `python -m pip install -r requirements-codex.txt` after writing those helper files when the operator selects that dependency-install option.
 
 Spec Kit bootstrap is the only normal path that expects an external executable. `--with-spec-kit` or `--spec-kit-mode bootstrap` uses `uvx` by default and pins the official bootstrap ref used by this enhancer release. Use `--spec-kit-exe <path>` when you already have a local `specify`-compatible executable or want to avoid `uvx`. Previews show the exact bootstrap command, executable status, pinned ref, network warning, and recovery hint before any `--write` apply.
 
@@ -109,6 +110,7 @@ To expose the friendly CLI command from this source checkout, use an editable in
 
 ```bash
 python -m pip install -e . --no-deps
+codex-enhancer quickstart
 codex-enhancer doctor .
 codex-enhancer list-packs
 codex-enhancer init ../my-new-repo --new --with-spec-kit --utility-harness
@@ -123,7 +125,7 @@ codex-enhancer list-packs
 codex-enhancer list-workflows
 ```
 
-The wheel and source distribution include package-owned copies of the scaffold and stack-pack assets so the installed `codex-enhancer` command can plan installs without a source checkout. Packaging still does not vendor Spec Kit, install Utility Harness helper packages, publish releases, or download target-repo dependencies automatically. See [docs/ai/release.md](docs/ai/release.md) before building or publishing release artifacts.
+The wheel and source distribution include package-owned copies of the scaffold and stack-pack assets so the installed `codex-enhancer` command can plan installs without a source checkout. Packaging still does not vendor Spec Kit, install Utility Harness helper packages by default, publish releases, or download target-repo dependencies automatically. See [docs/ai/release.md](docs/ai/release.md) before building or publishing release artifacts.
 
 This source checkout may contain official Spec Kit files such as `.specify/`, `.github/prompts/`, and `.github/agents/` for developing the enhancer itself. Those files are not part of the enhancer scaffold copied into target repos; the package only plans or runs official Spec Kit bootstrap when you choose that option.
 
@@ -144,9 +146,10 @@ The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gu
 - review detected stack packs and adjust the selected set before install
 - manage stack packs later without reinstalling the scaffold
 - review available workflow packs and manage selected workflows later without reinstalling the scaffold
-- review stack packs from the existing target manifest during upgrade and refresh
+- adjust stack packs from the existing target manifest during upgrade, and review them as read-only context during refresh
 - preview bridge mode, bridge command surface, and any official bootstrap command before apply
 - choose whether to install the optional Codex Utility Harness helper files
+- choose whether to install Utility Harness helper dependencies after the helper files are written
 - review which files will be created, proposed, or overwritten, with critical conflicts called out separately
 - confirm overwrite actions before install
 - watch installation progress
@@ -159,6 +162,7 @@ CLI dry-runs now preview the same pack-aware "after install" guidance that the G
 For a shorter command surface from a source checkout, use [scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py), or put this checkout on `PATH` and run the [codex-enhancer](codex-enhancer) shim. On POSIX systems, run `python codex-enhancer ...` if your checkout did not preserve the shim's executable bit. On Windows, [codex-enhancer.bat](codex-enhancer.bat) exposes the same subcommands:
 
 ```bash
+python scripts/codex_enhancer_cli.py quickstart
 python scripts/codex_enhancer_cli.py list-packs
 python scripts/codex_enhancer_cli.py list-workflows
 python scripts/codex_enhancer_cli.py doctor .
@@ -173,17 +177,18 @@ python scripts/codex_enhancer_cli.py spec-sync ../my-existing-repo --feature 001
 python scripts/codex_enhancer_cli.py bridge ../my-existing-repo --attach-spec-kit
 ```
 
-The facade only translates friendly verbs such as `doctor`, `init`, `install`, `inspect`, `audit`, `packs`, `workflows`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager, workflow runner, or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
+The facade only translates friendly verbs such as `quickstart`, `doctor`, `init`, `install`, `inspect`, `audit`, `packs`, `workflows`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager, workflow runner, or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
 
 Use `--with-spec-kit` when you want Codex Enhancer to bootstrap official Spec Kit for Codex and install the bridge skills/guidance in the same flow. The preview shows the official bootstrap command first, including the executable check, pinned ref, network note, and recovery hint; the external Spec Kit download/setup only runs if you re-run with `--write`.
 
 Useful preview formats:
+- `quickstart <repo>` or `--quickstart --target <repo>` prints the shortest safe command path for a source checkout, installed target, plain repo, or new target path.
 - `doctor <repo>` or `--doctor --target <repo>` runs a read-only first-run diagnostic and prints the next useful commands for a source checkout, installed target, or plain repo.
 - `--summary` prints the shortest install, upgrade, refresh, pack, or bridge plan, including exact external bootstrap commands when any are planned.
 - `--dry-run` makes the default preview behavior explicit for scripts and cautious first runs.
 - `--diff` adds a unified diff preview for planned text writes, proposals, managed-section refreshes, and `.gitignore` merges. Large per-file diffs are truncated by default; use `--diff-full` when you need the entire diff.
 - `--json` emits a versioned machine-readable plan or report for wrappers and CI.
-- `--write` checks the target repo's own git worktree first and blocks when `git status --short` already reports local changes or when clean state cannot be verified; use `--allow-dirty` only when applying over that state is deliberate.
+- `--write` checks the target repo's own git worktree first and blocks when `git status --short` already reports local changes or when clean state cannot be verified. Use `--allow-dirty` only when local changes are unrelated to planned writes; do not override when changes touch `AGENTS.md`, `docs/ai/`, `.codex/enhancer/`, `.codex/skills/`, `.gitignore`, or paths listed in the preview. This guard does not require local commits to be pushed.
 - `--write` also blocks when the target looks like the Codex Enhancer source checkout; use `--allow-source-target` only when that unusual target is deliberate.
 - If an apply fails while writing files, the error names the failed path, lists enhancer-owned paths likely touched in that run, and gives recovery steps.
 - `audit <repo>` or `--audit-adaptation` checks an installed target for inherited generic guidance, placeholders, and unmerged proposal files, then reports an adaptation status and severity summary.
@@ -380,7 +385,7 @@ Apply it after reviewing the plan:
 python scripts/install_enhancer.py --target ../my-existing-repo --mode existing --utility-harness-mode install --write
 ```
 
-The harness does not install dependencies, run in the background, index the repo, or add production dependencies. Install helper dependencies manually in a local helper environment and keep them out of runtime, test, and deployment dependency flows. Use `requirements-codex-minimal.txt`, `requirements-codex-readers.txt`, `requirements-codex-analysis.txt`, or `requirements-codex-cli.txt` when you only need one helper group; use `requirements-codex.txt` for the all-in bundle. The resolved state is recorded under `[integrations.utility_harness]` in `.codex/enhancer/manifest.toml`.
+The harness does not install dependencies by default, run in the background, index the repo, or add production dependencies. Install helper dependencies only in a local Codex/operator helper environment and keep them out of runtime, test, and deployment dependency flows. Use `requirements-codex-minimal.txt`, `requirements-codex-readers.txt`, `requirements-codex-analysis.txt`, or `requirements-codex-cli.txt` when you only need one helper group; use `requirements-codex.txt` for the all-in bundle. The installer can run the all-in helper install explicitly with `--install-utility-harness-dependencies`, and the GUI exposes the same checkbox under Utility Harness. The resolved state is recorded under `[integrations.utility_harness]` in `.codex/enhancer/manifest.toml`.
 
 For an existing repo with conflicting files:
 - by default, conflicting files are written as proposals under `.codex/enhancer-proposals/`
@@ -394,14 +399,14 @@ For stack-pack selection:
 - `--no-pack <name>` explicitly skips a pack, including a recommended one
 - conflicting `--pack` and `--no-pack` selections for the same name are rejected
 - `--manage-packs` changes selected packs in an already-installed repo without reinstalling the scaffold
-- `--add-pack <name>` and `--remove-pack <name>` apply pack-selection deltas and require `--manage-packs`
+- `--add-pack <name>` and `--remove-pack <name>` apply pack-selection deltas and require `--manage-packs` or `--upgrade-enhancer`
 - `--set-pack <name>` replaces the installed pack set exactly and cannot be combined with `--add-pack` or `--remove-pack`
 - `--refresh-generated` re-renders only enhancer-managed outputs using the target repo's existing `.codex/enhancer/manifest.toml`
 - `--refresh-generated` rejects `--force` and pack-selection flags so the refresh stays aligned with the installed manifest
 - `--inspect-install` reports source-vs-target enhancer version, selected packs, and managed-output ownership without planning writes
-- `--upgrade-enhancer` previews grouped reconcile drift for an existing install, and `--upgrade-enhancer --write` applies that reconcile plan
+- `--upgrade-enhancer` previews grouped reconcile drift for an existing install, and can combine with `--add-pack`, `--remove-pack`, or `--set-pack` when stack-pack selection should change during the same reconcile
 
-The CLI and GUI now share the same pack-selection core. The GUI starts with recommended detected packs selected and lets you adjust that set before install. In manage-packs mode, it reads the target repo's existing `.codex/enhancer/manifest.toml`, lets you toggle the selected set, and updates only the managed `AGENTS.md` stack-pack section plus generated pack outputs. In upgrade and refresh mode, the GUI shows the current selected packs as read-only context and keeps that manifest selection fixed while it previews the reconcile or refresh.
+The CLI and GUI now share the same pack-selection core. The GUI starts with recommended detected packs selected and lets you adjust that set before install. In manage-packs mode, it reads the target repo's existing `.codex/enhancer/manifest.toml`, lets you toggle the selected set, and updates only the managed `AGENTS.md` stack-pack section plus generated pack outputs. In upgrade mode, the GUI starts from the target manifest and lets you add or remove stack packs while it previews the reconcile. In refresh mode, the GUI shows the current selected packs as read-only context and keeps that manifest selection fixed.
 
 Pack interaction rules stay deliberately simple:
 - `javascript-typescript-app` can compose with `frontend-ui`, `node-api-service`, or `library-package` when the target repo shows evidence for both.
@@ -552,10 +557,10 @@ Re-run the same command with `--write` when the grouped reconcile plan looks cor
 - refresh the managed selected-stack-pack section and managed Spec Kit bridge section in `AGENTS.md` in place when the markers are valid
 - write repo-owned scaffold drift under `.codex/enhancer-proposals/` for manual review and merge
 - preserve existing proposal files by choosing a unique proposal filename when a proposed path already exists
-- preserve the installed pack selection from the target manifest
+- preserve the installed pack selection from the target manifest unless you explicitly pass `--add-pack`, `--remove-pack`, or `--set-pack`
 - preserve the installed Spec Kit bridge state from the target manifest unless you explicitly pass new `--spec-kit-*` overrides
 - preserve the installed Utility Harness state unless you explicitly pass `--utility-harness-mode install` or `--utility-harness-mode off`
-- leave pack selection changes to `--manage-packs` instead of silently changing them during upgrade
+- apply explicit upgrade-time stack-pack changes through the same managed-section and generated-output planner used by `--manage-packs`
 
 Use pack management instead when you need to:
 - add or remove selected packs
@@ -667,6 +672,7 @@ python scripts/install_enhancer.py --list-packs
 python scripts/codex_enhancer_cli.py list-packs
 python scripts/install_enhancer.py --list-workflows
 python scripts/codex_enhancer_cli.py list-workflows
+python scripts/codex_enhancer_cli.py quickstart
 python scripts/codex_enhancer_cli.py doctor .
 python scripts/install_enhancer.py --target ../my-existing-repo --inspect-install
 python scripts/codex_enhancer_cli.py inspect ../my-existing-repo
@@ -695,6 +701,7 @@ What they do:
 - `python scripts/check.py --verbose`: prints each successful check
 - `python -m unittest discover -s tests -p "test_*.py" -v`: tests the validator itself
 - `python scripts/codex_enhancer_cli.py ...`: provides short subcommands over the same installer core
+- `python scripts/codex_enhancer_cli.py quickstart ...`: prints the shortest safe command path for the repo you point at
 - `python scripts/install_enhancer.py --list-packs`: prints the available stack packs
 - `python scripts/install_enhancer.py --list-workflows`: prints the available workflow packs
 - `python scripts/codex_enhancer_cli.py doctor ...`: reports whether a path looks like the enhancer source checkout, an installed target, or a plain repo, then prints the next useful commands
@@ -855,7 +862,7 @@ If you change the canonical commands:
 When reviewing lifecycle behavior or upgrading an existing target repo:
 1. Read [docs/ai/migration-v3.md](docs/ai/migration-v3.md).
 2. Use `--inspect-install` before planning upgrade or reconcile work.
-3. Keep pack changes separate from upgrade by using `--manage-packs`.
+3. Use `--add-pack`, `--remove-pack`, or `--set-pack` with upgrade when stack-pack selection should change during reconcile; use `--manage-packs` for a pack-only update.
 4. Keep Spec Kit bridge mode changes separate from upgrade by using `--manage-spec-kit-bridge`.
 5. Review `.codex/enhancer-proposals/` before manually merging repo-owned scaffold drift.
 6. Run the target repo's enhancer validation commands after the upgrade.

@@ -12,7 +12,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts import install_enhancer
+from scripts import install_enhancer, install_enhancer_gui
 from scripts.install_enhancer import (
     apply_install_plan,
     audit_adaptation,
@@ -29,8 +29,11 @@ from scripts.install_enhancer import (
     proposal_paths,
 )
 from scripts.install_enhancer_gui import (
+    DIRTY_TARGET_GUI_HELP,
+    PACK_MOUSEWHEEL_PIXELS,
     PACK_VIEWPORT_HEIGHT,
     WINDOW_MAX_HEIGHT,
+    InstallerApp,
     build_completion_message,
     build_plan_preview,
     compute_window_geometry,
@@ -56,6 +59,68 @@ def write_file(root: Path, relative_path: str, content: str) -> None:
     path = root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
+
+
+class FakeTkVar:
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def get(self) -> object:
+        return self.value
+
+
+class FakeStringVar:
+    def __init__(self) -> None:
+        self.value = ""
+
+    def set(self, value: str) -> None:
+        self.value = value
+
+
+class FakeProgress:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def configure(self, **kwargs: object) -> None:
+        self.calls.append(kwargs)
+
+
+class FakeRoot:
+    def update_idletasks(self) -> None:
+        return None
+
+
+class FakePackCanvas:
+    def __init__(self) -> None:
+        self.fraction = 0.0
+        self.moves: list[float] = []
+
+    def bbox(self, _tag: str) -> tuple[int, int, int, int]:
+        return (0, 0, 100, 1000)
+
+    def winfo_height(self) -> int:
+        return PACK_VIEWPORT_HEIGHT
+
+    def yview(self) -> tuple[float, float]:
+        return (self.fraction, min(self.fraction + (PACK_VIEWPORT_HEIGHT / 1000), 1.0))
+
+    def yview_moveto(self, fraction: float) -> None:
+        self.fraction = fraction
+        self.moves.append(fraction)
+
+
+class FakeBindableWidget:
+    def __init__(self) -> None:
+        self.bindings: list[tuple[str, str | None]] = []
+
+    def bind(self, sequence: str, _callback: object, add: str | None = None) -> None:
+        self.bindings.append((sequence, add))
+
+
+class FakeWheelEvent:
+    def __init__(self, *, delta: int = 0, num: int = 0) -> None:
+        self.delta = delta
+        self.num = num
 
 
 @contextmanager
@@ -95,6 +160,32 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertLess(PACK_VIEWPORT_HEIGHT, height)
         self.assertGreaterEqual(x, 0)
         self.assertGreaterEqual(y, 0)
+
+    def test_gui_binds_pack_scroll_to_full_surface(self) -> None:
+        app = InstallerApp.__new__(InstallerApp)
+        app.pack_viewport = FakeBindableWidget()
+        app.pack_canvas = FakeBindableWidget()
+        app.pack_container = FakeBindableWidget()
+
+        InstallerApp._bind_pack_scroll_surface(app)
+
+        expected = [
+            ("<MouseWheel>", "+"),
+            ("<Button-4>", "+"),
+            ("<Button-5>", "+"),
+        ]
+        self.assertEqual(app.pack_viewport.bindings, expected)
+        self.assertEqual(app.pack_canvas.bindings, expected)
+        self.assertEqual(app.pack_container.bindings, expected)
+
+    def test_gui_pack_mousewheel_scrolls_by_pixels(self) -> None:
+        app = InstallerApp.__new__(InstallerApp)
+        app.pack_canvas = FakePackCanvas()
+
+        result = InstallerApp._on_pack_mousewheel(app, FakeWheelEvent(delta=-120))
+
+        self.assertEqual(result, "break")
+        self.assertAlmostEqual(app.pack_canvas.moves[-1], PACK_MOUSEWHEEL_PIXELS / 1000)
 
     def test_file_target_is_rejected(self) -> None:
         with repo_fixture("install_file_target") as parent:
@@ -153,6 +244,59 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("codex-enhancer init", output)
             self.assertIn("--existing --summary", output)
             self.assertFalse((install_target / ".codex/enhancer/manifest.toml").exists())
+
+    def test_quickstart_reports_plain_repo_command_path(self) -> None:
+        with repo_fixture("quickstart_plain") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(["--target", str(install_target), "--quickstart"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Codex Enhancer quickstart for", output)
+            self.assertIn("Safety: read-only guide", output)
+            self.assertIn("Detected repo kind: `plain-repo`", output)
+            self.assertIn("Most useful next commands:", output)
+            self.assertIn("codex-enhancer init", output)
+            self.assertIn("--existing --summary --diff", output)
+            self.assertIn("Preview is the default", output)
+            self.assertFalse((install_target / ".codex/enhancer/manifest.toml").exists())
+
+    def test_quickstart_handles_new_target_path(self) -> None:
+        with repo_fixture("quickstart_new_parent") as parent:
+            install_target = parent / "new-repo"
+
+            exit_code, output = run_installer(["--target", str(install_target), "--quickstart"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Detected repo kind: `new-target`", output)
+            self.assertIn("--new --summary --diff", output)
+            self.assertFalse(install_target.exists())
+
+    def test_quickstart_json_reports_recommended_commands(self) -> None:
+        with repo_fixture("quickstart_json") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--quickstart", "--json"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["kind"], "quickstart-report")
+            self.assertEqual(payload["repo_kind"], "plain-repo")
+            self.assertEqual(payload["doctor"]["kind"], "doctor-report")
+            self.assertTrue(any("codex-enhancer init" in item for item in payload["recommended_commands"]))
+
+    def test_quickstart_rejects_write_flags(self) -> None:
+        with repo_fixture("quickstart_invalid") as install_target:
+            write_file(install_target, "README.md", "# Demo\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--quickstart", "--write"]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("--quickstart is read-only", output)
 
     def test_doctor_reports_source_checkout_validation_path(self) -> None:
         with repo_fixture("doctor_source") as install_target:
@@ -754,6 +898,59 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Upgrade reconcile keeps the installed pack selection", output)
             self.assertIn("`--upgrade-enhancer --write`", output)
 
+    def test_upgrade_enhancer_can_update_stack_pack_selection(self) -> None:
+        with repo_fixture("upgrade_pack_selection") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            exit_code, output = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--upgrade-enhancer",
+                    "--add-pack",
+                    "python-service",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("python-service: added by --add-pack", output)
+            self.assertIn("Upgrade reconcile updates the selected pack set", output)
+            self.assertIn(
+                'Manifest preview selected_packs = ["javascript-typescript-app", "python-service"]',
+                output,
+            )
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--upgrade-enhancer",
+                    "--add-pack",
+                    "python-service",
+                    "--write",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            agents = (install_target / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn('selected_packs = ["javascript-typescript-app", "python-service"]', manifest)
+            self.assertIn("Selected packs: `javascript-typescript-app`, `python-service`", agents)
+
     def test_upgrade_enhancer_write_is_noop_for_current_install(self) -> None:
         with repo_fixture("upgrade_apply_current") as install_target:
             write_file(install_target, "package.json", '{"name": "demo"}\n')
@@ -1069,8 +1266,11 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Target git worktree already has 1 local change(s)", output)
             self.assertIn("Review `git status --short`", output)
             self.assertIn("--allow-dirty", output)
+            self.assertIn("Do not override if any listed local change touches those paths", output)
+            self.assertIn("pushed commits are not required", output)
             self.assertIn("?? README.md", output)
             self.assertFalse((install_target / "AGENTS.md").exists())
+            self.assertIn("paths listed in the preview", DIRTY_TARGET_GUI_HELP)
 
     def test_write_plan_allows_dirty_target_with_explicit_override(self) -> None:
         with repo_fixture("write_safety_allow_dirty") as install_target:
@@ -1104,6 +1304,29 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("Write safety:", output)
             self.assertIn("warning: Target git worktree already has 1 local change(s)", output)
             self.assertTrue((install_target / "AGENTS.md").exists())
+
+    def test_gui_install_passes_dirty_override_to_apply(self) -> None:
+        with repo_fixture("gui_write_safety_allow_dirty") as install_target:
+            plan = build_install_plan(install_target, mode="new")
+            app = InstallerApp.__new__(InstallerApp)
+            app.current_plan = plan
+            app.confirm_overwrite_var = FakeTkVar(True)
+            app.allow_dirty_var = FakeTkVar(True)
+            app.status_var = FakeStringVar()
+            app.progress = FakeProgress()
+            app.root = FakeRoot()
+            app._set_busy = lambda _busy: None
+            app._set_preview_text = lambda _text: None
+
+            with (
+                patch.object(install_enhancer_gui, "apply_install_plan") as apply_mock,
+                patch.object(install_enhancer_gui, "open_product_readme"),
+                patch.object(install_enhancer_gui.messagebox, "showinfo"),
+            ):
+                InstallerApp._install(app)
+
+            apply_mock.assert_called_once()
+            self.assertTrue(apply_mock.call_args.kwargs["allow_dirty"])
 
     def test_write_plan_json_includes_git_change_diagnostics(self) -> None:
         with repo_fixture("write_safety_json") as install_target:
@@ -1762,6 +1985,85 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertEqual(audit_inputs.returncode, 0)
             self.assertIn('"schema_version": 1', audit_inputs.stdout)
             self.assertIn('"validation_commands"', audit_inputs.stdout)
+
+    def test_utility_harness_dependency_install_is_post_write_external_step(self) -> None:
+        with repo_fixture("install_utility_dependencies") as install_target:
+            plan = build_install_plan(
+                install_target,
+                mode="new",
+                utility_harness_mode="install",
+                utility_harness_install_dependencies=True,
+            )
+
+            self.assertEqual(len(plan.external_steps), 1)
+            step = plan.external_steps[0]
+            self.assertEqual(step.label, "Install Utility Harness dependencies")
+            self.assertEqual(step.order, install_enhancer.POST_WRITE_EXTERNAL_STEP_ORDER)
+            self.assertEqual(step.cwd, install_target.resolve())
+            self.assertIn("requirements-codex.txt", step.argv)
+
+            payload = install_enhancer.external_step_to_dict(step)
+            self.assertEqual(payload["order"], "after-enhancer-writes")
+            self.assertTrue(payload["requires_network"])
+
+            preview = build_plan_preview(plan)
+            self.assertIn("Dependencies: install planned after helper files are written", preview)
+            self.assertIn("Install Utility Harness dependencies", preview)
+
+    def test_utility_harness_dependency_install_requires_harness(self) -> None:
+        with repo_fixture("install_utility_dependencies_without_harness") as install_target:
+            with self.assertRaisesRegex(ValueError, "requires the Utility Harness"):
+                build_install_plan(
+                    install_target,
+                    mode="new",
+                    utility_harness_install_dependencies=True,
+                )
+
+    def test_utility_harness_dependency_apply_runs_after_requirements_are_written(self) -> None:
+        with repo_fixture("install_utility_dependency_order") as install_target:
+            plan = build_install_plan(
+                install_target,
+                mode="new",
+                utility_harness_mode="install",
+                utility_harness_install_dependencies=True,
+            )
+            seen_requirements = False
+
+            def fake_run_external_step(step: install_enhancer.ExternalStep) -> None:
+                nonlocal seen_requirements
+                self.assertEqual(step.label, "Install Utility Harness dependencies")
+                seen_requirements = (install_target / "requirements-codex.txt").exists()
+
+            with patch.object(install_enhancer, "run_external_step", side_effect=fake_run_external_step):
+                apply_install_plan(plan)
+
+            self.assertTrue(seen_requirements)
+            self.assertTrue((install_target / "requirements-codex.txt").exists())
+
+    def test_utility_harness_dependency_dry_run_does_not_execute_external_step(self) -> None:
+        with repo_fixture("install_utility_dependency_preview") as install_target:
+            with patch.object(
+                install_enhancer,
+                "run_external_step",
+                side_effect=AssertionError("dry run executed dependency install"),
+            ):
+                exit_code, output = run_installer(
+                    [
+                        "--target",
+                        str(install_target),
+                        "--mode",
+                        "new",
+                        "--utility-harness-mode",
+                        "install",
+                        "--install-utility-harness-dependencies",
+                        "--summary",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("External steps: 1", output)
+            self.assertIn("after enhancer-owned writes", output)
+            self.assertFalse((install_target / "requirements-codex.txt").exists())
 
     def test_utility_harness_run_checks_does_not_execute_prose_commands_by_default(self) -> None:
         with repo_fixture("utility_prose_safety") as install_target:
@@ -3155,6 +3457,20 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
             self.assertIn("tools/ai/audit_inputs.py", preview)
             self.assertIn("tools/ai/run_checks.py", preview)
 
+    def test_gui_plan_preview_lists_utility_harness_dependency_install(self) -> None:
+        with repo_fixture("install_preview_utility_dependencies") as install_target:
+            plan = build_install_plan(
+                install_target,
+                mode="new",
+                utility_harness_mode="install",
+                utility_harness_install_dependencies=True,
+            )
+            preview = build_plan_preview(plan)
+
+            self.assertIn("Dependencies: install planned after helper files are written", preview)
+            self.assertIn("Install Utility Harness dependencies", preview)
+            self.assertIn("after enhancer-owned writes", preview)
+
     def test_gui_pack_management_preview_and_completion_message(self) -> None:
         with repo_fixture("install_preview_manage") as install_target:
             write_file(install_target, "package.json", '{"name": "demo"}\n')
@@ -3285,6 +3601,33 @@ managed_sections = ["AGENTS.md:selected-stack-packs", "AGENTS.md:spec-kit-bridge
                 preview,
             )
             self.assertIn("Manifest selected packs: `javascript-typescript-app`", preview)
+
+    def test_gui_upgrade_preview_reports_pack_selection_changes(self) -> None:
+        with repo_fixture("install_preview_upgrade_pack_changes") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--use-recommended-packs",
+                    "--write",
+                    "--force",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+
+            plan = build_upgrade_plan(install_target, add_packs=("python-service",))
+            preview = build_plan_preview(plan)
+            message = build_completion_message(plan)
+
+            self.assertIn("Pack changes: update the selected stack-pack set during this upgrade.", preview)
+            self.assertIn("(`python-service`): selected", preview)
+            self.assertIn("Selected stack packs now:", message)
+            self.assertIn("- python-service", message)
 
     def test_next_steps_include_pack_aware_follow_up_when_packs_are_selected(self) -> None:
         with repo_fixture("install_next_steps_pack") as install_target:

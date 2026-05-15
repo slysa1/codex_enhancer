@@ -30,7 +30,7 @@ UTILITY_HARNESS_REQUIRED_FILES = (
     *UTILITY_HARNESS_TOOL_FILES,
 )
 UTILITY_HARNESS_DEPENDENCY_POLICY = (
-    "Codex/operator helper dependencies only; install manually into a local helper environment."
+    "Codex/operator helper dependencies only; install only into a local helper environment."
 )
 
 
@@ -128,7 +128,7 @@ def render_utility_harness_summary(config: UtilityHarnessConfig) -> str:
         [
             "- Codex Utility Harness is installed for explicit Codex/operator use.",
             f"- Read [{config.docs_file}]({config.docs_file}) before using the helper scripts.",
-            f"- Optional helper dependency groups are listed in `{config.requirements_file}` and the narrower `requirements-codex-*.txt` files; install only the groups you need outside production dependency files.",
+            f"- Optional helper dependency groups are listed in `{config.requirements_file}` and the narrower `requirements-codex-*.txt` files; install only the groups you need into a local helper environment.",
             f"- Available tools: {tools}.",
         ]
     )

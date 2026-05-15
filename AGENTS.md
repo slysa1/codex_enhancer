@@ -57,6 +57,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - `python scripts/check.py --verbose` - run the same checks with a per-file summary.
 - `python -m pip install -e . --no-deps` - install the local `codex-enhancer` command from this checkout.
 - `python -m build` - build wheel and source distribution artifacts when packaging tooling is available.
+- `python scripts/codex_enhancer_cli.py quickstart` - print the shortest safe command path for the current repo.
 - `python scripts/codex_enhancer_cli.py init <path>` - friendly preview command for installing into a target repo.
 - `python scripts/codex_enhancer_cli.py init <path> --summary --diff` - concise preview plus planned text diffs.
 - `python scripts/codex_enhancer_cli.py audit <path>` - inspect an installed target for inherited generic guidance and proposal files.

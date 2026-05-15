@@ -68,6 +68,27 @@ class CodexEnhancerCliTests(unittest.TestCase):
             ],
         )
 
+    def test_quickstart_defaults_to_current_directory(self) -> None:
+        self.assertEqual(
+            self.translate(["quickstart", "--json"]),
+            [
+                "--target",
+                ".",
+                "--quickstart",
+                "--json",
+            ],
+        )
+
+    def test_quickstart_translates_target_path(self) -> None:
+        self.assertEqual(
+            self.translate(["quickstart", "../target"]),
+            [
+                "--target",
+                "../target",
+                "--quickstart",
+            ],
+        )
+
     def test_audit_translates_to_adaptation_audit(self) -> None:
         self.assertEqual(
             self.translate(["audit", "../target", "--json"]),
@@ -199,6 +220,29 @@ class CodexEnhancerCliTests(unittest.TestCase):
             ],
         )
 
+    def test_upgrade_can_adjust_stack_packs(self) -> None:
+        self.assertEqual(
+            self.translate(
+                [
+                    "upgrade",
+                    "../target",
+                    "--add-pack",
+                    "python-service",
+                    "--remove-pack",
+                    "frontend-ui",
+                ]
+            ),
+            [
+                "--target",
+                "../target",
+                "--upgrade-enhancer",
+                "--add-pack",
+                "python-service",
+                "--remove-pack",
+                "frontend-ui",
+            ],
+        )
+
     def test_pack_management_translates_short_flags(self) -> None:
         self.assertEqual(
             self.translate(
@@ -256,6 +300,28 @@ class CodexEnhancerCliTests(unittest.TestCase):
                 "--upgrade-enhancer",
                 "--utility-harness-mode",
                 "off",
+            ],
+        )
+
+    def test_init_can_install_utility_harness_dependencies(self) -> None:
+        self.assertEqual(
+            self.translate(
+                [
+                    "init",
+                    "../target",
+                    "--new",
+                    "--utility-harness",
+                    "--install-utility-harness-dependencies",
+                ]
+            ),
+            [
+                "--target",
+                "../target",
+                "--mode",
+                "new",
+                "--utility-harness-mode",
+                "install",
+                "--install-utility-harness-dependencies",
             ],
         )
 
@@ -334,6 +400,15 @@ class CodexEnhancerCliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("python-service", output.getvalue())
+
+    def test_main_quickstart_delegates_to_installer(self) -> None:
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            exit_code = codex_enhancer_cli.main(["quickstart"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Codex Enhancer quickstart", output.getvalue())
 
     def test_main_list_workflows_delegates_to_installer(self) -> None:
         output = io.StringIO()

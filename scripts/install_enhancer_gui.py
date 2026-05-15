@@ -44,6 +44,7 @@ from scripts.install_enhancer import (
     format_output_ownership_lines,
     format_pack_decision_hint,
     overwrite_paths,
+    plan_changes_stack_pack_selection,
 )
 from scripts.spec_kit_bridge import render_spec_kit_detection_lines
 from scripts.stack_packs import PackSelection, selected_pack_names
@@ -83,6 +84,11 @@ UTILITY_HARNESS_MODE_CHOICES = (
     ("Off (recommended)", "off"),
     ("Install helper tools", "install"),
 )
+UTILITY_HARNESS_UPGRADE_MODE_CHOICES = (
+    ("Keep existing state (recommended)", "preserve"),
+    ("Off", "off"),
+    ("Install helper tools", "install"),
+)
 
 INSTALL_PACK_INTRO = (
     "Stack packs add extra Codex guidance for common repo shapes. After scanning, recommended "
@@ -103,8 +109,8 @@ MANAGE_WORKFLOW_INTRO = (
     "The repository-improvement audit workflow also maintains a managed section in roadmap.md."
 )
 UPGRADE_PACK_INTRO = (
-    "Upgrade keeps the selected packs from the target repo's existing enhancer manifest. "
-    "It reconciles tracked enhancer files against the current source and writes repo-owned drift as proposals."
+    "Upgrade starts with the selected packs from the target repo's existing enhancer manifest. "
+    "You can add missing packs or remove installed packs while reconciling tracked enhancer files."
 )
 SPEC_KIT_INTRO = (
     "The Spec Kit bridge is optional. Use attach when the repo already has an official Spec Kit install, "
@@ -113,7 +119,7 @@ SPEC_KIT_INTRO = (
 )
 UTILITY_HARNESS_INTRO = (
     "The Utility Harness is optional Codex/operator tooling. It installs requirements-codex.txt, tools/ai scripts, "
-    "and docs/ai/utility-harness.md, but never installs dependencies automatically."
+    "and docs/ai/utility-harness.md. Dependency installation is optional and runs only when selected."
 )
 WINDOW_MIN_WIDTH = 760
 WINDOW_MIN_HEIGHT = 620
@@ -122,6 +128,11 @@ WINDOW_MAX_HEIGHT = 980
 WINDOW_SCREEN_MARGIN = 120
 PACK_VIEWPORT_HEIGHT = 240
 PACK_TEXT_WRAP = 680
+PACK_MOUSEWHEEL_PIXELS = 48
+DIRTY_TARGET_GUI_HELP = (
+    "Use only when local git changes are unrelated to planned writes. Do not use when changes touch "
+    "AGENTS.md, docs/ai/, .codex/enhancer/, .codex/skills/, .gitignore, or paths listed in the preview."
+)
 
 
 def compute_window_geometry(screen_width: int, screen_height: int) -> tuple[int, int, int, int]:
@@ -214,6 +225,8 @@ def build_plan_preview(plan: InstallPlan) -> str:
             "Upgrade behavior: overwrite tracked managed outputs and source-aligned copies; "
             "write repo-owned scaffold drift as proposals."
         )
+        if plan_changes_stack_pack_selection(plan):
+            lines.append("Pack changes: update the selected stack-pack set during this upgrade.")
     else:
         lines.append(
             "Conflict handling: overwrite colliding enhancer files"
@@ -320,9 +333,12 @@ def format_spec_kit_entries(plan: InstallPlan) -> list[str]:
         if plan.spec_kit_bridge.available_commands:
             commands = ", ".join(f"`{command}`" for command in plan.spec_kit_bridge.available_commands)
             entries.append(f"- Bridge-aware commands: {commands}")
-        if plan.external_steps:
+        bootstrap_steps = tuple(
+            step for step in plan.external_steps if step.label == "Bootstrap official Spec Kit"
+        )
+        if bootstrap_steps:
             entries.append(f"- Bootstrap order: {EXTERNAL_STEP_ORDER_NOTE}")
-            for step in plan.external_steps:
+            for step in bootstrap_steps:
                 entries.extend(format_external_step_summary_lines(step))
     detection = plan.spec_kit_detection
     if detection is not None and detection.detected:
@@ -335,10 +351,19 @@ def format_spec_kit_entries(plan: InstallPlan) -> list[str]:
 def format_utility_harness_entries(plan: InstallPlan) -> list[str]:
     if plan.utility_harness is None or not plan.utility_harness.enabled:
         return []
+    dependency_steps = tuple(
+        step for step in plan.external_steps if step.label == "Install Utility Harness dependencies"
+    )
     entries = [
         f"- Mode: {plan.utility_harness.mode} ({plan.utility_harness.state})",
-        "- Dependencies: listed for manual Codex/operator install only",
+        (
+            "- Dependencies: install planned after helper files are written"
+            if dependency_steps
+            else "- Dependencies: listed for manual Codex/operator install only"
+        ),
     ]
+    for step in dependency_steps:
+        entries.extend(format_external_step_summary_lines(step))
     if plan.utility_harness.tool_files:
         tools = ", ".join(f"`{path}`" for path in plan.utility_harness.tool_files)
         entries.append(f"- Tools: {tools}")
@@ -413,9 +438,10 @@ def build_completion_message(plan: InstallPlan) -> str:
         "",
         (
             "Stack packs from the target manifest:"
-            if plan.operation in {"refresh-generated", "upgrade-enhancer"}
+            if plan.operation == "refresh-generated"
+            or (plan.operation == "upgrade-enhancer" and not plan_changes_stack_pack_selection(plan))
             else "Selected stack packs now:"
-            if plan.operation == "manage-packs"
+            if plan.operation in {"manage-packs", "upgrade-enhancer"}
             else "Installed stack packs:"
         ),
     ]
@@ -448,6 +474,8 @@ def build_completion_message(plan: InstallPlan) -> str:
                 "- installed",
             ]
         )
+        if any(step.label == "Install Utility Harness dependencies" for step in plan.external_steps):
+            lines.append("- helper dependencies install was requested")
     lines.extend(
         [
             "",
@@ -467,12 +495,14 @@ class InstallerApp:
         self.target_var = tk.StringVar()
         self.operation_var = tk.StringVar(value="install")
         self.force_var = tk.BooleanVar(value=False)
+        self.allow_dirty_var = tk.BooleanVar(value=False)
         self.confirm_overwrite_var = tk.BooleanVar(value=False)
         self.spec_kit_mode_var = tk.StringVar(value=SPEC_KIT_MODE_CHOICES[0][0])
         self.spec_kit_script_var = tk.StringVar(value=SPEC_KIT_SCRIPT_CHOICES[0][0])
         self.spec_kit_command_surface_var = tk.StringVar(value=SPEC_KIT_COMMAND_SURFACE_CHOICES[0][0])
         self.spec_kit_version_var = tk.StringVar()
         self.utility_harness_mode_var = tk.StringVar(value=UTILITY_HARNESS_MODE_CHOICES[0][0])
+        self.utility_harness_dependencies_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(
             value="Choose a repository folder, pick install, upgrade, or refresh, review the plan, then run it."
         )
@@ -557,6 +587,19 @@ class InstallerApp:
         )
         self.force_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
+        self.allow_dirty_check = ttk.Checkbutton(
+            target_frame,
+            text="Allow apply when the target git worktree has local changes",
+            variable=self.allow_dirty_var,
+        )
+        self.allow_dirty_check.grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        self.allow_dirty_help = ttk.Label(
+            target_frame,
+            text=DIRTY_TARGET_GUI_HELP,
+            wraplength=680,
+        )
+        self.allow_dirty_help.grid(row=5, column=0, columnspan=3, sticky="w", pady=(4, 0))
+
         spec_kit_frame = ttk.LabelFrame(frame, text="Spec Kit bridge", padding=12)
         spec_kit_frame.grid(row=3, column=0, sticky="ew", pady=(14, 0))
         spec_kit_frame.columnconfigure(1, weight=1)
@@ -629,6 +672,18 @@ class InstallerApp:
         )
         self.utility_harness_mode_combo.current(0)
         self.utility_harness_mode_combo.grid(row=1, column=1, sticky="w", pady=(10, 0))
+        self.utility_harness_dependencies_check = ttk.Checkbutton(
+            utility_frame,
+            text="Install helper dependencies with pip after helper files are written",
+            variable=self.utility_harness_dependencies_var,
+        )
+        self.utility_harness_dependencies_check.grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 0),
+        )
 
         pack_frame = ttk.LabelFrame(frame, text="Stack packs", padding=12)
         pack_frame.grid(row=5, column=0, sticky="ew", pady=(14, 0))
@@ -673,6 +728,7 @@ class InstallerApp:
         )
         self.pack_canvas.bind("<Configure>", self._on_pack_canvas_configure)
         self.pack_container.bind("<Configure>", self._on_pack_container_configure)
+        self._bind_pack_scroll_surface()
         self._show_pack_placeholder("No pack scan yet. Click 'Review install plan' to detect stack packs.")
 
         action_frame = ttk.Frame(frame)
@@ -736,17 +792,32 @@ class InstallerApp:
         self._refresh_pack_scroll_region()
         self.pack_canvas.yview_moveto(0)
 
+    def _bind_pack_scroll_surface(self) -> None:
+        for widget in (self.pack_viewport, self.pack_canvas, self.pack_container):
+            self._bind_pack_scroll_widget(widget)
+
     def _bind_pack_scroll_widget(self, widget: tk.Widget) -> None:
         widget.bind("<MouseWheel>", self._on_pack_mousewheel, add="+")
         widget.bind("<Button-4>", self._on_pack_mousewheel, add="+")
         widget.bind("<Button-5>", self._on_pack_mousewheel, add="+")
 
     def _on_pack_mousewheel(self, event: tk.Event) -> str:
+        scroll_region = self.pack_canvas.bbox("all")
+        if scroll_region is None:
+            return "break"
+        total_height = max(scroll_region[3] - scroll_region[1], 1)
+        viewport_height = self.pack_canvas.winfo_height()
+        max_offset = max(total_height - viewport_height, 0)
+        if max_offset == 0:
+            return "break"
         if getattr(event, "delta", 0):
-            direction = -1 if event.delta > 0 else 1
+            pixel_delta = -(event.delta / 120) * PACK_MOUSEWHEEL_PIXELS
         else:
-            direction = -1 if getattr(event, "num", 0) == 4 else 1
-        self.pack_canvas.yview_scroll(direction, "units")
+            pixel_delta = -PACK_MOUSEWHEEL_PIXELS if getattr(event, "num", 0) == 4 else PACK_MOUSEWHEEL_PIXELS
+        first_fraction, _last_fraction = self.pack_canvas.yview()
+        current_offset = first_fraction * total_height
+        next_offset = min(max(current_offset + pixel_delta, 0), max_offset)
+        self.pack_canvas.yview_moveto(next_offset / total_height)
         return "break"
 
     def _wire_events(self) -> None:
@@ -758,6 +829,7 @@ class InstallerApp:
         self.spec_kit_command_surface_var.trace_add("write", self._on_inputs_changed)
         self.spec_kit_version_var.trace_add("write", self._on_inputs_changed)
         self.utility_harness_mode_var.trace_add("write", self._on_inputs_changed)
+        self.utility_harness_dependencies_var.trace_add("write", self._on_inputs_changed)
         self.confirm_overwrite_var.trace_add("write", self._on_confirm_changed)
         self.operation_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
         self.mode_combo.bind("<<ComboboxSelected>>", self._on_inputs_changed)
@@ -801,12 +873,43 @@ class InstallerApp:
                 return candidate_value
         return "auto"
 
-    def _utility_harness_mode_value(self) -> str:
+    def _utility_harness_mode_value(self) -> str | None:
         label = self.utility_harness_mode_combo.get()
-        for candidate_label, candidate_value in UTILITY_HARNESS_MODE_CHOICES:
+        for candidate_label, candidate_value in (
+            UTILITY_HARNESS_MODE_CHOICES + UTILITY_HARNESS_UPGRADE_MODE_CHOICES
+        ):
             if candidate_label == label:
+                if candidate_value == "preserve":
+                    return None
                 return candidate_value
         return "off"
+
+    def _configure_utility_harness_mode_choices(
+        self,
+        choices: tuple[tuple[str, str], ...],
+        *,
+        default_label: str,
+    ) -> None:
+        labels = tuple(label for label, _value in choices)
+        self.utility_harness_mode_combo.configure(values=labels)
+        if self.utility_harness_mode_combo.get() not in labels:
+            self.utility_harness_mode_combo.set(default_label)
+
+    def _current_utility_harness_mode_labels(self) -> tuple[str, ...]:
+        values = self.utility_harness_mode_combo.cget("values")
+        if isinstance(values, str):
+            return tuple(self.root.tk.splitlist(values))
+        return tuple(values)
+
+    def _sync_utility_dependency_control(self) -> None:
+        enabled = (
+            not self._is_refresh_operation()
+            and not self._is_manage_operation()
+            and self._utility_harness_mode_value() != "off"
+        )
+        self.utility_harness_dependencies_check.configure(state="normal" if enabled else "disabled")
+        if not enabled and self.utility_harness_dependencies_var.get():
+            self.utility_harness_dependencies_var.set(False)
 
     def _is_refresh_operation(self) -> bool:
         return self._operation_value() == "refresh-generated"
@@ -833,6 +936,7 @@ class InstallerApp:
 
         def set_utility_state(state: str) -> None:
             self.utility_harness_mode_combo.configure(state=state)
+            self._sync_utility_dependency_control()
 
         if is_refresh:
             self.force_var.set(False)
@@ -840,6 +944,10 @@ class InstallerApp:
             self.mode_combo.set("Existing repo")
             self.mode_combo.configure(state="disabled")
             set_spec_kit_state("disabled")
+            self._configure_utility_harness_mode_choices(
+                UTILITY_HARNESS_MODE_CHOICES,
+                default_label=UTILITY_HARNESS_MODE_CHOICES[0][0],
+            )
             set_utility_state("disabled")
             self.pack_intro.configure(text=REFRESH_PACK_INTRO)
             self.review_button.configure(text="Review refresh plan")
@@ -852,6 +960,10 @@ class InstallerApp:
             self.mode_combo.set("Existing repo")
             self.mode_combo.configure(state="disabled")
             set_spec_kit_state("disabled")
+            self._configure_utility_harness_mode_choices(
+                UTILITY_HARNESS_MODE_CHOICES,
+                default_label=UTILITY_HARNESS_MODE_CHOICES[0][0],
+            )
             set_utility_state("disabled")
             if self._is_manage_workflow_operation():
                 self.pack_frame.configure(text="Workflow packs")
@@ -871,6 +983,13 @@ class InstallerApp:
             self.mode_combo.set("Existing repo")
             self.mode_combo.configure(state="disabled")
             set_spec_kit_state("readonly")
+            current_utility_values = self._current_utility_harness_mode_labels()
+            self._configure_utility_harness_mode_choices(
+                UTILITY_HARNESS_UPGRADE_MODE_CHOICES,
+                default_label=UTILITY_HARNESS_UPGRADE_MODE_CHOICES[0][0],
+            )
+            if UTILITY_HARNESS_UPGRADE_MODE_CHOICES[0][0] not in current_utility_values:
+                self.utility_harness_mode_combo.set(UTILITY_HARNESS_UPGRADE_MODE_CHOICES[0][0])
             set_utility_state("readonly")
             self.pack_frame.configure(text="Stack packs")
             self.pack_intro.configure(text=UPGRADE_PACK_INTRO)
@@ -881,6 +1000,13 @@ class InstallerApp:
         self.mode_combo.configure(state="readonly")
         self.force_check.configure(state="normal")
         set_spec_kit_state("readonly")
+        current_utility_values = self._current_utility_harness_mode_labels()
+        self._configure_utility_harness_mode_choices(
+            UTILITY_HARNESS_MODE_CHOICES,
+            default_label=UTILITY_HARNESS_MODE_CHOICES[0][0],
+        )
+        if UTILITY_HARNESS_UPGRADE_MODE_CHOICES[0][0] in current_utility_values:
+            self.utility_harness_mode_combo.set(UTILITY_HARNESS_MODE_CHOICES[0][0])
         set_utility_state("readonly")
         self.pack_frame.configure(text="Stack packs")
         self.pack_intro.configure(text=INSTALL_PACK_INTRO)
@@ -984,7 +1110,7 @@ class InstallerApp:
         self.current_plan = plan
         self._populate_pack_controls(
             plan,
-            interactive=not (self._is_refresh_operation() or self._is_upgrade_operation()),
+            interactive=not self._is_refresh_operation(),
         )
         self._set_preview_text(build_plan_preview(plan))
         self.progress.configure(value=0, maximum=progress_total(plan))
@@ -1028,11 +1154,13 @@ class InstallerApp:
         if is_upgrade:
             return build_upgrade_plan(
                 Path(raw_target),
+                set_packs=set_packs,
                 spec_kit_mode=self._spec_kit_mode_value(),
                 spec_kit_script=self._spec_kit_script_value(),
                 spec_kit_command_surface=self._spec_kit_command_surface_value(),
                 spec_kit_version=spec_kit_version,
                 utility_harness_mode=self._utility_harness_mode_value(),
+                utility_harness_install_dependencies=self.utility_harness_dependencies_var.get(),
             )
         if is_manage:
             if self._is_manage_workflow_operation():
@@ -1057,7 +1185,12 @@ class InstallerApp:
             spec_kit_script=self._spec_kit_script_value(),
             spec_kit_command_surface=self._spec_kit_command_surface_value(),
             spec_kit_version=spec_kit_version,
-            utility_harness_mode=self._utility_harness_mode_value() if not is_refresh else None,
+            utility_harness_mode=(
+                self._utility_harness_mode_value() if not is_refresh else None
+            ),
+            utility_harness_install_dependencies=(
+                self.utility_harness_dependencies_var.get() if not is_refresh else False
+            ),
         )
 
     def _clear_pack_controls(self) -> None:
@@ -1143,7 +1276,7 @@ class InstallerApp:
             return
         try:
             selected_names = self._selected_pack_names_from_ui()
-            if self._is_manage_operation():
+            if self._is_manage_operation() or self._is_upgrade_operation():
                 plan = self._build_plan(set_packs=selected_names)
             else:
                 plan = self._build_plan(include_packs=selected_names)
@@ -1188,6 +1321,7 @@ class InstallerApp:
             )
         if busy:
             self.force_check.configure(state="disabled")
+            self.allow_dirty_check.configure(state="disabled")
         else:
             self.force_check.configure(
                 state="disabled"
@@ -1198,12 +1332,14 @@ class InstallerApp:
                 )
                 else "normal"
             )
+            self.allow_dirty_check.configure(state="normal")
         if busy:
             self.spec_kit_mode_combo.configure(state="disabled")
             self.spec_kit_script_combo.configure(state="disabled")
             self.spec_kit_command_surface_combo.configure(state="disabled")
             self.spec_kit_version_entry.configure(state="disabled")
             self.utility_harness_mode_combo.configure(state="disabled")
+            self.utility_harness_dependencies_check.configure(state="disabled")
         else:
             spec_state = (
                 "disabled"
@@ -1217,6 +1353,7 @@ class InstallerApp:
                 state="disabled" if spec_state == "disabled" else "normal"
             )
             self.utility_harness_mode_combo.configure(state=spec_state)
+            self._sync_utility_dependency_control()
         for child in self.pack_container.winfo_children():
             try:
                 child.configure(state=state)
@@ -1264,7 +1401,11 @@ class InstallerApp:
             self.root.update_idletasks()
 
         try:
-            apply_install_plan(plan, progress_callback=on_progress)
+            apply_install_plan(
+                plan,
+                progress_callback=on_progress,
+                allow_dirty=self.allow_dirty_var.get(),
+            )
         except Exception as error:  # pragma: no cover - GUI recovery path
             action = action_verb(plan).capitalize()
             self.status_var.set(f"{action} failed: {error}")

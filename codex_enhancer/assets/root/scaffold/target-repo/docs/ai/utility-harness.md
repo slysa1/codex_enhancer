@@ -25,7 +25,7 @@ The dependency files are grouped by purpose:
 - `requirements-codex-cli.txt` for optional richer CLI/config helpers
 - `requirements-codex.txt` as the all-in helper environment
 
-Install helper dependencies manually only when needed. For a full local helper environment:
+Install helper dependencies only when needed. The enhancer installer may have already run the all-in command if the operator selected the explicit dependency-install option. For a full local helper environment:
 
 ```bash
 python -m pip install -r requirements-codex.txt
@@ -56,7 +56,7 @@ python tools/ai/run_checks.py --dry-run
 - Treat `.gitignore` and common junk directories as first-class ignore signals.
 - Use `run_checks.py --list` first. By default, prose-extracted commands are listed but not run; use `--include-prose` only after reviewing them.
 - Use `run_checks.py --allow-shell` only after reviewing commands that contain shell control operators.
-- Do not add OCR, background indexing, daemon behavior, or automatic dependency installation.
+- Do not add OCR, background indexing, daemon behavior, or unreviewed dependency installation.
 
 ## Audit Use
 During a repository improvement audit, treat helper output as supporting evidence only. Use `tools/ai/audit_inputs.py` to find candidate evidence files and the roadmap target before writing recommendations. Tie any tool-backed claim to inspected repo files, the exact command, exit status when available, and a concise output summary.

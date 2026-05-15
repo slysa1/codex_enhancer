@@ -20,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "First useful commands:\n"
+            "  codex-enhancer quickstart\n"
             "  codex-enhancer doctor .\n"
             "  codex-enhancer init ../my-repo --existing --summary\n"
             "  codex-enhancer init ../my-repo --existing --summary --diff\n"
@@ -29,6 +30,14 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    quickstart = subparsers.add_parser(
+        "quickstart",
+        help="print a concise read-only getting-started guide",
+    )
+    quickstart.set_defaults(action="quickstart")
+    quickstart.add_argument("target", nargs="?", default=".", help="target repository path; defaults to the current directory")
+    add_output_options(quickstart, include_plan_options=False)
 
     doctor = subparsers.add_parser(
         "doctor",
@@ -78,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_output_options(upgrade, include_plan_options=True)
     add_spec_kit_options(upgrade)
     add_utility_harness_options(upgrade)
+    add_existing_pack_options(upgrade)
 
     refresh = subparsers.add_parser(
         "refresh",
@@ -211,7 +221,7 @@ def add_write_options(parser: argparse.ArgumentParser, *, include_force: bool) -
     parser.add_argument(
         "--allow-dirty",
         action="store_true",
-        help="allow --write when the target git worktree is dirty or cannot be verified clean",
+        help="allow --write over unrelated local target changes after reviewing the plan",
     )
     parser.add_argument(
         "--allow-source-target",
@@ -249,6 +259,22 @@ def add_install_pack_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--pack", action="append", default=[], help="include a stack pack")
     parser.add_argument("--no-pack", action="append", default=[], help="exclude a stack pack")
+
+
+def add_existing_pack_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--add-pack", action="append", default=[], help="add a stack pack during upgrade")
+    parser.add_argument(
+        "--remove-pack",
+        action="append",
+        default=[],
+        help="remove a stack pack during upgrade",
+    )
+    parser.add_argument(
+        "--set-pack",
+        action="append",
+        default=[],
+        help="replace the installed stack-pack set during upgrade",
+    )
 
 
 def add_spec_kit_options(parser: argparse.ArgumentParser) -> None:
@@ -325,6 +351,11 @@ def add_utility_harness_options(parser: argparse.ArgumentParser) -> None:
         dest="utility_harness_mode",
         help="set optional Codex Utility Harness mode",
     )
+    parser.add_argument(
+        "--install-utility-harness-dependencies",
+        action="store_true",
+        help="after writing Utility Harness files, install helper dependencies with pip",
+    )
 
 
 def selected_mode(args: argparse.Namespace) -> str:
@@ -332,6 +363,11 @@ def selected_mode(args: argparse.Namespace) -> str:
 
 
 def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
+    if args.action == "quickstart":
+        installer_args = ["--target", args.target, "--quickstart"]
+        append_output_args(installer_args, args)
+        return installer_args
+
     if args.action == "doctor":
         installer_args = ["--target", args.target, "--doctor"]
         append_output_args(installer_args, args)
@@ -389,6 +425,7 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         append_output_args(installer_args, args)
         append_spec_kit_args(installer_args, args)
         append_utility_harness_args(installer_args, args)
+        append_existing_pack_args(installer_args, args)
         return installer_args
 
     if args.action == "refresh":
@@ -491,6 +528,17 @@ def append_write_safety_args(installer_args: list[str], args: argparse.Namespace
 def append_utility_harness_args(installer_args: list[str], args: argparse.Namespace) -> None:
     if args.utility_harness_mode:
         installer_args.extend(["--utility-harness-mode", args.utility_harness_mode])
+    if getattr(args, "install_utility_harness_dependencies", False):
+        installer_args.append("--install-utility-harness-dependencies")
+
+
+def append_existing_pack_args(installer_args: list[str], args: argparse.Namespace) -> None:
+    for pack in args.add_pack:
+        installer_args.extend(["--add-pack", pack])
+    for pack in args.remove_pack:
+        installer_args.extend(["--remove-pack", pack])
+    for pack in args.set_pack:
+        installer_args.extend(["--set-pack", pack])
 
 
 def main(argv: list[str] | None = None) -> int:
