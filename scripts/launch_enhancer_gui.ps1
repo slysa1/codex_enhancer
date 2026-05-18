@@ -84,6 +84,62 @@ function Resolve-PythonCommand {
     }
 }
 
+function Test-PythonRuntimePath {
+    param(
+        [string]$PythonPath
+    )
+
+    if (-not $PythonPath -or -not (Test-Path -LiteralPath $PythonPath -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        $global:LASTEXITCODE = 0
+        $probeOutput = & $PythonPath -c "import sys; print(sys.executable)" 2>&1
+        $exitCode = $global:LASTEXITCODE
+        if ($null -ne $exitCode -and $exitCode -ne 0) {
+            Write-LauncherLog "Path probe $PythonPath -> exit $exitCode output=$($probeOutput -join ' ')"
+            return $null
+        }
+        $runtimePath = ($probeOutput | Where-Object { $_ } | Select-Object -First 1).ToString().Trim()
+        if (-not $runtimePath) {
+            Write-LauncherLog "Path probe $PythonPath returned no Python executable path."
+            return $null
+        }
+        $resolvedPath = (Resolve-Path -LiteralPath $runtimePath -ErrorAction Stop).Path
+        Write-LauncherLog "Path probe $PythonPath -> $resolvedPath."
+        return [PSCustomObject]@{
+            ProbeCommand = $PythonPath
+            ProbeArguments = @("-c", "import sys; print(sys.executable)")
+            RuntimePath = $resolvedPath
+        }
+    } catch {
+        Write-LauncherLog "Path probe $PythonPath failed: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Get-KnownPythonRuntimeCandidates {
+    $patterns = @()
+
+    if ($env:LOCALAPPDATA) {
+        $patterns += Join-Path $env:LOCALAPPDATA "Python\bin\python.exe"
+        $patterns += Join-Path $env:LOCALAPPDATA "Python\pythoncore-*\python.exe"
+        $patterns += Join-Path $env:LOCALAPPDATA "Programs\Python\Python*\python.exe"
+    }
+    if ($env:ProgramFiles) {
+        $patterns += Join-Path $env:ProgramFiles "Python*\python.exe"
+    }
+    if (${env:ProgramFiles(x86)}) {
+        $patterns += Join-Path ${env:ProgramFiles(x86)} "Python*\python.exe"
+    }
+
+    foreach ($pattern in $patterns) {
+        Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty FullName
+    }
+}
+
 function Quote-ProcessArgument {
     param(
         [string]$Value
@@ -169,13 +225,22 @@ foreach ($candidate in $candidates) {
     }
 }
 
+foreach ($candidatePath in Get-KnownPythonRuntimeCandidates) {
+    $resolved = Test-PythonRuntimePath $candidatePath
+    if ($resolved) {
+        Write-Host "Starting Codex Enhancer GUI installer with $($resolved.RuntimePath)."
+        Start-Installer $resolved.RuntimePath
+        exit 0
+    }
+}
+
 Show-LauncherError @"
-Python was not found from PowerShell.
+Python was not found from PowerShell or the standard per-user Python install locations.
 
 Open PowerShell in this folder and run:
   Get-Command python
   python scripts\install_enhancer_qt_gui.py
 
-If that works, send the output of Get-Command python so this launcher can be taught that Python location.
+If that works, send the output of Get-Command python and python -c "import sys; print(sys.executable)" so this launcher can be taught that Python location.
 "@
 exit 1

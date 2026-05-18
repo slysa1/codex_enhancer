@@ -815,7 +815,7 @@ Install the PyQt6-backed window with `python -m pip install -e .[gui]`, or use `
 
 ### `install_enhancer.bat`
 [install_enhancer.bat](install_enhancer.bat) is the easiest Windows entrypoint. Double-click it or run it from `cmd`/PowerShell to launch the Qt GUI when an optional Qt binding is installed, or the browser GUI fallback otherwise, without typing the Python command yourself.
-The batch file delegates to [scripts/launch_enhancer_gui.ps1](scripts/launch_enhancer_gui.ps1) so PowerShell-visible Python commands are probed first, then the GUI is started with the real `sys.executable` path behind any alias or shim.
+The batch file delegates to [scripts/launch_enhancer_gui.ps1](scripts/launch_enhancer_gui.ps1) so PowerShell-visible Python commands are probed first, then standard per-user Python install locations are checked, and the GUI is started with the real `sys.executable` path behind any alias or shim.
 
 ### `codex-enhancer`
 [codex-enhancer](codex-enhancer) and [codex-enhancer.bat](codex-enhancer.bat) are source-checkout shims for the friendly CLI facade. The POSIX shim has a Python shebang; use `python codex-enhancer ...` as the fallback when a copied checkout loses executable permissions. They are convenience entrypoints only; the installer core remains [scripts/install_enhancer.py](scripts/install_enhancer.py).

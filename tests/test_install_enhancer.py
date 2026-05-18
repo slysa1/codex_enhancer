@@ -354,6 +354,10 @@ class InstallEnhancerTests(unittest.TestCase):
 
         self.assertIn("import sys; print(sys.executable)", source)
         self.assertIn("RuntimePath", source)
+        self.assertIn("Get-KnownPythonRuntimeCandidates", source)
+        self.assertIn("Python\\bin\\python.exe", source)
+        self.assertIn("Python\\pythoncore-*\\python.exe", source)
+        self.assertIn("Programs\\Python\\Python*\\python.exe", source)
         self.assertIn("Start-Process", source)
         self.assertIn("-RedirectStandardError", source)
         self.assertLess(source.index('Command = "python"'), source.index('Command = "py"'))

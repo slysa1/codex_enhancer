@@ -347,6 +347,8 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "Get-Command",
             "python",
             "sys.executable",
+            "Python\\pythoncore-*\\python.exe",
+            "Programs\\Python\\Python*\\python.exe",
             "Start-Process",
             "RedirectStandardError",
             "Starting Codex Enhancer GUI installer",
