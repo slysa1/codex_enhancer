@@ -37,6 +37,7 @@ from scripts.enhancer_spec import (
 )
 from scripts.spec_kit_bridge import (
     SPEC_KIT_BRIDGE_SKILLS,
+    SPEC_KIT_COMMAND_SURFACE_OPTIONS,
     SpecKitAddonSummary,
     SpecKitBridgeConfig,
     SpecKitCliDiagnostic,
@@ -1255,7 +1256,10 @@ def resolve_target_spec_kit_bridge(
         command_surface
         if command_surface != "auto"
         else existing_bridge.command_surface
-        if existing_bridge is not None and existing_bridge.command_surface is not None
+        if (
+            existing_bridge is not None
+            and existing_bridge.command_surface in SPEC_KIT_COMMAND_SURFACE_OPTIONS
+        )
         else "auto"
     )
     resolved_version = version or (

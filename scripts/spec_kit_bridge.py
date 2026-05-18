@@ -1699,6 +1699,9 @@ def render_spec_kit_bridge_summary(
         return "\n".join(lines)
 
     lines = [f"- Spec Kit bridge is {format_spec_kit_bridge_mode_label(bridge)}."]
+    lines.append(
+        "- Read [docs/ai/spec-kit-bridge.md](docs/ai/spec-kit-bridge.md) for bridge ownership, workflow, and safety guidance."
+    )
     if bridge.integration_key:
         lines.append(f"- Official integration: `{bridge.integration_key}`.")
     if bridge.command_label:

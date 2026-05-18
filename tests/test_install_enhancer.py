@@ -564,6 +564,7 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn('state = "attached"', manifest)
             self.assertIn('integration_key = "codex"', manifest)
             self.assertIn("Spec Kit bridge is attached to an existing official install.", agents)
+            self.assertIn("docs/ai/spec-kit-bridge.md", agents)
             self.assertIn("Cross-agent review context", agents)
             self.assertIn("Peer CLI smoke tests", agents)
             bridge_doc = (install_target / "docs/ai/spec-kit-bridge.md").read_text(encoding="utf-8")
@@ -576,6 +577,43 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertTrue((install_target / ".codex/skills/spec-implement-bridge/SKILL.md").exists())
             self.assertTrue((install_target / ".codex/skills/spec-sync-check/SKILL.md").exists())
             self.assertTrue((install_target / ".codex/skills/spec-review-bridge/SKILL.md").exists())
+
+    def test_upgrade_enhancer_accepts_existing_mixed_spec_kit_surface(self) -> None:
+        with repo_fixture("upgrade_mixed_spec_kit_surface") as install_target:
+            write_file(
+                install_target,
+                ".specify/integration.json",
+                '{\n  "integration": "codex",\n  "version": "0.8.3"\n}\n',
+            )
+            write_file(
+                install_target,
+                ".specify/init-options.json",
+                '{\n  "integration": "codex",\n  "script": "ps",\n  "speckit_version": "0.8.3"\n}\n',
+            )
+            write_file(install_target, ".github/prompts/speckit.plan.prompt.md", "# Plan\n")
+            write_file(install_target, ".github/agents/speckit.tasks.agent.md", "# Tasks\n")
+            write_file(install_target, ".agents/skills/speckit-plan/SKILL.md", "# Plan\n")
+
+            exit_code, _ = run_installer(
+                [
+                    "--target",
+                    str(install_target),
+                    "--mode",
+                    "existing",
+                    "--spec-kit-mode",
+                    "attach",
+                    "--write",
+                    "--force",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            manifest = (install_target / ".codex/enhancer/manifest.toml").read_text(encoding="utf-8")
+            self.assertIn('command_surface = "mixed"', manifest)
+
+            plan = build_upgrade_plan(install_target)
+
+            self.assertEqual(plan.spec_kit_bridge.command_surface, "mixed")
 
     def test_install_bootstrap_mode_plans_external_step(self) -> None:
         with repo_fixture("install_bootstrap") as install_target:
