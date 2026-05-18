@@ -37,7 +37,7 @@ Use this checklist when testing the enhancer against a real or representative Co
 - Evidence: commit or branch tested, date, OS/Python version, and the exact commands run.
 
 ## Package Boundary
-- Package runtime dependencies must remain empty unless a future release truly needs source-repo runtime libraries.
+- Mandatory package runtime dependencies must remain empty unless a future release truly needs source-repo runtime libraries. Optional GUI extras may name PyQt6 or PySide6, but they must not become default install requirements.
 - Spec Kit remains external; the package may plan an official bootstrap command but must not vendor Spec Kit.
 - Utility Harness helper dependencies remain in target `requirements-codex.txt`, not in the package's production dependencies.
 - Packaged assets under `codex_enhancer/assets/root/` must mirror source scaffold, repo-local skills, and README inputs used by installed CLI runs.

@@ -211,7 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     gui = subparsers.add_parser(
         "gui",
-        help="open the Windows-first browser GUI installer",
+        help="open the Windows-first GUI installer",
     )
     gui.set_defaults(action="gui")
 
@@ -572,7 +572,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.action == "gui":
-        from scripts.install_enhancer_web_gui import main as gui_main
+        from scripts.install_enhancer_qt_gui import main as gui_main
 
         return gui_main([])
 

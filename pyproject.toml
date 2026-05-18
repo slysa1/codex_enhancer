@@ -25,6 +25,10 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+gui = ["PyQt6"]
+pyside = ["PySide6"]
+
 [project.scripts]
 codex-enhancer = "scripts.codex_enhancer_cli:main"
 

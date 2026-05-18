@@ -34,6 +34,6 @@ if not errorlevel 1 (
 
 echo PowerShell was not found by this cmd launcher.
 echo Open PowerShell in this folder and run:
-echo   python scripts\install_enhancer_web_gui.py
+echo   python scripts\install_enhancer_qt_gui.py
 pause
 exit /b 1

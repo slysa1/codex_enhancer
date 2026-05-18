@@ -8,11 +8,16 @@ import sys
 import textwrap
 import unittest
 import uuid
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts import install_enhancer, install_enhancer_gui, install_enhancer_web_gui
+from scripts import (
+    install_enhancer,
+    install_enhancer_gui,
+    install_enhancer_qt_gui,
+    install_enhancer_web_gui,
+)
 from scripts.install_enhancer import (
     apply_install_plan,
     audit_adaptation,
@@ -291,6 +296,57 @@ class InstallEnhancerTests(unittest.TestCase):
 
         self.assertEqual(result, "break")
         self.assertAlmostEqual(app.pack_canvas.moves[-1], PACK_MOUSEWHEEL_PIXELS / 1000)
+
+    def test_qt_binding_status_reports_supported_bindings(self) -> None:
+        status = install_enhancer_qt_gui.qt_binding_status()
+
+        self.assertEqual(set(status), {"PyQt6", "PySide6"})
+        self.assertTrue(all(isinstance(available, bool) for available in status.values()))
+
+    def test_qt_gui_uses_qt6_api_patterns(self) -> None:
+        source = Path(install_enhancer_qt_gui.__file__).read_text(encoding="utf-8")
+
+        self.assertIn("from PyQt6 import QtCore, QtGui, QtWidgets", source)
+        self.assertIn("QtCore.Qt.Orientation.Horizontal", source)
+        self.assertIn("QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap", source)
+        self.assertIn("QtWidgets.QMessageBox.StandardButton.Yes", source)
+        self.assertIn("app.exec()", source)
+        self.assertNotIn("PyQt5", source)
+        self.assertNotIn("exec_(", source)
+
+    def test_qt_gui_falls_back_to_browser_when_binding_is_missing(self) -> None:
+        stderr = io.StringIO()
+
+        with (
+            patch.object(
+                install_enhancer_qt_gui,
+                "import_qt_binding",
+                side_effect=install_enhancer_qt_gui.QtBindingError("missing Qt"),
+            ),
+            patch("scripts.install_enhancer_web_gui.main", return_value=37) as browser_main,
+            redirect_stderr(stderr),
+        ):
+            exit_code = install_enhancer_qt_gui.main([])
+
+        self.assertEqual(exit_code, 37)
+        browser_main.assert_called_once_with([])
+        self.assertIn("browser GUI", stderr.getvalue())
+
+    def test_qt_gui_can_fail_without_browser_fallback(self) -> None:
+        stderr = io.StringIO()
+
+        with (
+            patch.object(
+                install_enhancer_qt_gui,
+                "import_qt_binding",
+                side_effect=install_enhancer_qt_gui.QtBindingError("missing Qt"),
+            ),
+            redirect_stderr(stderr),
+        ):
+            exit_code = install_enhancer_qt_gui.main(["--no-browser-fallback"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("python -m pip install -e .[gui]", stderr.getvalue())
 
     def test_browser_gui_payload_builds_recommended_install_plan(self) -> None:
         with repo_fixture("browser_gui_recommended") as install_target:

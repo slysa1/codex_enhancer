@@ -24,6 +24,8 @@ class PackagingMetadataTests(unittest.TestCase):
         self.assertEqual(project["license"], "GPL-3.0-or-later")
         self.assertEqual(project["license-files"], ["LICENSE"])
         self.assertEqual(project["requires-python"], ">=3.13")
+        self.assertEqual(project["optional-dependencies"]["gui"], ["PyQt6"])
+        self.assertEqual(project["optional-dependencies"]["pyside"], ["PySide6"])
         self.assertIn("Operating System :: OS Independent", project["classifiers"])
         self.assertIn("Programming Language :: Python :: 3 :: Only", project["classifiers"])
         self.assertIn("Programming Language :: Python :: 3.13", project["classifiers"])

@@ -57,7 +57,7 @@ Concrete before/after workflow:
 - A Windows launcher in [install_enhancer.bat](install_enhancer.bat) with PowerShell-backed Python discovery in [scripts/launch_enhancer_gui.ps1](scripts/launch_enhancer_gui.ps1)
 - A thin command facade in [scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py)
 - A bootstrap installer in [scripts/install_enhancer.py](scripts/install_enhancer.py)
-- A local browser GUI installer in [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py), with the legacy Tkinter wrapper retained in [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py)
+- A standalone Qt GUI installer in [scripts/install_enhancer_qt_gui.py](scripts/install_enhancer_qt_gui.py), a no-dependency browser fallback in [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py), and the legacy Tkinter wrapper in [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py)
 - A Spec Kit bridge resolver in [scripts/spec_kit_bridge.py](scripts/spec_kit_bridge.py)
 - A Utility Harness resolver in [scripts/utility_harness.py](scripts/utility_harness.py)
 - A stack-pack registry in [scaffold/stack-packs/](scaffold/stack-packs/)
@@ -88,7 +88,7 @@ Do not use it if you want a packaged agent runtime, hidden orchestration layer, 
 
 Support policy: package metadata requires Python `>=3.13`, and CI proves Python 3.13 on Ubuntu, Windows, and macOS. Do not claim older Python support until the CI matrix tests it.
 
-The current source-repo implementation has no runtime third-party Python dependencies. The optional Utility Harness can scaffold a target-repo `requirements-codex.txt` for Codex/operator helper tooling, and it can explicitly run `python -m pip install -r requirements-codex.txt` after writing those helper files when the operator selects that dependency-install option.
+The current source-repo implementation has no mandatory runtime third-party Python dependencies. The optional standalone Qt GUI uses PyQt6 when you install `python -m pip install -e .[gui]`; PySide6 is also supported with `python -m pip install -e .[pyside]`. Without either Qt binding, the launcher falls back to the local browser GUI. The optional Utility Harness can scaffold a target-repo `requirements-codex.txt` for Codex/operator helper tooling, and it can explicitly run `python -m pip install -r requirements-codex.txt` after writing those helper files when the operator selects that dependency-install option.
 
 Spec Kit bootstrap is the only normal path that expects an external executable. `--with-spec-kit` or `--spec-kit-mode bootstrap` uses `uvx` by default and pins the official bootstrap ref used by this enhancer release. Use `--spec-kit-exe <path>` when you already have a local `specify`-compatible executable or want to avoid `uvx`. Previews show the exact bootstrap command, executable status, pinned ref, network warning, and recovery hint before any `--write` apply.
 
@@ -134,13 +134,19 @@ This source checkout may contain official Spec Kit files such as `.specify/`, `.
 ### Option 2: Install The Enhancer Into Another Repository
 Use the installer to scaffold the enhancer into a new or existing repository.
 
-If you want a Windows installer flow with a browser-based preview, confirmation step, progress log, and automatic README handoff, start here:
+If you want a Windows installer flow with a standalone window when PyQt6 or PySide6 is installed, start here:
 
 ```bat
 install_enhancer.bat
 ```
 
-The launcher opens [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py), which lets you:
+The launcher opens [scripts/install_enhancer_qt_gui.py](scripts/install_enhancer_qt_gui.py). Install the optional Qt dependency for the modern standalone window:
+
+```bat
+python -m pip install -e .[gui]
+```
+
+If Qt is not installed, the same launcher falls back to [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py). Both GUI paths let you:
 - type a target repo path manually
 - choose between a full scaffold install, an upgrade/reconcile pass, and a managed-output refresh
 - choose whether the Spec Kit bridge should stay off, attach to an existing official install, or bootstrap official Spec Kit for Codex
@@ -153,7 +159,7 @@ The launcher opens [scripts/install_enhancer_web_gui.py](scripts/install_enhance
 - choose whether to install Utility Harness helper dependencies after the helper files are written
 - review which files will be created, proposed, or overwritten, with critical conflicts called out separately
 - confirm overwrite actions before install
-- watch installation progress in the browser log
+- watch installation progress in the GUI log
 - see a completion summary that lists installed stack packs and selected workflow packs
 - open the product README automatically after completion
 
@@ -717,7 +723,7 @@ What they do:
 - `python scripts/install_enhancer.py --target ... --manage-workflows --add-workflow <name>`: previews a workflow-selection change for an installed target and installs selected workflow-owned guidance for `repository-improvement-audit`
 - `python scripts/install_enhancer.py --target ... --utility-harness-mode install`: previews installing optional Codex/operator helper tools
 - `python scripts/install_enhancer.py --target ...`: previews or applies a scaffold install into another repo
-- `install_enhancer.bat`: opens the Windows browser GUI installer
+- `install_enhancer.bat`: opens the Windows GUI installer
 
 ## How The Enhancer Is Structured
 
@@ -775,8 +781,23 @@ Do not mirror, migrate, or overwrite `.agents/skills/` from enhancer install flo
 ### `pyproject.toml`
 [pyproject.toml](pyproject.toml) defines the distributable package metadata for the `codex-enhancer` console script. The package version is read from [scripts/enhancer_spec.py](scripts/enhancer_spec.py) so package metadata and installed enhancer manifests stay aligned. [MANIFEST.in](MANIFEST.in) and [codex_enhancer/package_assets.py](codex_enhancer/package_assets.py) keep scaffold assets available to installed wheels and source distributions.
 
+### `scripts/install_enhancer_qt_gui.py`
+[scripts/install_enhancer_qt_gui.py](scripts/install_enhancer_qt_gui.py) is the preferred Windows-first GUI layer over the installer core. When PyQt6 or PySide6 is installed, it opens a standalone Qt window with:
+- manual path entry
+- detected stack-pack selection with recommended defaults for install mode
+- editable manifest-based pack selection for manage-packs mode
+- editable manifest-based workflow selection for manage-workflows mode
+- read-only manifest-based pack context for upgrade and refresh mode
+- a readable preview for install, upgrade, and refresh operations
+- an overwrite acknowledgement gate before destructive install actions
+- a progress log tied to real install steps
+- a completion summary that lists installed stack packs and selected workflows
+- automatic opening of the enhancer README when the install finishes
+
+Install the PyQt6-backed window with `python -m pip install -e .[gui]`, or use `python -m pip install -e .[pyside]` when you prefer PySide6. If neither Qt binding is available, this entrypoint falls back to [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py).
+
 ### `scripts/install_enhancer_web_gui.py`
-[scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py) is the default Windows-first GUI layer over the installer core. It runs a token-protected localhost server, opens the user's browser, and adds:
+[scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py) is the no-dependency local browser GUI fallback. It runs a token-protected localhost server, opens the user's browser, and adds:
 - manual path entry
 - detected stack-pack selection with recommended defaults for install mode
 - editable manifest-based pack selection for manage-packs mode
@@ -790,10 +811,10 @@ Do not mirror, migrate, or overwrite `.agents/skills/` from enhancer install flo
 - a Quit action that shuts down the local server after use
 
 ### `scripts/install_enhancer_gui.py`
-[scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py) is the legacy Tkinter wrapper. It remains available for fallback testing and still owns shared preview/completion helper functions used by the browser GUI.
+[scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py) is the legacy Tkinter wrapper. It remains available for fallback testing and still owns shared preview/completion helper functions used by the Qt and browser GUI layers.
 
 ### `install_enhancer.bat`
-[install_enhancer.bat](install_enhancer.bat) is the easiest Windows entrypoint. Double-click it or run it from `cmd`/PowerShell to launch the browser GUI installer without typing the Python command yourself.
+[install_enhancer.bat](install_enhancer.bat) is the easiest Windows entrypoint. Double-click it or run it from `cmd`/PowerShell to launch the Qt GUI when an optional Qt binding is installed, or the browser GUI fallback otherwise, without typing the Python command yourself.
 The batch file delegates to [scripts/launch_enhancer_gui.ps1](scripts/launch_enhancer_gui.ps1) so Python is resolved the same way it is in PowerShell, including PowerShell-visible aliases, shims, and PATH updates that `cmd.exe` may not see.
 
 ### `codex-enhancer`
@@ -977,6 +998,7 @@ Check:
 |-- scripts/check.py
 |-- scripts/codex_enhancer_cli.py
 |-- scripts/install_enhancer.py
+|-- scripts/install_enhancer_qt_gui.py
 |-- scripts/install_enhancer_web_gui.py
 |-- scripts/launch_enhancer_gui.ps1
 |-- scripts/install_enhancer_gui.py

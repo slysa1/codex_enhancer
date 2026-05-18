@@ -443,9 +443,9 @@ class CodexEnhancerCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("repository-improvement-audit", output.getvalue())
 
-    def test_main_gui_delegates_to_browser_installer(self) -> None:
+    def test_main_gui_delegates_to_qt_installer(self) -> None:
         with patch(
-            "scripts.install_enhancer_web_gui.main",
+            "scripts.install_enhancer_qt_gui.main",
             return_value=23,
         ) as gui_main:
             exit_code = codex_enhancer_cli.main(["gui"])

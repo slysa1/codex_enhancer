@@ -43,7 +43,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Run `python scripts/codex_enhancer_cli.py spec-report ../repo`,
         `python scripts/codex_enhancer_cli.py spec-sync ../repo --changed src/app.py`,
         and `python scripts/codex_enhancer_cli.py bridge ../repo --attach-spec-kit`.
-        Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_web_gui.py`.
+        Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_qt_gui.py`.
+        The browser fallback lives in `scripts/install_enhancer_web_gui.py`.
         PowerShell-backed GUI launch lives in `scripts/launch_enhancer_gui.ps1`.
         The legacy Tkinter wrapper remains in `scripts/install_enhancer_gui.py`.
         Workflow packs live in `scaffold/workflow-packs/` and reuse `scripts/stack_packs.py`.
@@ -71,7 +72,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Use `--with-spec-kit` only when the user explicitly wants official Spec Kit bootstrapped.
         Use `audit` for installed target adaptation checks.
         Use `spec-sync` for read-only Spec Kit changed-path sync cues.
-        Use `install_enhancer.bat` for the Windows browser GUI installer.
+        Use `install_enhancer.bat` for the Windows GUI installer.
+        The Qt GUI lives in `scripts/install_enhancer_qt_gui.py`.
         The browser GUI lives in `scripts/install_enhancer_web_gui.py`.
         PowerShell Python discovery lives in `scripts/launch_enhancer_gui.ps1`.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the enhancer roadmap.
@@ -92,7 +94,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "install_enhancer.bat": """
         @echo off
         set "PS_LAUNCHER=%SCRIPT_DIR%scripts\\launch_enhancer_gui.ps1"
-        install_enhancer_web_gui.py
+        install_enhancer_qt_gui.py
         where pwsh
         pwsh.exe
         powershell.exe
@@ -112,6 +114,10 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         dynamic = ["version"]
         license = "GPL-3.0-or-later"
         license-files = ["LICENSE"]
+
+        [project.optional-dependencies]
+        gui = ["PyQt6"]
+        pyside = ["PySide6"]
 
         [project.scripts]
         codex-enhancer = "scripts.codex_enhancer_cli:main"
@@ -147,7 +153,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Workflow pack loading reuses scripts/stack_packs.py with scaffold/workflow-packs/.
         workflow-pack management stays explicit.
         .agents/skills/ is not an enhancer-managed output root.
-        scripts/install_enhancer_web_gui.py provides the local browser GUI.
+        scripts/install_enhancer_qt_gui.py provides the optional standalone GUI.
+        scripts/install_enhancer_web_gui.py provides the local browser GUI fallback.
         scripts/launch_enhancer_gui.ps1 resolves PowerShell-visible Python commands.
         """,
         "docs/ai/code-review.md": f"""
@@ -323,6 +330,12 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         "scripts/install_enhancer_gui.py": """
         # placeholder gui installer for fixture
         """,
+        "scripts/install_enhancer_qt_gui.py": """
+        # placeholder Qt gui installer for fixture
+        PyQt6
+        PySide6
+        install_enhancer_web_gui.py
+        """,
         "scripts/install_enhancer_web_gui.py": """
         # placeholder browser gui installer for fixture
         """,
@@ -330,8 +343,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Get-Command python
         pythonw
         pyw
-        Starting Codex Enhancer browser installer
+        Starting Codex Enhancer GUI installer
         codex-enhancer-launcher.log
+        install_enhancer_qt_gui.py
         install_enhancer_web_gui.py
         System.Windows.Forms.MessageBox
         """,

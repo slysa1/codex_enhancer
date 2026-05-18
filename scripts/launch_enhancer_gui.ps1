@@ -85,7 +85,7 @@ function Invoke-Installer {
         }
         Write-LauncherLog "Installer command returned exit $global:LASTEXITCODE."
     } catch {
-        Show-LauncherError "Codex Enhancer could not start the browser installer.`n`n$($_.Exception.Message)"
+        Show-LauncherError "Codex Enhancer could not start the GUI installer.`n`n$($_.Exception.Message)"
         exit 1
     }
 }
@@ -95,12 +95,13 @@ if (-not $RepoRoot) {
 }
 
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
-$GuiScript = Join-Path $RepoRoot "scripts\install_enhancer_web_gui.py"
+$GuiScript = Join-Path $RepoRoot "scripts\install_enhancer_qt_gui.py"
+# install_enhancer_qt_gui.py falls back to install_enhancer_web_gui.py when Qt is unavailable.
 Write-LauncherLog "RepoRoot=$RepoRoot"
 Write-LauncherLog "GuiScript=$GuiScript"
 
 if (-not (Test-Path -LiteralPath $GuiScript -PathType Leaf)) {
-    Show-LauncherError "Codex Enhancer could not find the browser GUI script:`n`n$GuiScript"
+    Show-LauncherError "Codex Enhancer could not find the GUI script:`n`n$GuiScript"
     exit 1
 }
 
@@ -139,7 +140,7 @@ $candidates = @(
 
 foreach ($candidate in $candidates) {
     if (Test-PythonCommand $candidate.ProbeCommand $candidate.ProbeArguments) {
-        Write-Host "Starting Codex Enhancer browser installer with $($candidate.Command)."
+        Write-Host "Starting Codex Enhancer GUI installer with $($candidate.Command)."
         Invoke-Installer $candidate.Command $candidate.Arguments
         exit 0
     }
@@ -150,7 +151,7 @@ Python was not found from PowerShell.
 
 Open PowerShell in this folder and run:
   Get-Command python
-  python scripts\install_enhancer_web_gui.py
+  python scripts\install_enhancer_qt_gui.py
 
 If that works, send the output of Get-Command python so this launcher can be taught that Python location.
 "@
