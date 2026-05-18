@@ -648,6 +648,7 @@ def run_qt_gui(binding: QtBinding) -> int:
                             "The install finished, but the README could not be opened automatically."
                             f"\n\n{error}",
                         )
+                    break
 
         def _set_busy(self, busy: bool) -> None:
             if not busy:
