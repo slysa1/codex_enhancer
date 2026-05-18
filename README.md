@@ -54,7 +54,7 @@ Concrete before/after workflow:
 - Durable supporting guidance in [docs/ai/](docs/ai/)
 - Narrow repo-local skills in [.codex/skills/](.codex/skills/)
 - Friendly source-checkout command shims in [codex-enhancer](codex-enhancer) and [codex-enhancer.bat](codex-enhancer.bat)
-- A Windows launcher in [install_enhancer.bat](install_enhancer.bat)
+- A Windows launcher in [install_enhancer.bat](install_enhancer.bat) with PowerShell-backed Python discovery in [scripts/launch_enhancer_gui.ps1](scripts/launch_enhancer_gui.ps1)
 - A thin command facade in [scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py)
 - A bootstrap installer in [scripts/install_enhancer.py](scripts/install_enhancer.py)
 - A local browser GUI installer in [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py), with the legacy Tkinter wrapper retained in [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py)
@@ -794,6 +794,7 @@ Do not mirror, migrate, or overwrite `.agents/skills/` from enhancer install flo
 
 ### `install_enhancer.bat`
 [install_enhancer.bat](install_enhancer.bat) is the easiest Windows entrypoint. Double-click it or run it from `cmd`/PowerShell to launch the browser GUI installer without typing the Python command yourself.
+The batch file delegates to [scripts/launch_enhancer_gui.ps1](scripts/launch_enhancer_gui.ps1) so Python is resolved the same way it is in PowerShell, including PowerShell-visible aliases, shims, and PATH updates that `cmd.exe` may not see.
 
 ### `codex-enhancer`
 [codex-enhancer](codex-enhancer) and [codex-enhancer.bat](codex-enhancer.bat) are source-checkout shims for the friendly CLI facade. The POSIX shim has a Python shebang; use `python codex-enhancer ...` as the fallback when a copied checkout loses executable permissions. They are convenience entrypoints only; the installer core remains [scripts/install_enhancer.py](scripts/install_enhancer.py).
@@ -977,6 +978,7 @@ Check:
 |-- scripts/codex_enhancer_cli.py
 |-- scripts/install_enhancer.py
 |-- scripts/install_enhancer_web_gui.py
+|-- scripts/launch_enhancer_gui.ps1
 |-- scripts/install_enhancer_gui.py
 |-- scripts/stack_packs.py
 |-- scripts/utility_harness.py

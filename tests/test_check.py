@@ -44,6 +44,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         `python scripts/codex_enhancer_cli.py spec-sync ../repo --changed src/app.py`,
         and `python scripts/codex_enhancer_cli.py bridge ../repo --attach-spec-kit`.
         Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_web_gui.py`.
+        PowerShell-backed GUI launch lives in `scripts/launch_enhancer_gui.ps1`.
         The legacy Tkinter wrapper remains in `scripts/install_enhancer_gui.py`.
         Workflow packs live in `scaffold/workflow-packs/` and reuse `scripts/stack_packs.py`.
         `.agents/skills/` is an external compatibility surface, not enhancer-managed output.
@@ -72,6 +73,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Use `spec-sync` for read-only Spec Kit changed-path sync cues.
         Use `install_enhancer.bat` for the Windows browser GUI installer.
         The browser GUI lives in `scripts/install_enhancer_web_gui.py`.
+        PowerShell Python discovery lives in `scripts/launch_enhancer_gui.ps1`.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the enhancer roadmap.
         See [docs/ai/release.md](docs/ai/release.md) for package release checks.
         See [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md).
@@ -89,12 +91,11 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "install_enhancer.bat": """
         @echo off
-        set "GUI_SCRIPT=%SCRIPT_DIR%scripts\\install_enhancer_web_gui.py"
-        where pyw
-        where py
-        where pythonw
-        where python3
-        where python
+        set "PS_LAUNCHER=%SCRIPT_DIR%scripts\\launch_enhancer_gui.ps1"
+        install_enhancer_web_gui.py
+        pwsh.exe
+        powershell.exe
+        WindowStyle Hidden
         """,
         "MANIFEST.in": """
         recursive-include codex_enhancer/assets/root *
@@ -145,6 +146,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         workflow-pack management stays explicit.
         .agents/skills/ is not an enhancer-managed output root.
         scripts/install_enhancer_web_gui.py provides the local browser GUI.
+        scripts/launch_enhancer_gui.ps1 resolves PowerShell-visible Python commands.
         """,
         "docs/ai/code-review.md": f"""
         # Review
@@ -321,6 +323,13 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scripts/install_enhancer_web_gui.py": """
         # placeholder browser gui installer for fixture
+        """,
+        "scripts/launch_enhancer_gui.ps1": """
+        Get-Command python
+        pythonw
+        pyw
+        install_enhancer_web_gui.py
+        System.Windows.Forms.MessageBox
         """,
         "scripts/stack_packs.py": """
         # placeholder stack pack loader for fixture

@@ -2,50 +2,44 @@
 setlocal EnableExtensions
 
 set "SCRIPT_DIR=%~dp0"
-set "GUI_SCRIPT=%SCRIPT_DIR%scripts\install_enhancer_web_gui.py"
+set "PS_LAUNCHER=%SCRIPT_DIR%scripts\launch_enhancer_gui.ps1"
 
-where pyw >nul 2>nul
-if not errorlevel 1 (
-    where py >nul 2>nul
-    if not errorlevel 1 (
-        py -3 -c "import sys" >nul 2>nul
-        if not errorlevel 1 (
-            start "" pyw -3 "%GUI_SCRIPT%"
-            exit /b 0
-        )
-    )
+if not exist "%PS_LAUNCHER%" (
+    echo Codex Enhancer launcher helper was not found:
+    echo   %PS_LAUNCHER%
+    pause
+    exit /b 1
 )
 
-where pythonw >nul 2>nul
-if not errorlevel 1 (
-    start "" pythonw "%GUI_SCRIPT%"
+if exist "%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe" (
+    start "" "%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe" -NoLogo -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%"
     exit /b 0
 )
 
-where py >nul 2>nul
+where pwsh >nul 2>nul
 if not errorlevel 1 (
-    py -3 -c "import sys" >nul 2>nul
-    if not errorlevel 1 (
-        py -3 "%GUI_SCRIPT%"
-        exit /b
-    )
+    start "" pwsh -NoLogo -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%"
+    exit /b 0
 )
 
-where python3 >nul 2>nul
-if not errorlevel 1 (
-    python3 "%GUI_SCRIPT%"
-    exit /b
+if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
+    start "" "%ProgramFiles%\PowerShell\7\pwsh.exe" -NoLogo -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%"
+    exit /b 0
 )
 
-where python >nul 2>nul
-if not errorlevel 1 (
-    python "%GUI_SCRIPT%"
-    exit /b
+if exist "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" (
+    start "" "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%"
+    exit /b 0
 )
 
-echo Python was not found by this cmd launcher.
-echo Install Python 3.13+, enable the Windows Python Launcher, or use:
-echo   py -3 scripts\install_enhancer.py --help
-echo   python scripts\install_enhancer.py --help
+where powershell >nul 2>nul
+if not errorlevel 1 (
+    start "" powershell -NoLogo -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%"
+    exit /b 0
+)
+
+echo PowerShell was not found by this cmd launcher.
+echo Open PowerShell in this folder and run:
+echo   python scripts\install_enhancer_web_gui.py
 pause
 exit /b 1

@@ -26,10 +26,11 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [.codex/skills/](.codex/skills/): repo-local skills for repeated procedures. Read [.codex/skills/AGENTS.md](.codex/skills/AGENTS.md) before editing or adding skills.
 - [.agents/skills/](.agents/skills/): external skill-root compatibility surface for checked-in Spec Kit skills; Codex Enhancer detects it but does not manage it.
 - [codex-enhancer](codex-enhancer) and [codex-enhancer.bat](codex-enhancer.bat): friendly source-checkout command shims over the installer.
-- [install_enhancer.bat](install_enhancer.bat): Windows launcher that opens the local browser GUI installer.
+- [install_enhancer.bat](install_enhancer.bat): Windows launcher that opens the local browser GUI installer through PowerShell-backed Python discovery.
 - [scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py): thin `codex-enhancer` subcommand facade over the installer core.
 - [scripts/install_enhancer.py](scripts/install_enhancer.py): bootstrap installer, pack and workflow manager, and refresh/reconcile planner for target repos.
 - [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py): no-dependency local browser GUI for previewing, confirming, and applying installs, pack/workflow changes, upgrades, and refreshes.
+- [scripts/launch_enhancer_gui.ps1](scripts/launch_enhancer_gui.ps1): PowerShell launcher helper that resolves the same Python commands available in PowerShell before starting the browser GUI.
 - [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py): legacy Tkinter GUI wrapper and shared preview/completion helpers.
 - [scripts/stack_packs.py](scripts/stack_packs.py): loader, detection layer, and manifest renderer for optional stack packs and workflow packs.
 - [scripts/spec_kit_bridge.py](scripts/spec_kit_bridge.py): detection, bridge-mode resolution, feature/sync reporting, and rendering helpers for optional official Spec Kit integration surfaces.
