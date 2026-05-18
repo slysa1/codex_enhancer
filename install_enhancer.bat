@@ -12,23 +12,23 @@ if not exist "%PS_LAUNCHER%" (
 )
 
 for /f "delims=" %%P in ('where pwsh 2^>nul') do (
-    start "" "%%P" -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%"
+    start "" "%%P" -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%."
     exit /b 0
 )
 
 if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
-    start "" "%ProgramFiles%\PowerShell\7\pwsh.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%"
+    start "" "%ProgramFiles%\PowerShell\7\pwsh.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%."
     exit /b 0
 )
 
 if exist "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" (
-    start "" "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%"
+    start "" "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%."
     exit /b 0
 )
 
 where powershell >nul 2>nul
 if not errorlevel 1 (
-    start "" powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%"
+    start "" powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS_LAUNCHER%" "%SCRIPT_DIR%."
     exit /b 0
 )
 

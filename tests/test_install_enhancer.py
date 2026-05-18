@@ -348,6 +348,25 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("python -m pip install -e .[gui]", stderr.getvalue())
 
+    def test_windows_launcher_resolves_real_python_runtime_for_gui(self) -> None:
+        launcher = Path(__file__).resolve().parents[1] / "scripts/launch_enhancer_gui.ps1"
+        source = launcher.read_text(encoding="utf-8")
+
+        self.assertIn("import sys; print(sys.executable)", source)
+        self.assertIn("RuntimePath", source)
+        self.assertIn("Start-Process", source)
+        self.assertIn("-RedirectStandardError", source)
+        self.assertLess(source.index('Command = "python"'), source.index('Command = "py"'))
+        self.assertNotIn('Command = "pyw"', source)
+        self.assertNotIn('Command = "pythonw"', source)
+
+    def test_windows_batch_passes_repo_root_without_trailing_backslash_escape(self) -> None:
+        batch = Path(__file__).resolve().parents[1] / "install_enhancer.bat"
+        source = batch.read_text(encoding="utf-8")
+
+        self.assertIn('"%SCRIPT_DIR%."', source)
+        self.assertNotIn('-File "%PS_LAUNCHER%" "%SCRIPT_DIR%"', source)
+
     def test_browser_gui_payload_builds_recommended_install_plan(self) -> None:
         with repo_fixture("browser_gui_recommended") as install_target:
             write_file(install_target, "package.json", '{"name": "demo"}\n')

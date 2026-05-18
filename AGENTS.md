@@ -31,7 +31,7 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - [scripts/install_enhancer.py](scripts/install_enhancer.py): bootstrap installer, pack and workflow manager, and refresh/reconcile planner for target repos.
 - [scripts/install_enhancer_qt_gui.py](scripts/install_enhancer_qt_gui.py): optional PyQt6/PySide6 standalone GUI for previewing, confirming, and applying installs, pack/workflow changes, upgrades, and refreshes.
 - [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py): no-dependency local browser GUI fallback for the same installer flows.
-- [scripts/launch_enhancer_gui.ps1](scripts/launch_enhancer_gui.ps1): PowerShell launcher helper that resolves the same Python commands available in PowerShell before starting the GUI.
+- [scripts/launch_enhancer_gui.ps1](scripts/launch_enhancer_gui.ps1): PowerShell launcher helper that resolves the real Python runtime behind PowerShell-visible commands before starting the GUI.
 - [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py): legacy Tkinter GUI wrapper and shared preview/completion helpers.
 - [scripts/stack_packs.py](scripts/stack_packs.py): loader, detection layer, and manifest renderer for optional stack packs and workflow packs.
 - [scripts/spec_kit_bridge.py](scripts/spec_kit_bridge.py): detection, bridge-mode resolution, feature/sync reporting, and rendering helpers for optional official Spec Kit integration surfaces.

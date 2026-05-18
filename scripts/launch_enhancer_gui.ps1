@@ -46,7 +46,7 @@ function Show-LauncherError {
     }
 }
 
-function Test-PythonCommand {
+function Resolve-PythonCommand {
     param(
         [string]$Command,
         [string[]]$Arguments
@@ -54,36 +54,76 @@ function Test-PythonCommand {
 
     if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) {
         Write-LauncherLog "Probe skipped: $Command not found."
-        return $false
+        return $null
     }
 
     try {
         $global:LASTEXITCODE = 0
-        & $Command @Arguments | Out-Null
-        $success = $null -eq $global:LASTEXITCODE -or $global:LASTEXITCODE -eq 0
-        Write-LauncherLog "Probe $Command $($Arguments -join ' ') -> exit $global:LASTEXITCODE success=$success."
-        return $success
+        $probeArguments = @($Arguments + @("-c", "import sys; print(sys.executable)"))
+        $probeOutput = & $Command @probeArguments 2>&1
+        $exitCode = $global:LASTEXITCODE
+        if ($null -ne $exitCode -and $exitCode -ne 0) {
+            Write-LauncherLog "Probe $Command $($probeArguments -join ' ') -> exit $exitCode output=$($probeOutput -join ' ')"
+            return $null
+        }
+        $runtimePath = ($probeOutput | Where-Object { $_ } | Select-Object -First 1).ToString().Trim()
+        if (-not $runtimePath) {
+            Write-LauncherLog "Probe $Command $($probeArguments -join ' ') returned no Python executable path."
+            return $null
+        }
+        $resolvedPath = (Resolve-Path -LiteralPath $runtimePath -ErrorAction Stop).Path
+        Write-LauncherLog "Probe $Command $($probeArguments -join ' ') -> $resolvedPath."
+        return [PSCustomObject]@{
+            ProbeCommand = $Command
+            ProbeArguments = $probeArguments
+            RuntimePath = $resolvedPath
+        }
     } catch {
         Write-LauncherLog "Probe $Command failed: $($_.Exception.Message)"
-        return $false
+        return $null
     }
 }
 
-function Invoke-Installer {
+function Quote-ProcessArgument {
     param(
-        [string]$Command,
-        [string[]]$Arguments
+        [string]$Value
+    )
+
+    return '"' + ($Value -replace '"', '\"') + '"'
+}
+
+function Start-Installer {
+    param(
+        [string]$PythonPath
     )
 
     try {
         Set-Location -LiteralPath $RepoRoot
-        $global:LASTEXITCODE = 0
-        Write-LauncherLog "Invoking $Command $($Arguments -join ' ')"
-        & $Command @Arguments
-        if ($null -ne $global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
-            throw "The installer process exited with code $global:LASTEXITCODE."
+        $stdoutPath = Join-Path ([System.IO.Path]::GetTempPath()) "codex-enhancer-gui.stdout.log"
+        $stderrPath = Join-Path ([System.IO.Path]::GetTempPath()) "codex-enhancer-gui.stderr.log"
+        Set-Content -LiteralPath $stdoutPath -Value "" -Encoding UTF8
+        Set-Content -LiteralPath $stderrPath -Value "" -Encoding UTF8
+
+        $process = Start-Process `
+            -FilePath $PythonPath `
+            -ArgumentList @((Quote-ProcessArgument $GuiScript)) `
+            -WorkingDirectory $RepoRoot `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath `
+            -PassThru
+        Write-LauncherLog "Started GUI process $($process.Id) with $PythonPath."
+
+        Start-Sleep -Milliseconds 1200
+        $process.Refresh()
+        if ($process.HasExited) {
+            $stdout = Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue
+            $stderr = Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue
+            $details = (($stderr, $stdout) -join "`n").Trim()
+            if (-not $details) {
+                $details = "No Python output was captured. See $stderrPath and $stdoutPath."
+            }
+            throw "The GUI process exited immediately with code $($process.ExitCode).`n`n$details"
         }
-        Write-LauncherLog "Installer command returned exit $global:LASTEXITCODE."
     } catch {
         Show-LauncherError "Codex Enhancer could not start the GUI installer.`n`n$($_.Exception.Message)"
         exit 1
@@ -107,41 +147,24 @@ if (-not (Test-Path -LiteralPath $GuiScript -PathType Leaf)) {
 
 $candidates = @(
     @{
-        Command = "py"
-        Arguments = @("-3", $GuiScript)
-        ProbeCommand = "py"
-        ProbeArguments = @("-3", "-c", "import sys")
+        Command = "python"
+        Arguments = @()
     },
     @{
         Command = "python3"
-        Arguments = @($GuiScript)
-        ProbeCommand = "python3"
-        ProbeArguments = @("-c", "import sys")
+        Arguments = @()
     },
     @{
-        Command = "python"
-        Arguments = @($GuiScript)
-        ProbeCommand = "python"
-        ProbeArguments = @("-c", "import sys")
-    },
-    @{
-        Command = "pyw"
-        Arguments = @("-3", $GuiScript)
-        ProbeCommand = "pyw"
-        ProbeArguments = @("-3", "-c", "import sys")
-    },
-    @{
-        Command = "pythonw"
-        Arguments = @($GuiScript)
-        ProbeCommand = "pythonw"
-        ProbeArguments = @("-c", "import sys")
+        Command = "py"
+        Arguments = @("-3")
     }
 )
 
 foreach ($candidate in $candidates) {
-    if (Test-PythonCommand $candidate.ProbeCommand $candidate.ProbeArguments) {
-        Write-Host "Starting Codex Enhancer GUI installer with $($candidate.Command)."
-        Invoke-Installer $candidate.Command $candidate.Arguments
+    $resolved = Resolve-PythonCommand $candidate.Command $candidate.Arguments
+    if ($resolved) {
+        Write-Host "Starting Codex Enhancer GUI installer with $($resolved.RuntimePath)."
+        Start-Installer $resolved.RuntimePath
         exit 0
     }
 }

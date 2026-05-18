@@ -341,8 +341,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scripts/launch_enhancer_gui.ps1": """
         Get-Command python
-        pythonw
-        pyw
+        sys.executable
+        Start-Process
+        RedirectStandardError
         Starting Codex Enhancer GUI installer
         codex-enhancer-launcher.log
         install_enhancer_qt_gui.py
