@@ -3,12 +3,36 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$LogPath = Join-Path ([System.IO.Path]::GetTempPath()) "codex-enhancer-launcher.log"
+
+try {
+    Set-Content -LiteralPath $LogPath -Value "" -Encoding UTF8
+} catch {
+    $LogPath = $null
+}
+
+function Write-LauncherLog {
+    param(
+        [string]$Message
+    )
+
+    if (-not $LogPath) {
+        return
+    }
+
+    try {
+        Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) $Message" -Encoding UTF8
+    } catch {
+        return
+    }
+}
 
 function Show-LauncherError {
     param(
         [string]$Message
     )
 
+    Write-LauncherLog "ERROR $Message"
     try {
         Add-Type -AssemblyName System.Windows.Forms
         [System.Windows.Forms.MessageBox]::Show(
@@ -29,14 +53,18 @@ function Test-PythonCommand {
     )
 
     if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) {
+        Write-LauncherLog "Probe skipped: $Command not found."
         return $false
     }
 
     try {
         $global:LASTEXITCODE = 0
         & $Command @Arguments | Out-Null
-        return $null -eq $global:LASTEXITCODE -or $global:LASTEXITCODE -eq 0
+        $success = $null -eq $global:LASTEXITCODE -or $global:LASTEXITCODE -eq 0
+        Write-LauncherLog "Probe $Command $($Arguments -join ' ') -> exit $global:LASTEXITCODE success=$success."
+        return $success
     } catch {
+        Write-LauncherLog "Probe $Command failed: $($_.Exception.Message)"
         return $false
     }
 }
@@ -50,10 +78,12 @@ function Invoke-Installer {
     try {
         Set-Location -LiteralPath $RepoRoot
         $global:LASTEXITCODE = 0
+        Write-LauncherLog "Invoking $Command $($Arguments -join ' ')"
         & $Command @Arguments
         if ($null -ne $global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
             throw "The installer process exited with code $global:LASTEXITCODE."
         }
+        Write-LauncherLog "Installer command returned exit $global:LASTEXITCODE."
     } catch {
         Show-LauncherError "Codex Enhancer could not start the browser installer.`n`n$($_.Exception.Message)"
         exit 1
@@ -66,6 +96,8 @@ if (-not $RepoRoot) {
 
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 $GuiScript = Join-Path $RepoRoot "scripts\install_enhancer_web_gui.py"
+Write-LauncherLog "RepoRoot=$RepoRoot"
+Write-LauncherLog "GuiScript=$GuiScript"
 
 if (-not (Test-Path -LiteralPath $GuiScript -PathType Leaf)) {
     Show-LauncherError "Codex Enhancer could not find the browser GUI script:`n`n$GuiScript"
@@ -73,18 +105,6 @@ if (-not (Test-Path -LiteralPath $GuiScript -PathType Leaf)) {
 }
 
 $candidates = @(
-    @{
-        Command = "pyw"
-        Arguments = @("-3", $GuiScript)
-        ProbeCommand = "pyw"
-        ProbeArguments = @("-3", "-c", "import sys")
-    },
-    @{
-        Command = "pythonw"
-        Arguments = @($GuiScript)
-        ProbeCommand = "pythonw"
-        ProbeArguments = @("-c", "import sys")
-    },
     @{
         Command = "py"
         Arguments = @("-3", $GuiScript)
@@ -102,11 +122,24 @@ $candidates = @(
         Arguments = @($GuiScript)
         ProbeCommand = "python"
         ProbeArguments = @("-c", "import sys")
+    },
+    @{
+        Command = "pyw"
+        Arguments = @("-3", $GuiScript)
+        ProbeCommand = "pyw"
+        ProbeArguments = @("-3", "-c", "import sys")
+    },
+    @{
+        Command = "pythonw"
+        Arguments = @($GuiScript)
+        ProbeCommand = "pythonw"
+        ProbeArguments = @("-c", "import sys")
     }
 )
 
 foreach ($candidate in $candidates) {
     if (Test-PythonCommand $candidate.ProbeCommand $candidate.ProbeArguments) {
+        Write-Host "Starting Codex Enhancer browser installer with $($candidate.Command)."
         Invoke-Installer $candidate.Command $candidate.Arguments
         exit 0
     }

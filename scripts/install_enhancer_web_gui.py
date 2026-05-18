@@ -452,7 +452,11 @@ def serve_browser_gui(*, open_browser: bool = True) -> int:
     threading.Thread(target=_shutdown_when_idle, args=(server,), daemon=True).start()
     if open_browser:
         webbrowser.open(url)
-    print(f"Codex Enhancer browser installer: {url}")
+    if sys.stdout is not None:
+        try:
+            print(f"Codex Enhancer browser installer: {url}")
+        except OSError:
+            pass
     try:
         server.serve_forever()
     except KeyboardInterrupt:  # pragma: no cover - manual server stop

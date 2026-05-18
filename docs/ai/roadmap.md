@@ -1,12 +1,12 @@
 # Codex Enhancer Roadmap
 
 ## Purpose
-This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the implemented `3.x` lifecycle, Spec Kit bridge, Utility Harness, packaging-readiness work, and the implemented source-repo `4.2` repository-improvement audit workflow. The core idea remains optional, visible, repo-local workflow guidance that improves Codex use without turning the enhancer into an agent runtime, package manager, or hidden orchestration layer.
+This roadmap records the phased enhancer design from the shipped `2.x` stack-pack work through the implemented `3.x` lifecycle, Spec Kit bridge, Utility Harness, packaging-readiness work, the implemented source-repo `4.2` repository-improvement audit workflow, the implemented `4.3` Spec Kit diagnostics work, and the planned `4.4` quality-audit hardening work. The core idea remains optional, visible, repo-local workflow guidance that improves Codex use without turning the enhancer into an agent runtime, package manager, or hidden orchestration layer.
 
-Sections through `3.4` are retained as design history and implementation context. The `4.0` product maturity work is retained as the completed audit-backed roadmap for first-time-user polish, safer command execution, packaging confidence, and integration-ready installer output. The `4.1` section is retained as the completed follow-up baseline from the first-time-user product audit.
+Sections through `3.4` are retained as design history and implementation context. The `4.0` product maturity work is retained as the completed audit-backed roadmap for first-time-user polish, safer command execution, packaging confidence, and integration-ready installer output. The `4.1` section is retained as the completed follow-up baseline from the first-time-user product audit. The `4.4` section is the current iterative implementation queue derived from the source repo quality audit and cross-agent review.
 
 ## Roadmap Status At A Glance
-The current `4.2` record is the focused repository-improvement audit workflow below. Sections before `4.0` are historical design records, and `4.0` plus `4.1` are completed baselines whose acceptance criteria should be preserved rather than re-implemented.
+The current planned work is `4.4` quality-audit hardening. Sections before `4.0` are historical design records, `4.0` plus `4.1` are completed baselines whose acceptance criteria should be preserved rather than re-implemented, and `4.2` plus `4.3` are implemented feature records.
 
 | Section | Status | How to read it |
 |---------|--------|----------------|
@@ -15,6 +15,7 @@ The current `4.2` record is the focused repository-improvement audit workflow be
 | `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
 | `4.2` | Explicit workflow-pack management, selected target audit assets, specialist audit skills, bounded audit-input helper, and skill-root compatibility policy implemented | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, Phase 5 selected target docs/skill integration, Phase 6 specialist audit skills, Phase 7 bounded Utility Harness audit input inventory, and Phase 8 `.agents/skills` compatibility policy are implemented. |
 | `4.3` | Implemented Spec Kit bridge diagnostics and local state awareness | Read-only diagnostics, multi-integration state reporting, managed-file safety guidance, script/install-mode clarity, preset/extension awareness, generic integration hints, and git/branch compatibility cues are implemented without taking ownership of official Spec Kit files. |
+| `4.4` | Planned quality-audit hardening | Implement in order as small patches: test workspace hygiene, shared command request modeling, manifest schema contract cleanup, validator decomposition, and a final re-audit gate. |
 
 ## Current Priorities
 - Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
@@ -22,7 +23,218 @@ The current `4.2` record is the focused repository-improvement audit workflow be
 - Treat `4.1 Step 7` candidates as deferred. Do not start install profiles, transactional writes, dependency regrouping, license strategy, or richer GUI QA without fresh evidence that the smaller completed work is not enough.
 - Preserve the completed global cross-agent-review safety fix in the Spec Kit bridge: bridge docs, generated target guidance, and bridge skills honor the user-level standing approval for invoked cross-agent reviews while still excluding secrets, credentials, and unrelated private content; they also call out sandbox/network escalation for peer CLI smoke tests separately from consent to share review context.
 - Preserve the completed `4.3` Spec Kit bridge boundary. Do not run `specify` except through the explicit `spec-doctor --check-spec-kit-cli` diagnostic path, and do not install integrations, call catalogs, update Spec Kit, or touch official Spec Kit-owned files unless a user explicitly chooses a future follow-up.
+- Treat `4.4` as the current quality-hardening queue. Start with test workspace hygiene before broad follow-up audits, then reduce CLI option drift and manifest/validator duplication in separate patches.
 - Do not add automatic audit execution or hidden implementation paths. Existing repo tools may inform audits only as supporting evidence, and new helper or skill-root work must stay explicit, opt-in, and tested.
+
+## 4.4 Quality Audit Hardening
+
+Status:
+- planned as iterative follow-up work from the source repo quality audit and bounded cross-agent review.
+- no implementation has started in this section.
+
+Source context:
+- `repo-quality-audit` identified concentrated installer command handling, duplicated manifest schema ownership, hidden test cleanup failures, and validator complexity.
+- cross-agent review agreed with the command-surface and manifest-schema findings, raised test workspace hygiene to high priority, and added a validator-decomposition finding for `check_stack_pack_outputs`.
+- validation at audit time passed with `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`, so this section is hardening work rather than break/fix triage.
+
+Guiding constraints:
+- keep each `4.4.x` update independently reviewable and shippable.
+- preserve current CLI, GUI, JSON, manifest, and validation behavior unless a step explicitly states a behavior change.
+- do not introduce third-party dependencies, background cleanup, hidden state, or broad rewrites.
+- do not touch unrelated dirty worktree changes while implementing these steps.
+- keep acceptance checks concrete enough that a future audit can close or revise each item.
+
+### 4.4.0 Test Workspace Hygiene And Search Safety
+
+Objective:
+- stop ignored test artifacts from accumulating under the repo and degrading search, validation, or audit tooling.
+
+Files to change:
+- `tests/test_check.py`
+- `tests/test_install_enhancer.py`
+- `tests/test_stack_packs.py`
+- `tests/test_spec_kit_bridge.py`
+- `tests/test_utility_harness.py`
+- `.gitignore`, only if the fixture-root policy changes
+- `docs/ai/roadmap.md`, only to mark completion or record a narrowed scope
+
+Files deliberately not changed:
+- no installer behavior.
+- no scaffold output behavior.
+- no CI workflow unless the local fixture-root policy cannot be validated with existing commands.
+
+Implementation steps:
+1. Replace persistent repo-local fixture roots with `tempfile.TemporaryDirectory` outside the checkout where practical.
+2. Replace broad `shutil.rmtree(..., ignore_errors=True)` cleanup with cleanup that reports failures, using narrowly documented Windows file-lock tolerance only where unavoidable.
+3. Keep fixture helpers small and shared only when they remove real duplication across the affected test modules.
+4. Add a lightweight assertion or helper so a full test run does not leave new persistent `tests/_tmp` entries.
+5. Document any manual cleanup command separately if existing stale local artifacts need operator removal.
+
+Validation:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- run the unittest command twice locally when practical, confirming the second run does not depend on stale test artifacts.
+- confirm broad source searches can exclude or avoid `tests/_tmp` without access-denied noise from new artifacts.
+
+Main risk:
+- making Windows cleanup flaky by failing on transient locks; solve with explicit, narrow tolerance rather than silent global cleanup suppression.
+
+Acceptance criteria:
+- a clean test run leaves no new persistent fixture directories under `tests/_tmp`.
+- cleanup failures are visible enough to diagnose.
+- broad `rg` or file-count audits no longer stumble over newly created fixture artifacts.
+
+### 4.4.1 Shared Command Request Model
+
+Objective:
+- reduce silent option drift between the installer core, friendly CLI facade, GUI surfaces, JSON previews, and tests.
+
+Files to change:
+- `scripts/install_enhancer.py`
+- `scripts/codex_enhancer_cli.py`
+- `scripts/install_enhancer_gui.py`
+- `tests/test_install_enhancer.py`
+- `tests/test_codex_enhancer_cli.py`
+- `README.md`, only if user-facing command names or guarantees change
+
+Files deliberately not changed:
+- no new command framework.
+- no hidden state store.
+- no replacement for argparse.
+- no GUI redesign.
+
+Implementation steps:
+1. Introduce the smallest shared request shape that can represent installer operations, write-safety options, output options, pack/workflow changes, Spec Kit options, and Utility Harness options.
+2. Keep argparse parsing local, but convert parsed arguments into the shared request before dispatch or facade translation.
+3. Make the friendly CLI facade and GUI populate the same request shape or a single canonical argv builder backed by that request shape.
+4. Add parity tests that fail when a supported installer option has no facade or GUI decision path.
+5. Preserve existing human and JSON output while moving behavior behind the shared request boundary.
+
+Validation:
+- focused CLI facade translation tests.
+- installer operation tests for install, upgrade, refresh, pack management, workflow management, bridge management, Spec Kit reports, and Utility Harness dependency install.
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- turning a drift fix into a command-system rewrite; keep the first patch as a thin typed boundary over existing behavior.
+
+Acceptance criteria:
+- adding a new installer option has one visible request-field decision point.
+- wrapper/facade omissions fail tests instead of silently dropping flags.
+- CLI and GUI behavior remain delegated to the same installer planning semantics.
+
+### 4.4.2 Manifest Schema Contract Cleanup
+
+Objective:
+- centralize the current manifest schema contract so render, load, validation, and tests stop duplicating field names and shape rules.
+
+Files to change:
+- `scripts/stack_packs.py`
+- `scripts/enhancer_validator.py`
+- `scripts/enhancer_spec.py`, if shared constants or dataclasses belong there
+- `tests/test_stack_packs.py`
+- `tests/test_check.py`
+- `tests/test_install_enhancer.py`, only for installer-facing manifest behavior
+- `docs/ai/migration-v3.md`, only if current or legacy manifest compatibility changes
+
+Files deliberately not changed:
+- no manifest schema-version bump unless serialized output meaning changes.
+- no third-party TOML writer.
+- no broad migration tool.
+- no hidden manifest state outside `.codex/enhancer/manifest.toml`.
+
+Implementation steps:
+1. Define a small typed contract for the current manifest shape and legacy-readable fields.
+2. Move repeated field names and section names behind shared constants or helpers.
+3. Keep deterministic TOML output, even if rendering remains explicit string assembly.
+4. Make manifest load diagnostics reusable by validation without forcing validator callers through installer-only APIs.
+5. Add round-trip tests for render -> load -> validate on current manifests plus focused legacy schema fixtures.
+
+Validation:
+- manifest render/load tests.
+- validator tests for malformed manifests, current schema, and supported legacy schemas.
+- installer tests that inspect generated manifest previews.
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- accidentally changing manifest output while only trying to reduce duplication; preserve output snapshots unless a deliberate migration is documented.
+
+Acceptance criteria:
+- current generated manifests round-trip through the shared loader.
+- validation and installer code use the same schema constants or diagnostics for overlapping fields.
+- schema changes have a smaller, explicit blast radius.
+
+### 4.4.3 Validator Rule Decomposition
+
+Objective:
+- split the largest validation paths into named, testable rule helpers without changing validation behavior.
+
+Files to change:
+- `scripts/enhancer_validator.py`
+- `tests/test_check.py`
+- `docs/ai/roadmap.md`, only to mark completion or record scope changes
+
+Files deliberately not changed:
+- no new validation command.
+- no external linter or schema package.
+- no source/target validation policy change unless a bug is found and documented.
+
+Implementation steps:
+1. Extract `check_stack_pack_outputs` into section-level helpers for manifest basics, lifecycle, detected packs, detected workflows, generated files, managed outputs, Spec Kit bridge, and Utility Harness.
+2. Keep file I/O at the outer boundary and make inner helpers operate on parsed data where practical.
+3. Preserve existing error messages unless a message is inaccurate.
+4. Add focused tests for pure validation helpers only where they catch cases that fixture-heavy tests currently obscure.
+5. Keep `validate()` as the public entrypoint.
+
+Validation:
+- focused validator tests for extracted helpers.
+- existing source and target validation tests.
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+
+Main risk:
+- refactoring error aggregation in a way that changes output order or hides useful hints; preserve current output order unless a test documents the new order.
+
+Acceptance criteria:
+- `check_stack_pack_outputs` is small enough to scan and delegates to named helpers.
+- validation failures remain evidence-backed and actionable.
+- adding a new manifest rule no longer requires editing one monolithic function.
+
+### 4.4.4 Re-Audit And Deferral Review
+
+Objective:
+- close the quality-audit hardening loop with evidence instead of assuming the refactors helped.
+
+Files to change:
+- `docs/ai/roadmap.md`
+- `README.md`, only if completed behavior changes user-facing guidance
+- `docs/ai/architecture.md`, only if ownership boundaries changed
+
+Files deliberately not changed:
+- no new audit automation.
+- no issue generator.
+- no quality scorecard or metric dashboard.
+
+Implementation steps:
+1. Rerun the repo-quality audit after `4.4.0` through `4.4.3`.
+2. Record which findings are closed, reduced, deferred, or invalidated by new evidence.
+3. Add only follow-up roadmap items that have fresh evidence and a bounded acceptance check.
+4. Keep larger ideas deferred unless the smaller patches failed to reduce the observed risk.
+
+Validation:
+- `python scripts/check.py`
+- `python -m unittest discover -s tests -p "test_*.py" -v`
+- record the audit commands and any manual evidence checks in the completion note.
+
+Main risk:
+- treating re-audit as a paperwork step; require concrete before/after evidence for every closure.
+
+Acceptance criteria:
+- each original quality finding has a documented status.
+- no new implementation queue is added without evidence, scope, and acceptance checks.
+- completed `4.4` work preserves the repo's minimal, explicit, no-hidden-runtime architecture.
 
 ## 4.3 Spec Kit Bridge Diagnostics And Local State Awareness
 

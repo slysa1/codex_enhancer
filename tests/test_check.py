@@ -93,8 +93,10 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         @echo off
         set "PS_LAUNCHER=%SCRIPT_DIR%scripts\\launch_enhancer_gui.ps1"
         install_enhancer_web_gui.py
+        where pwsh
         pwsh.exe
         powershell.exe
+        NoProfile
         WindowStyle Hidden
         """,
         "MANIFEST.in": """
@@ -328,6 +330,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Get-Command python
         pythonw
         pyw
+        Starting Codex Enhancer browser installer
+        codex-enhancer-launcher.log
         install_enhancer_web_gui.py
         System.Windows.Forms.MessageBox
         """,

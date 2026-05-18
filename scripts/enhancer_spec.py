@@ -330,8 +330,10 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("install_enhancer.bat"): (
             "install_enhancer_web_gui.py",
             "scripts\\launch_enhancer_gui.ps1",
+            "where pwsh",
             "pwsh.exe",
             "powershell.exe",
+            "NoProfile",
             "WindowStyle Hidden",
         ),
         Path("scripts/launch_enhancer_gui.ps1"): (
@@ -339,6 +341,8 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "python",
             "pythonw",
             "pyw",
+            "Starting Codex Enhancer browser installer",
+            "codex-enhancer-launcher.log",
             "install_enhancer_web_gui.py",
             "System.Windows.Forms.MessageBox",
         ),
