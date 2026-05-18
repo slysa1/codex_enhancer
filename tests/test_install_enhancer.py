@@ -12,7 +12,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts import install_enhancer, install_enhancer_gui
+from scripts import install_enhancer, install_enhancer_gui, install_enhancer_web_gui
 from scripts.install_enhancer import (
     apply_install_plan,
     audit_adaptation,
@@ -33,10 +33,17 @@ from scripts.install_enhancer_gui import (
     PACK_MOUSEWHEEL_PIXELS,
     PACK_VIEWPORT_HEIGHT,
     WINDOW_MAX_HEIGHT,
+    WINDOW_MIN_HEIGHT,
+    WINDOW_MIN_WIDTH,
     InstallerApp,
     build_completion_message,
     build_plan_preview,
     compute_window_geometry,
+)
+from scripts.install_enhancer_web_gui import (
+    BrowserGuiState,
+    build_plan_from_browser_payload,
+    plan_to_browser_payload,
 )
 from scripts.enhancer_spec import (
     AUDIT_SPECIALIST_SKILL_NAMES,
@@ -88,6 +95,63 @@ class FakeProgress:
 class FakeRoot:
     def update_idletasks(self) -> None:
         return None
+
+
+class FakeGeometryRoot:
+    def __init__(self, screen_width: int = 1024, screen_height: int = 768) -> None:
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.resizable_calls: list[tuple[bool, bool]] = []
+        self.minsize_calls: list[tuple[int, int]] = []
+        self.geometry_calls: list[str] = []
+
+    def winfo_screenwidth(self) -> int:
+        return self.screen_width
+
+    def winfo_screenheight(self) -> int:
+        return self.screen_height
+
+    def resizable(self, width: bool, height: bool) -> None:
+        self.resizable_calls.append((width, height))
+
+    def minsize(self, width: int, height: int) -> None:
+        self.minsize_calls.append((width, height))
+
+    def geometry(self, geometry: str) -> None:
+        self.geometry_calls.append(geometry)
+
+
+class FakeContentCanvas:
+    def __init__(
+        self,
+        *,
+        height: int = 500,
+        bbox: tuple[int, int, int, int] | None = (0, 0, 760, 900),
+    ) -> None:
+        self.height = height
+        self.bbox_value = bbox
+        self.itemconfigure_calls: list[tuple[object, dict[str, object]]] = []
+        self.configure_calls: list[dict[str, object]] = []
+
+    def itemconfigure(self, window: object, **kwargs: object) -> None:
+        self.itemconfigure_calls.append((window, kwargs))
+
+    def winfo_height(self) -> int:
+        return self.height
+
+    def bbox(self, _tag: str) -> tuple[int, int, int, int] | None:
+        return self.bbox_value
+
+    def configure(self, **kwargs: object) -> None:
+        self.configure_calls.append(kwargs)
+
+
+class FakeContentFrame:
+    def __init__(self, requested_height: int) -> None:
+        self.requested_height = requested_height
+
+    def winfo_reqheight(self) -> int:
+        return self.requested_height
 
 
 class FakePackCanvas:
@@ -161,6 +225,47 @@ class InstallEnhancerTests(unittest.TestCase):
         self.assertGreaterEqual(x, 0)
         self.assertGreaterEqual(y, 0)
 
+    def test_gui_window_geometry_allows_user_resize(self) -> None:
+        app = InstallerApp.__new__(InstallerApp)
+        root = FakeGeometryRoot()
+        app.root = root
+
+        InstallerApp._configure_window_geometry(app)
+
+        self.assertEqual(root.resizable_calls, [(True, True)])
+        self.assertEqual(root.minsize_calls, [(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)])
+        self.assertTrue(root.geometry_calls)
+
+    def test_gui_content_scroll_area_expands_to_viewport(self) -> None:
+        app = InstallerApp.__new__(InstallerApp)
+        app.content_canvas = FakeContentCanvas(height=500)
+        app.content_frame = FakeContentFrame(requested_height=320)
+        app.content_canvas_window = "content-window"
+
+        InstallerApp._sync_content_frame_height(app, 500)
+
+        self.assertEqual(
+            app.content_canvas.itemconfigure_calls[-1],
+            ("content-window", {"height": 500}),
+        )
+        self.assertEqual(
+            app.content_canvas.configure_calls[-1],
+            {"scrollregion": (0, 0, 760, 900)},
+        )
+
+    def test_gui_content_scroll_area_preserves_tall_content(self) -> None:
+        app = InstallerApp.__new__(InstallerApp)
+        app.content_canvas = FakeContentCanvas(height=500)
+        app.content_frame = FakeContentFrame(requested_height=900)
+        app.content_canvas_window = "content-window"
+
+        InstallerApp._sync_content_frame_height(app, 500)
+
+        self.assertEqual(
+            app.content_canvas.itemconfigure_calls[-1],
+            ("content-window", {"height": 900}),
+        )
+
     def test_gui_binds_pack_scroll_to_full_surface(self) -> None:
         app = InstallerApp.__new__(InstallerApp)
         app.pack_viewport = FakeBindableWidget()
@@ -186,6 +291,81 @@ class InstallEnhancerTests(unittest.TestCase):
 
         self.assertEqual(result, "break")
         self.assertAlmostEqual(app.pack_canvas.moves[-1], PACK_MOUSEWHEEL_PIXELS / 1000)
+
+    def test_browser_gui_payload_builds_recommended_install_plan(self) -> None:
+        with repo_fixture("browser_gui_recommended") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            plan = build_plan_from_browser_payload(
+                {
+                    "target": install_target.resolve().as_uri(),
+                    "operation": "install",
+                    "mode": "existing",
+                    "force": False,
+                    "spec_kit_mode": "auto",
+                    "spec_kit_script": "auto",
+                    "spec_kit_command_surface": "auto",
+                    "spec_kit_version": "",
+                    "utility_harness_mode": "off",
+                    "utility_harness_dependencies": False,
+                }
+            )
+            browser_payload = plan_to_browser_payload(plan, plan_id=7)
+
+            self.assertEqual(browser_payload["plan_id"], 7)
+            self.assertEqual(browser_payload["selection_kind"], "stack")
+            self.assertIn("javascript-typescript-app", browser_payload["selected_names"])
+            self.assertIn("JavaScript / TypeScript app", browser_payload["preview"])
+
+    def test_browser_gui_payload_respects_manual_pack_selection(self) -> None:
+        with repo_fixture("browser_gui_manual_packs") as install_target:
+            write_file(install_target, "package.json", '{"name": "demo"}\n')
+            write_file(install_target, "tsconfig.json", "{}\n")
+
+            plan = build_plan_from_browser_payload(
+                {
+                    "target": str(install_target),
+                    "operation": "install",
+                    "mode": "existing",
+                    "force": False,
+                    "spec_kit_mode": "auto",
+                    "spec_kit_script": "auto",
+                    "spec_kit_command_surface": "auto",
+                    "spec_kit_version": "",
+                    "utility_harness_mode": "off",
+                    "utility_harness_dependencies": False,
+                    "selected_packs": [],
+                }
+            )
+            browser_payload = plan_to_browser_payload(plan)
+
+            self.assertEqual(browser_payload["selected_names"], [])
+            self.assertIn(
+                "javascript-typescript-app",
+                [item["name"] for item in browser_payload["selections"]],
+            )
+
+    def test_browser_gui_apply_passes_dirty_override_to_apply(self) -> None:
+        with repo_fixture("browser_gui_apply_dirty") as install_target:
+            plan = build_install_plan(install_target, mode="new")
+            state = BrowserGuiState(token="test-token", current_plan=plan, current_plan_id=1)
+
+            with (
+                patch.object(install_enhancer_web_gui, "apply_install_plan") as apply_mock,
+                patch.object(install_enhancer_web_gui, "open_product_readme"),
+            ):
+                response = state.apply(
+                    {
+                        "plan_id": 1,
+                        "confirmed": True,
+                        "allow_dirty": True,
+                    }
+                )
+
+            apply_mock.assert_called_once()
+            self.assertTrue(apply_mock.call_args.kwargs["allow_dirty"])
+            self.assertIn("completion_message", response)
 
     def test_file_target_is_rejected(self) -> None:
         with repo_fixture("install_file_target") as parent:

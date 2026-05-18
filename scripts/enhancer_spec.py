@@ -140,6 +140,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("scripts/enhancer_validator.py"),
         Path("scripts/install_enhancer.py"),
         Path("scripts/install_enhancer_gui.py"),
+        Path("scripts/install_enhancer_web_gui.py"),
         Path("scripts/stack_packs.py"),
         Path("tests/test_check.py"),
         Path("tests/test_codex_enhancer_cli.py"),
@@ -229,6 +230,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "--with-spec-kit",
             "install_enhancer.bat",
             "scripts/install_enhancer_gui.py",
+            "scripts/install_enhancer_web_gui.py",
             "docs/ai/migration-v3.md",
             "docs/ai/roadmap.md",
             "docs/ai/release.md",
@@ -270,6 +272,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "scripts/codex_enhancer_cli.py",
             "--with-spec-kit",
             "install_enhancer.bat",
+            "scripts/install_enhancer_web_gui.py",
             "docs/ai/architecture.md",
             "docs/ai/code-review.md",
             "docs/ai/migration-v3.md",
@@ -297,6 +300,7 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
             "workflow-pack management",
             ".agents/skills/",
             "not an enhancer-managed output root",
+            "scripts/install_enhancer_web_gui.py",
         ),
         Path("docs/ai/code-review.md"): (
             CHECK_COMMAND,
@@ -318,6 +322,19 @@ SOURCE_VALIDATION_PROFILE = ValidationProfile(
         Path("MANIFEST.in"): (
             "codex_enhancer/assets/root",
             "recursive-include",
+        ),
+        Path("install_enhancer.bat"): (
+            "install_enhancer_web_gui.py",
+            "where pyw",
+            "where py",
+            "where pythonw",
+            "where python3",
+            "where python",
+        ),
+        Path("codex-enhancer.bat"): (
+            "where py",
+            "where python3",
+            "where python",
         ),
         Path("docs/ai/migration-v3.md"): (
             "--inspect-install",

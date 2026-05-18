@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 from scripts import codex_enhancer_cli
 
@@ -441,6 +442,16 @@ class CodexEnhancerCliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("repository-improvement-audit", output.getvalue())
+
+    def test_main_gui_delegates_to_browser_installer(self) -> None:
+        with patch(
+            "scripts.install_enhancer_web_gui.main",
+            return_value=23,
+        ) as gui_main:
+            exit_code = codex_enhancer_cli.main(["gui"])
+
+        self.assertEqual(exit_code, 23)
+        gui_main.assert_called_once_with([])
 
 
 if __name__ == "__main__":

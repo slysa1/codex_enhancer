@@ -43,7 +43,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Run `python scripts/codex_enhancer_cli.py spec-report ../repo`,
         `python scripts/codex_enhancer_cli.py spec-sync ../repo --changed src/app.py`,
         and `python scripts/codex_enhancer_cli.py bridge ../repo --attach-spec-kit`.
-        Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_gui.py`.
+        Launch `install_enhancer.bat` or inspect `scripts/install_enhancer_web_gui.py`.
+        The legacy Tkinter wrapper remains in `scripts/install_enhancer_gui.py`.
         Workflow packs live in `scaffold/workflow-packs/` and reuse `scripts/stack_packs.py`.
         `.agents/skills/` is an external compatibility surface, not enhancer-managed output.
         Read [docs/ai/migration-v3.md](docs/ai/migration-v3.md) before upgrading existing installs.
@@ -69,7 +70,8 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Use `--with-spec-kit` only when the user explicitly wants official Spec Kit bootstrapped.
         Use `audit` for installed target adaptation checks.
         Use `spec-sync` for read-only Spec Kit changed-path sync cues.
-        Use `install_enhancer.bat` for the Windows GUI installer.
+        Use `install_enhancer.bat` for the Windows browser GUI installer.
+        The browser GUI lives in `scripts/install_enhancer_web_gui.py`.
         See [docs/ai/roadmap.md](docs/ai/roadmap.md) for the enhancer roadmap.
         See [docs/ai/release.md](docs/ai/release.md) for package release checks.
         See [docs/ai/repo-improvement-audit.md](docs/ai/repo-improvement-audit.md).
@@ -87,6 +89,12 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "install_enhancer.bat": """
         @echo off
+        set "GUI_SCRIPT=%SCRIPT_DIR%scripts\\install_enhancer_web_gui.py"
+        where pyw
+        where py
+        where pythonw
+        where python3
+        where python
         """,
         "MANIFEST.in": """
         recursive-include codex_enhancer/assets/root *
@@ -125,6 +133,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "codex-enhancer.bat": """
         @echo off
+        where py
+        where python3
+        where python
         """,
         "docs/ai/architecture.md": """
         # Architecture
@@ -133,6 +144,7 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         Workflow pack loading reuses scripts/stack_packs.py with scaffold/workflow-packs/.
         workflow-pack management stays explicit.
         .agents/skills/ is not an enhancer-managed output root.
+        scripts/install_enhancer_web_gui.py provides the local browser GUI.
         """,
         "docs/ai/code-review.md": f"""
         # Review
@@ -306,6 +318,9 @@ def build_valid_repo(root: Path, missing: set[str] | None = None) -> None:
         """,
         "scripts/install_enhancer_gui.py": """
         # placeholder gui installer for fixture
+        """,
+        "scripts/install_enhancer_web_gui.py": """
+        # placeholder browser gui installer for fixture
         """,
         "scripts/stack_packs.py": """
         # placeholder stack pack loader for fixture

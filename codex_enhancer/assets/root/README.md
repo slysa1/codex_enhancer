@@ -57,7 +57,7 @@ Concrete before/after workflow:
 - A Windows launcher in [install_enhancer.bat](install_enhancer.bat)
 - A thin command facade in [scripts/codex_enhancer_cli.py](scripts/codex_enhancer_cli.py)
 - A bootstrap installer in [scripts/install_enhancer.py](scripts/install_enhancer.py)
-- A GUI installer in [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py)
+- A local browser GUI installer in [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py), with the legacy Tkinter wrapper retained in [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py)
 - A Spec Kit bridge resolver in [scripts/spec_kit_bridge.py](scripts/spec_kit_bridge.py)
 - A Utility Harness resolver in [scripts/utility_harness.py](scripts/utility_harness.py)
 - A stack-pack registry in [scaffold/stack-packs/](scaffold/stack-packs/)
@@ -134,15 +134,14 @@ This source checkout may contain official Spec Kit files such as `.specify/`, `.
 ### Option 2: Install The Enhancer Into Another Repository
 Use the installer to scaffold the enhancer into a new or existing repository.
 
-If you want a Windows installer flow with a folder picker, overwrite preview, confirmation step, progress bar, and automatic README handoff, start here:
+If you want a Windows installer flow with a browser-based preview, confirmation step, progress log, and automatic README handoff, start here:
 
 ```bat
 install_enhancer.bat
 ```
 
-The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py), which lets you:
+The launcher opens [scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py), which lets you:
 - type a target repo path manually
-- browse for a target folder
 - choose between a full scaffold install, an upgrade/reconcile pass, and a managed-output refresh
 - choose whether the Spec Kit bridge should stay off, attach to an existing official install, or bootstrap official Spec Kit for Codex
 - review detected stack packs and adjust the selected set before install
@@ -154,7 +153,7 @@ The launcher opens [scripts/install_enhancer_gui.py](scripts/install_enhancer_gu
 - choose whether to install Utility Harness helper dependencies after the helper files are written
 - review which files will be created, proposed, or overwritten, with critical conflicts called out separately
 - confirm overwrite actions before install
-- watch installation progress
+- watch installation progress in the browser log
 - see a completion summary that lists installed stack packs and selected workflow packs
 - open the product README automatically after completion
 
@@ -718,7 +717,7 @@ What they do:
 - `python scripts/install_enhancer.py --target ... --manage-workflows --add-workflow <name>`: previews a workflow-selection change for an installed target and installs selected workflow-owned guidance for `repository-improvement-audit`
 - `python scripts/install_enhancer.py --target ... --utility-harness-mode install`: previews installing optional Codex/operator helper tools
 - `python scripts/install_enhancer.py --target ...`: previews or applies a scaffold install into another repo
-- `install_enhancer.bat`: opens the Windows GUI installer
+- `install_enhancer.bat`: opens the Windows browser GUI installer
 
 ## How The Enhancer Is Structured
 
@@ -776,21 +775,25 @@ Do not mirror, migrate, or overwrite `.agents/skills/` from enhancer install flo
 ### `pyproject.toml`
 [pyproject.toml](pyproject.toml) defines the distributable package metadata for the `codex-enhancer` console script. The package version is read from [scripts/enhancer_spec.py](scripts/enhancer_spec.py) so package metadata and installed enhancer manifests stay aligned. [MANIFEST.in](MANIFEST.in) and [codex_enhancer/package_assets.py](codex_enhancer/package_assets.py) keep scaffold assets available to installed wheels and source distributions.
 
-### `scripts/install_enhancer_gui.py`
-[scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py) is the Windows-first GUI layer over the installer core. It adds:
-- manual path entry plus folder browsing
+### `scripts/install_enhancer_web_gui.py`
+[scripts/install_enhancer_web_gui.py](scripts/install_enhancer_web_gui.py) is the default Windows-first GUI layer over the installer core. It runs a token-protected localhost server, opens the user's browser, and adds:
+- manual path entry
 - detected stack-pack selection with recommended defaults for install mode
 - editable manifest-based pack selection for manage-packs mode
 - editable manifest-based workflow selection for manage-workflows mode
 - read-only manifest-based pack context for upgrade and refresh mode
 - a readable preview for install, upgrade, and refresh operations
 - an overwrite acknowledgement gate before destructive install actions
-- a progress bar tied to real install steps
-- a completion dialog that lists installed stack packs and selected workflows
+- a progress log tied to real install steps
+- a completion summary that lists installed stack packs and selected workflows
 - automatic opening of the enhancer README when the install finishes
+- a Quit action that shuts down the local server after use
+
+### `scripts/install_enhancer_gui.py`
+[scripts/install_enhancer_gui.py](scripts/install_enhancer_gui.py) is the legacy Tkinter wrapper. It remains available for fallback testing and still owns shared preview/completion helper functions used by the browser GUI.
 
 ### `install_enhancer.bat`
-[install_enhancer.bat](install_enhancer.bat) is the easiest Windows entrypoint. Double-click it or run it from `cmd`/PowerShell to launch the GUI installer without typing the Python command yourself.
+[install_enhancer.bat](install_enhancer.bat) is the easiest Windows entrypoint. Double-click it or run it from `cmd`/PowerShell to launch the browser GUI installer without typing the Python command yourself.
 
 ### `codex-enhancer`
 [codex-enhancer](codex-enhancer) and [codex-enhancer.bat](codex-enhancer.bat) are source-checkout shims for the friendly CLI facade. The POSIX shim has a Python shebang; use `python codex-enhancer ...` as the fallback when a copied checkout loses executable permissions. They are convenience entrypoints only; the installer core remains [scripts/install_enhancer.py](scripts/install_enhancer.py).
@@ -973,6 +976,7 @@ Check:
 |-- scripts/check.py
 |-- scripts/codex_enhancer_cli.py
 |-- scripts/install_enhancer.py
+|-- scripts/install_enhancer_web_gui.py
 |-- scripts/install_enhancer_gui.py
 |-- scripts/stack_packs.py
 |-- scripts/utility_harness.py

@@ -522,6 +522,7 @@ class InstallerApp:
         screen_height = self.root.winfo_screenheight()
         min_width = min(WINDOW_MIN_WIDTH, screen_width)
         min_height = min(WINDOW_MIN_HEIGHT, screen_height)
+        self.root.resizable(True, True)
         self.root.minsize(min_width, min_height)
         width, height, x, y = compute_window_geometry(screen_width, screen_height)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
@@ -530,14 +531,37 @@ class InstallerApp:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
 
-        frame = ttk.Frame(self.root, padding=16)
-        frame.grid(sticky="nsew")
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(7, weight=1)
-
         style = ttk.Style(self.root)
         style.configure("InstallerTitle.TLabel", font=("Segoe UI", 16, "bold"))
         frame_background = style.lookup("TFrame", "background") or self.root.cget("background")
+
+        self.content_canvas = tk.Canvas(
+            self.root,
+            borderwidth=0,
+            highlightthickness=0,
+            background=frame_background,
+        )
+        self.content_canvas.grid(row=0, column=0, sticky="nsew")
+
+        self.content_scrollbar = ttk.Scrollbar(
+            self.root,
+            orient="vertical",
+            command=self.content_canvas.yview,
+        )
+        self.content_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.content_canvas.configure(yscrollcommand=self.content_scrollbar.set)
+
+        frame = ttk.Frame(self.content_canvas, padding=16)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(7, weight=1)
+        self.content_frame = frame
+        self.content_canvas_window = self.content_canvas.create_window(
+            (0, 0),
+            window=frame,
+            anchor="nw",
+        )
+        self.content_canvas.bind("<Configure>", self._on_content_canvas_configure)
+        self.content_frame.bind("<Configure>", self._on_content_frame_configure)
 
         ttk.Label(frame, text=WINDOW_TITLE, style="InstallerTitle.TLabel").grid(
             row=0, column=0, sticky="w"
@@ -772,6 +796,24 @@ class InstallerApp:
         self.progress.grid(row=1, column=0, sticky="ew", pady=(10, 0))
 
         self.target_entry.focus_set()
+
+    def _on_content_canvas_configure(self, event: tk.Event) -> None:
+        self.content_canvas.itemconfigure(self.content_canvas_window, width=event.width)
+        self._sync_content_frame_height(event.height)
+
+    def _on_content_frame_configure(self, _event: tk.Event | None = None) -> None:
+        self._sync_content_frame_height(self.content_canvas.winfo_height())
+
+    def _sync_content_frame_height(self, viewport_height: int) -> None:
+        requested_height = self.content_frame.winfo_reqheight()
+        self.content_canvas.itemconfigure(
+            self.content_canvas_window,
+            height=max(requested_height, viewport_height),
+        )
+        self._refresh_content_scroll_region()
+
+    def _refresh_content_scroll_region(self) -> None:
+        self.content_canvas.configure(scrollregion=self.content_canvas.bbox("all") or (0, 0, 0, 0))
 
     def _on_pack_canvas_configure(self, event: tk.Event) -> None:
         self.pack_canvas.itemconfigure(self.pack_canvas_window, width=event.width)
