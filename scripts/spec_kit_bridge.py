@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,10 +40,47 @@ FEATURE_SUPPORT_FILES = ("research.md", "data-model.md", "quickstart.md")
 TASK_CHECKBOX_PATTERN = re.compile(r"^\s*[-*]\s+\[(?P<state>[ xX])\]\s+")
 DEFAULT_SYNC_ARTIFACT_LIMIT = 60
 DEFAULT_SYNC_CHANGED_PATH_LIMIT = 80
+SPEC_KIT_CLI_TIMEOUT_SECONDS = 10
+MULTI_INSTALL_SAFE_INTEGRATIONS = (
+    "auggie",
+    "claude",
+    "codebuddy",
+    "codex",
+    "cursor-agent",
+    "gemini",
+    "iflow",
+    "junie",
+    "kilocode",
+    "kimi",
+    "qodercli",
+    "qwen",
+    "roo",
+    "shai",
+    "tabnine",
+    "trae",
+    "windsurf",
+)
+SPEC_KIT_MULTI_INSTALL_MIN_VERSION = (0, 8, 5)
+SPEC_KIT_REVIEW_SAFETY_SUMMARY_LINES = (
+    "- Cross-agent review context may include only relevant Spec Kit artifacts, reviewed diffs, implementation notes, and validation evidence; exclude secrets, credentials, raw environment values, and unrelated private content.",
+    "- Peer CLI smoke tests, network calls, package installs, or sandbox escalation require separate operator approval; review-context approval is not shell or network approval.",
+)
 
 
 def default_spec_kit_script_type() -> str:
     return "ps" if os.name == "nt" else "sh"
+
+
+@dataclass(frozen=True)
+class SpecKitAddonSummary:
+    kind: str
+    name: str
+    path: str
+    status: str
+    version: str | None = None
+    description: str | None = None
+    priority: str | None = None
+    config_files: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -52,6 +90,10 @@ class SpecKitPaths:
     prompts_root: str | None = None
     agents_root: str | None = None
     codex_skills_root: str | None = None
+    script_root: str | None = None
+    presets_root: str | None = None
+    extensions_root: str | None = None
+    generic_commands_root: str | None = None
     context_file: str | None = None
     constitution: str | None = None
 
@@ -68,6 +110,14 @@ class SpecKitDetection:
     evidence: tuple[str, ...]
     paths: SpecKitPaths
     has_git_extension: bool = False
+    default_integration: str | None = None
+    installed_integrations: tuple[str, ...] = ()
+    integration_settings_keys: tuple[str, ...] = ()
+    generic_commands_dir: str | None = None
+    branch_numbering: str | None = None
+    presets: tuple[SpecKitAddonSummary, ...] = ()
+    extensions: tuple[SpecKitAddonSummary, ...] = ()
+    script_directory: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +167,28 @@ class SpecKitSyncReport:
     git_error: str | None = None
 
 
+@dataclass(frozen=True)
+class SpecKitCliDiagnostic:
+    checked: bool
+    executable: str
+    executable_path: str | None
+    version: str | None
+    version_output: str | None
+    feature_flags: tuple[str, ...]
+    feature_payload: dict[str, object] | None
+    integration_output: str | None
+    errors: tuple[str, ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SpecKitDoctorReport:
+    target: str
+    detection: SpecKitDetection
+    cli: SpecKitCliDiagnostic
+    notes: tuple[str, ...]
+
+
 def _read_json_object(path: Path) -> dict[str, object] | None:
     if not path.exists():
         return None
@@ -146,8 +218,333 @@ def _string_value(data: dict[str, object] | None, key: str) -> str | None:
     return stripped or None
 
 
+def _first_string_value(data: dict[str, object] | None, keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = _string_value(data, key)
+        if value:
+            return value
+    return None
+
+
+def _string_sequence_value(data: dict[str, object] | None, key: str) -> tuple[str, ...]:
+    if not data:
+        return ()
+    value = data.get(key)
+    if isinstance(value, str):
+        pieces = value.split(",") if "," in value else (value,)
+    elif isinstance(value, (list, tuple, set)):
+        pieces = value
+    elif isinstance(value, dict):
+        pieces = value.keys()
+    else:
+        return ()
+
+    normalized: list[str] = []
+    for item in pieces:
+        if not isinstance(item, str):
+            continue
+        stripped = item.strip()
+        if stripped and stripped not in normalized:
+            normalized.append(stripped)
+    return tuple(normalized)
+
+
+def _mapping_value(data: dict[str, object] | None, key: str) -> dict[str, object]:
+    if not data:
+        return {}
+    value = data.get(key)
+    return value if isinstance(value, dict) else {}
+
+
 def _relative_if_exists(root: Path, relative_path: str) -> str | None:
     return relative_path if (root / relative_path).exists() else None
+
+
+def _normalize_recorded_path(root: Path, value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    candidate = Path(stripped).expanduser()
+    if candidate.is_absolute():
+        try:
+            return candidate.resolve().relative_to(root).as_posix()
+        except (OSError, ValueError):
+            return candidate.as_posix()
+    normalized = stripped.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized.strip("/") or None
+
+
+def _script_directory_for_type(script_type: str | None) -> str | None:
+    if script_type == "ps":
+        return ".specify/scripts/powershell"
+    if script_type == "sh":
+        return ".specify/scripts/bash"
+    return None
+
+
+def _metadata_value_as_string(data: dict[str, object], key: str) -> str | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (str, int, float)):
+        stripped = str(value).strip()
+        return stripped or None
+    return None
+
+
+def _read_simple_metadata(path: Path) -> dict[str, object]:
+    json_data = _read_json_object(path)
+    if json_data is not None:
+        return json_data
+
+    text = _read_bounded_text(path, limit_bytes=64 * 1024)
+    metadata: dict[str, object] = {}
+    for line in text.splitlines():
+        match = re.match(r"^\s*([A-Za-z0-9_-]+)\s*[:=]\s*(.+?)\s*$", line)
+        if match is None:
+            continue
+        key = match.group(1).strip()
+        value = match.group(2).strip().strip("\"'")
+        if value.lower() == "true":
+            metadata[key] = True
+        elif value.lower() == "false":
+            metadata[key] = False
+        else:
+            metadata[key] = value
+    return metadata
+
+
+def _metadata_file_for_addon(path: Path, kind: str) -> Path | None:
+    if path.is_file():
+        return path
+    if not path.is_dir():
+        return None
+    candidates = (
+        f"{kind}.json",
+        f"{kind}.yml",
+        f"{kind}.yaml",
+        f"{kind}.toml",
+        "metadata.json",
+        "metadata.yml",
+        "metadata.yaml",
+        "manifest.json",
+        f"{path.name}.json",
+        f"{path.name}.yml",
+        f"{path.name}.yaml",
+    )
+    for name in candidates:
+        candidate = path / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _addon_status(metadata: dict[str, object]) -> str:
+    enabled = metadata.get("enabled")
+    if enabled is False:
+        return "disabled"
+    disabled = metadata.get("disabled")
+    if disabled is True:
+        return "disabled"
+    status = _metadata_value_as_string(metadata, "status")
+    if status:
+        return status.lower()
+    return "enabled"
+
+
+def _addon_config_files(root: Path, addon_path: Path, name: str, *, limit: int = 8) -> tuple[str, ...]:
+    if not addon_path.is_dir():
+        return ()
+    config_files: list[str] = []
+    suffixes = (".yml", ".yaml", ".json", ".toml")
+    for path in sorted(addon_path.rglob("*"), key=lambda item: item.as_posix().lower()):
+        if not path.is_file() or path.suffix.lower() not in suffixes:
+            continue
+        lowered = path.name.lower()
+        if "config" not in lowered and lowered not in {"settings.yml", "settings.yaml", "settings.json"}:
+            continue
+        try:
+            config_files.append(path.relative_to(root).as_posix())
+        except ValueError:
+            config_files.append(path.as_posix())
+        if len(config_files) >= limit:
+            break
+
+    sibling_prefix = f"{name}-config"
+    for path in sorted(addon_path.parent.glob(f"{sibling_prefix}.*")):
+        if not path.is_file() or path.suffix.lower() not in suffixes:
+            continue
+        try:
+            rendered = path.relative_to(root).as_posix()
+        except ValueError:
+            rendered = path.as_posix()
+        if rendered not in config_files:
+            config_files.append(rendered)
+        if len(config_files) >= limit:
+            break
+    return tuple(config_files)
+
+
+def _collect_addons(root: Path, kind: str) -> tuple[SpecKitAddonSummary, ...]:
+    directory = root / ".specify" / f"{kind}s"
+    if not directory.is_dir():
+        return ()
+
+    summaries: list[SpecKitAddonSummary] = []
+    for path in sorted(directory.iterdir(), key=lambda item: item.name.lower()):
+        if path.name.startswith("."):
+            continue
+        if path.is_file() and (
+            path.suffix.lower() not in {".json", ".yml", ".yaml", ".toml"}
+            or "-config" in path.stem.lower()
+        ):
+            continue
+        metadata_path = _metadata_file_for_addon(path, kind)
+        metadata = _read_simple_metadata(metadata_path) if metadata_path is not None else {}
+        name = (
+            _metadata_value_as_string(metadata, "id")
+            or _metadata_value_as_string(metadata, "name")
+            or path.stem
+        )
+        try:
+            relative_path = path.relative_to(root).as_posix()
+        except ValueError:
+            relative_path = path.as_posix()
+        summaries.append(
+            SpecKitAddonSummary(
+                kind=kind,
+                name=name,
+                path=relative_path,
+                status=_addon_status(metadata),
+                version=_metadata_value_as_string(metadata, "version"),
+                description=_metadata_value_as_string(metadata, "description"),
+                priority=_metadata_value_as_string(metadata, "priority"),
+                config_files=_addon_config_files(root, path, name),
+            )
+        )
+    return tuple(summaries)
+
+
+def _integration_settings(integration_data: dict[str, object] | None) -> dict[str, object]:
+    return _mapping_value(integration_data, "integration_settings")
+
+
+def _generic_commands_dir(
+    root: Path,
+    integration_data: dict[str, object] | None,
+    init_options: dict[str, object] | None,
+) -> str | None:
+    settings = _integration_settings(integration_data)
+    generic_settings = settings.get("generic")
+    generic_mapping = generic_settings if isinstance(generic_settings, dict) else {}
+    for data in (generic_mapping, init_options):
+        value = _first_string_value(
+            data,
+            ("commands_dir", "commands-dir", "commandsDirectory", "commandsDir"),
+        )
+        normalized = _normalize_recorded_path(root, value)
+        if normalized:
+            return normalized
+    return None
+
+
+def _multi_install_status(integration: str) -> str:
+    key = integration.strip().lower()
+    if key in MULTI_INSTALL_SAFE_INTEGRATIONS:
+        return "multi-install safe"
+    if key == "generic":
+        return "requires explicit official `--force` for multi-install"
+    return "multi-install safety unknown"
+
+
+def _parse_version_tuple(version: str | None) -> tuple[int, ...] | None:
+    if not version:
+        return None
+    match = re.search(r"v?(\d+)\.(\d+)(?:\.(\d+))?", version)
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups(default="0"))
+
+
+def _extract_cli_version(output: str | None) -> str | None:
+    if not output:
+        return None
+    lines = output.splitlines()
+    for line in lines:
+        lowered = line.lower()
+        if "spec" not in lowered and "specify" not in lowered:
+            continue
+        match = re.search(r"v?(\d+\.\d+(?:\.\d+)?)", line)
+        if match:
+            return match.group(1)
+    match = re.search(r"v?(\d+\.\d+(?:\.\d+)?)", output)
+    return match.group(1) if match else None
+
+
+def _feature_flags_from_payload(payload: object) -> tuple[str, ...]:
+    if isinstance(payload, dict):
+        features = payload.get("features")
+        if isinstance(features, dict):
+            return tuple(sorted(str(key) for key, enabled in features.items() if enabled is not False))
+        if isinstance(features, list):
+            return tuple(str(item) for item in features if isinstance(item, str))
+        return tuple(
+            sorted(
+                str(key)
+                for key, value in payload.items()
+                if isinstance(value, bool) and value
+            )
+        )
+    if isinstance(payload, list):
+        return tuple(str(item) for item in payload if isinstance(item, str))
+    return ()
+
+
+def _run_specify_command(
+    executable_path: str,
+    args: tuple[str, ...],
+    *,
+    cwd: Path,
+) -> tuple[str | None, str | None]:
+    try:
+        result = subprocess.run(
+            [executable_path, *args],
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=SPEC_KIT_CLI_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        return (None, f"`{executable_path}` was not found")
+    except subprocess.TimeoutExpired:
+        return (None, f"`specify {' '.join(args)}` timed out after {SPEC_KIT_CLI_TIMEOUT_SECONDS} seconds")
+    except OSError as error:
+        return (None, f"`specify {' '.join(args)}` could not run: {error}")
+
+    output = "\n".join(
+        part.strip() for part in (result.stdout, result.stderr) if part and part.strip()
+    )
+    if result.returncode != 0:
+        detail = output or f"exit code {result.returncode}"
+        return (None, f"`specify {' '.join(args)}` failed: {detail}")
+    return (output, None)
+
+
+def _resolve_executable_path(executable: str) -> str | None:
+    candidate = Path(executable).expanduser()
+    if candidate.exists():
+        try:
+            return str(candidate.resolve())
+        except OSError:
+            return str(candidate)
+    return shutil.which(executable)
 
 
 def _collect_prompt_or_agent_commands(directory: Path, suffix: str) -> tuple[str, ...]:
@@ -409,6 +806,7 @@ def build_spec_kit_sync_report(
     max_features: int = 20,
 ) -> SpecKitSyncReport:
     root = target.resolve()
+    detection = detect_spec_kit(root)
     normalized_changed_paths = _normalize_changed_paths(root, changed_paths)
     git_changed_paths: tuple[str, ...] = ()
     git_error: str | None = None
@@ -464,6 +862,25 @@ def build_spec_kit_sync_report(
             notes.append("Spec Kit-owned files appear in the changed paths; this enhancer report remains read-only.")
         if not any(_classify_changed_path(path) == "tests" for path in normalized_changed_paths):
             notes.append("No obvious test paths were supplied; verify whether the feature tasks require validation updates.")
+
+    if not (root / ".git").is_dir():
+        notes.append(
+            "No `.git/` directory was found; official Spec Kit feature scripts may need `SPECIFY_FEATURE` for non-Git repositories."
+        )
+    elif not detection.has_git_extension:
+        notes.append(
+            "Spec Kit git extension was not detected; add or remove it with official Spec Kit extension commands, not the enhancer."
+        )
+    if detection.branch_numbering:
+        notes.append(f"Spec Kit branch numbering hint: `{detection.branch_numbering}`.")
+    if detection.presets:
+        notes.append(
+            f"Detected {len(detection.presets)} local Spec Kit preset(s); review preset precedence before judging generated artifacts."
+        )
+    if detection.extensions:
+        notes.append(
+            f"Detected {len(detection.extensions)} local Spec Kit extension(s); review extension commands, gates, and config before review."
+        )
 
     return SpecKitSyncReport(
         target=root.as_posix(),
@@ -552,6 +969,32 @@ def build_spec_kit_bootstrap_command(
     )
 
 
+def _format_installed_integrations(detection: SpecKitDetection) -> str:
+    default_key = detection.default_integration or detection.integration
+    rendered: list[str] = []
+    for integration in detection.installed_integrations:
+        qualifiers = []
+        if default_key and integration == default_key:
+            qualifiers.append("default")
+        qualifiers.append(_multi_install_status(integration))
+        rendered.append(f"`{integration}` ({', '.join(qualifiers)})")
+    return ", ".join(rendered)
+
+
+def _format_addons(addons: tuple[SpecKitAddonSummary, ...]) -> str:
+    rendered: list[str] = []
+    for addon in addons:
+        qualifiers = [addon.status]
+        if addon.version:
+            qualifiers.append(f"v{addon.version}")
+        if addon.priority:
+            qualifiers.append(f"priority {addon.priority}")
+        if addon.config_files:
+            qualifiers.append(f"{len(addon.config_files)} config file(s)")
+        rendered.append(f"`{addon.name}` ({', '.join(qualifiers)})")
+    return ", ".join(rendered)
+
+
 def detect_spec_kit(target: Path) -> SpecKitDetection:
     root = target.resolve()
     integration_data = _read_json_object(root / ".specify/integration.json")
@@ -561,15 +1004,35 @@ def detect_spec_kit(target: Path) -> SpecKitDetection:
     agent_commands = _collect_prompt_or_agent_commands(root / ".github/agents", AGENT_SUFFIX)
     codex_skill_commands = _collect_codex_skill_commands(root / ".agents/skills")
 
-    integration = (
+    default_integration = (
+        _string_value(integration_data, "default_integration")
+        or _string_value(init_options, "default_integration")
+    )
+    legacy_integration = (
         _string_value(init_options, "integration")
         or _string_value(init_options, "ai")
         or _string_value(integration_data, "integration")
     )
+    integration = default_integration or legacy_integration
+    installed_integrations = (
+        _string_sequence_value(integration_data, "installed_integrations")
+        or _string_sequence_value(init_options, "installed_integrations")
+    )
+    if integration and integration not in installed_integrations:
+        installed_integrations = (integration, *installed_integrations)
+    integration_settings_keys = tuple(sorted(_integration_settings(integration_data).keys()))
     version = _string_value(init_options, "speckit_version") or _string_value(
         integration_data, "version"
     )
     script_type = _string_value(init_options, "script")
+    script_directory = _script_directory_for_type(script_type)
+    generic_commands_dir = _generic_commands_dir(root, integration_data, init_options)
+    branch_numbering = (
+        _first_string_value(init_options, ("branch_numbering", "branch-numbering"))
+        or _first_string_value(integration_data, ("branch_numbering", "branch-numbering"))
+    )
+    presets = _collect_addons(root, "preset")
+    extensions = _collect_addons(root, "extension")
     has_prompt_or_agent_surface = bool(prompt_commands or agent_commands)
     has_codex_skill_surface = bool(codex_skill_commands)
     command_surface, command_label = _resolve_command_surface(
@@ -588,6 +1051,18 @@ def detect_spec_kit(target: Path) -> SpecKitDetection:
             ".github/agents" if has_prompt_or_agent_surface and (root / ".github/agents").is_dir() else None
         ),
         codex_skills_root=".agents/skills" if has_codex_skill_surface else None,
+        script_root=(
+            script_directory
+            if script_directory and (root / script_directory).is_dir()
+            else _relative_if_exists(root, ".specify/scripts")
+        ),
+        presets_root=_relative_if_exists(root, ".specify/presets"),
+        extensions_root=_relative_if_exists(root, ".specify/extensions"),
+        generic_commands_root=(
+            generic_commands_dir
+            if generic_commands_dir and (root / generic_commands_dir).exists()
+            else None
+        ),
         context_file=_string_value(init_options, "context_file"),
         constitution=_relative_if_exists(root, ".specify/memory/constitution.md"),
     )
@@ -599,6 +1074,8 @@ def detect_spec_kit(target: Path) -> SpecKitDetection:
             paths.prompts_root,
             paths.agents_root,
             paths.codex_skills_root,
+            paths.presets_root,
+            paths.extensions_root,
         )
     )
     commands = _ordered_commands(prompt_commands + agent_commands + codex_skill_commands)
@@ -617,10 +1094,26 @@ def detect_spec_kit(target: Path) -> SpecKitDetection:
         evidence.append("found Spec Kit skills under .agents/skills/")
     if integration:
         evidence.append(f"integration: {integration}")
+    if default_integration:
+        evidence.append(f"default integration: {default_integration}")
+    if installed_integrations:
+        evidence.append("installed integrations: " + ", ".join(installed_integrations))
+    if integration_settings_keys:
+        evidence.append("integration settings: " + ", ".join(integration_settings_keys))
     if script_type:
         evidence.append(f"script type: {script_type}")
+    if script_directory:
+        evidence.append(f"script directory: {script_directory}")
     if version:
         evidence.append(f"Spec Kit version: {version}")
+    if generic_commands_dir:
+        evidence.append(f"generic commands dir: {generic_commands_dir}")
+    if branch_numbering:
+        evidence.append(f"branch numbering: {branch_numbering}")
+    if presets:
+        evidence.append(f"presets detected: {len(presets)}")
+    if extensions:
+        evidence.append(f"extensions detected: {len(extensions)}")
     if has_git_extension:
         evidence.append("git extension hooks configured")
 
@@ -635,6 +1128,14 @@ def detect_spec_kit(target: Path) -> SpecKitDetection:
         evidence=tuple(evidence),
         paths=paths,
         has_git_extension=has_git_extension,
+        default_integration=default_integration,
+        installed_integrations=installed_integrations,
+        integration_settings_keys=integration_settings_keys,
+        generic_commands_dir=generic_commands_dir,
+        branch_numbering=branch_numbering,
+        presets=presets,
+        extensions=extensions,
+        script_directory=script_directory,
     )
 
 
@@ -790,12 +1291,30 @@ def render_spec_kit_detection_lines(detection: SpecKitDetection) -> list[str]:
     lines = ["- Official Spec Kit detected."]
     if detection.integration:
         lines.append(f"- Integration: `{detection.integration}`")
+    if detection.default_integration and detection.default_integration != detection.integration:
+        lines.append(f"- Default integration: `{detection.default_integration}`")
+    if detection.installed_integrations:
+        lines.append(f"- Installed integrations: {_format_installed_integrations(detection)}")
     if detection.version:
         lines.append(f"- Spec Kit version: `{detection.version}`")
     if detection.script_type:
         lines.append(f"- Script type: `{detection.script_type}`")
+    if detection.script_directory:
+        lines.append(f"- Expected script directory: `{detection.script_directory}`")
     if detection.command_label:
         lines.append(f"- Likely command surface: {detection.command_label}.")
+    if detection.generic_commands_dir:
+        lines.append(
+            f"- Generic integration command directory: `{detection.generic_commands_dir}` (official Spec Kit-owned)."
+        )
+    if detection.branch_numbering:
+        lines.append(f"- Branch numbering: `{detection.branch_numbering}`")
+    if detection.presets:
+        lines.append(f"- Presets: {_format_addons(detection.presets)}")
+    if detection.extensions:
+        lines.append(f"- Extensions: {_format_addons(detection.extensions)}")
+    if detection.paths.extensions_root and not detection.has_git_extension:
+        lines.append("- Git extension: not detected; manage it through official Spec Kit extension commands.")
     if detection.commands:
         rendered = ", ".join(f"`{command}`" for command in detection.commands)
         lines.append(f"- Available commands: {rendered}")
@@ -947,6 +1466,196 @@ def render_spec_kit_sync_report(
     return "\n".join(lines)
 
 
+def inspect_spec_kit_cli(
+    target: Path,
+    *,
+    executable: str = "specify",
+    check_cli: bool = False,
+) -> SpecKitCliDiagnostic:
+    if not check_cli:
+        return SpecKitCliDiagnostic(
+            checked=False,
+            executable=executable,
+            executable_path=None,
+            version=None,
+            version_output=None,
+            feature_flags=(),
+            feature_payload=None,
+            integration_output=None,
+            errors=(),
+            warnings=(
+                "Spec Kit CLI check skipped; pass `--check-spec-kit-cli` to run local read-only `specify` diagnostics.",
+            ),
+        )
+
+    root = target.resolve()
+    resolved = _resolve_executable_path(executable)
+    if resolved is None:
+        return SpecKitCliDiagnostic(
+            checked=True,
+            executable=executable,
+            executable_path=None,
+            version=None,
+            version_output=None,
+            feature_flags=(),
+            feature_payload=None,
+            integration_output=None,
+            errors=(f"`{executable}` was not found on PATH or as a filesystem path.",),
+            warnings=(),
+        )
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    version_output, version_error = _run_specify_command(resolved, ("version",), cwd=root)
+    if version_error:
+        errors.append(version_error)
+    version = _extract_cli_version(version_output)
+
+    feature_payload: dict[str, object] | None = None
+    feature_flags: tuple[str, ...] = ()
+    features_output, features_error = _run_specify_command(
+        resolved,
+        ("version", "--features", "--json"),
+        cwd=root,
+    )
+    if features_error:
+        warnings.append(features_error)
+    elif features_output:
+        try:
+            parsed_features = json.loads(features_output)
+        except json.JSONDecodeError:
+            warnings.append("`specify version --features --json` returned malformed JSON.")
+        else:
+            if isinstance(parsed_features, dict):
+                feature_payload = parsed_features
+            elif isinstance(parsed_features, list):
+                feature_payload = {"features": parsed_features}
+            else:
+                warnings.append("`specify version --features --json` returned an unexpected JSON shape.")
+            feature_flags = _feature_flags_from_payload(feature_payload)
+
+    integration_output, integration_error = _run_specify_command(
+        resolved,
+        ("integration", "list"),
+        cwd=root,
+    )
+    if integration_error:
+        warnings.append(integration_error)
+
+    return SpecKitCliDiagnostic(
+        checked=True,
+        executable=executable,
+        executable_path=resolved,
+        version=version,
+        version_output=version_output,
+        feature_flags=feature_flags,
+        feature_payload=feature_payload,
+        integration_output=integration_output,
+        errors=tuple(errors),
+        warnings=tuple(warnings),
+    )
+
+
+def build_spec_kit_doctor_report(
+    target: Path,
+    *,
+    check_cli: bool = False,
+    executable: str = "specify",
+) -> SpecKitDoctorReport:
+    root = target.resolve()
+    detection = detect_spec_kit(root)
+    cli = inspect_spec_kit_cli(root, executable=executable, check_cli=check_cli)
+    notes: list[str] = []
+
+    if not detection.detected:
+        notes.append("No official Spec Kit files were detected; this report remains advisory.")
+    if detection.installed_integrations and len(detection.installed_integrations) > 1:
+        notes.append(
+            "Multiple integrations are recorded locally; use official Spec Kit integration commands to switch, use, upgrade, or uninstall them."
+        )
+    if any(_multi_install_status(item) != "multi-install safe" for item in detection.installed_integrations):
+        notes.append("At least one integration has unknown or forced multi-install safety; do not let the enhancer change it.")
+    if detection.generic_commands_dir:
+        notes.append(
+            "Generic integration command directories are external Spec Kit-owned surfaces; the enhancer will not write bridge files there."
+        )
+    if detection.presets or detection.extensions:
+        notes.append(
+            "Presets and extensions can change command files, templates, and quality gates; review their local metadata before implementation or review."
+        )
+    if detection.branch_numbering:
+        notes.append(f"Recorded branch numbering strategy: `{detection.branch_numbering}`.")
+    if not (root / ".git").is_dir():
+        notes.append("Non-Git target detected; official Spec Kit feature commands may need `SPECIFY_FEATURE`.")
+    if not detection.has_git_extension:
+        notes.append("Spec Kit git extension was not detected; manage it through official Spec Kit extension commands.")
+
+    cli_version_tuple = _parse_version_tuple(cli.version)
+    if (
+        cli.checked
+        and cli_version_tuple is not None
+        and cli_version_tuple < SPEC_KIT_MULTI_INSTALL_MIN_VERSION
+        and len(detection.installed_integrations) > 1
+    ):
+        notes.append(
+            "The local Spec Kit CLI appears older than 0.8.5; verify multi-install behavior before using official integration install or upgrade commands."
+        )
+    default_version_tuple = _parse_version_tuple(DEFAULT_SPEC_KIT_VERSION)
+    if default_version_tuple is not None and default_version_tuple < SPEC_KIT_MULTI_INSTALL_MIN_VERSION:
+        notes.append(
+            f"The enhancer bootstrap default `{DEFAULT_SPEC_KIT_VERSION}` is pinned below Spec Kit 0.8.5, so multi-install guidance remains diagnostic-only unless the local CLI proves support."
+        )
+
+    return SpecKitDoctorReport(
+        target=root.as_posix(),
+        detection=detection,
+        cli=cli,
+        notes=tuple(dict.fromkeys(notes)),
+    )
+
+
+def _format_output_excerpt(output: str, *, limit: int = 8) -> list[str]:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    excerpt = [f"  - {line}" for line in lines[:limit]]
+    hidden = len(lines) - limit
+    if hidden > 0:
+        excerpt.append(f"  - ... {hidden} more line(s) not shown.")
+    return excerpt
+
+
+def render_spec_kit_doctor_report(report: SpecKitDoctorReport) -> str:
+    lines = [f"Spec Kit doctor report for {report.target}"]
+    lines.extend(render_spec_kit_detection_lines(report.detection))
+    lines.append("")
+    lines.append("CLI diagnostics:")
+    if not report.cli.checked:
+        lines.extend(f"- {warning}" for warning in report.cli.warnings)
+    else:
+        lines.append(f"- Executable: `{report.cli.executable}`")
+        if report.cli.executable_path:
+            lines.append(f"- Resolved path: `{report.cli.executable_path}`")
+        if report.cli.version:
+            lines.append(f"- Version: `{report.cli.version}`")
+        if report.cli.feature_flags:
+            flags = ", ".join(f"`{flag}`" for flag in report.cli.feature_flags)
+            lines.append(f"- Feature flags: {flags}")
+        if report.cli.integration_output:
+            lines.append("- Integration list output:")
+            lines.extend(_format_output_excerpt(report.cli.integration_output))
+        if report.cli.warnings:
+            lines.append("- Warnings:")
+            lines.extend(f"  - {warning}" for warning in report.cli.warnings)
+        if report.cli.errors:
+            lines.append("- Errors:")
+            lines.extend(f"  - {error}" for error in report.cli.errors)
+
+    if report.notes:
+        lines.append("")
+        lines.append("Bridge notes:")
+        lines.extend(f"- {note}" for note in report.notes)
+    return "\n".join(lines)
+
+
 def format_spec_kit_bridge_mode_label(bridge: SpecKitBridgeConfig) -> str:
     if bridge.mode == "bootstrap":
         return "managed bootstrap"
@@ -1003,6 +1712,7 @@ def render_spec_kit_bridge_summary(
     lines.append(
         "- Treat `.specify/`, `specs/`, and official Spec Kit prompt, agent, or skill files as separately owned."
     )
+    lines.extend(SPEC_KIT_REVIEW_SAFETY_SUMMARY_LINES)
     return "\n".join(lines)
 
 
@@ -1027,8 +1737,14 @@ def render_spec_kit_bridge_doc_status(
         lines.append(f"- Bridge origin: `{bridge.origin}`.")
     if bridge.integration_key:
         lines.append(f"- Official integration: `{bridge.integration_key}`.")
+    if detection.default_integration:
+        lines.append(f"- Default integration recorded by Spec Kit: `{detection.default_integration}`.")
+    if detection.installed_integrations:
+        lines.append(f"- Installed integrations: {_format_installed_integrations(detection)}.")
     if bridge.script_type:
         lines.append(f"- Script type: `{bridge.script_type}`.")
+    if detection.script_directory:
+        lines.append(f"- Expected script directory: `{detection.script_directory}`.")
     if bridge.cli_version:
         lines.append(f"- Spec Kit version: `{bridge.cli_version}`.")
     if bridge.command_label:
@@ -1037,6 +1753,12 @@ def render_spec_kit_bridge_doc_status(
         lines.append("- Official Spec Kit files were detected in this repo.")
     else:
         lines.append("- Official Spec Kit files are not currently detected in this repo.")
+    if detection.generic_commands_dir:
+        lines.append(f"- Generic integration commands live at `{detection.generic_commands_dir}` and remain Spec Kit-owned.")
+    if detection.presets:
+        lines.append(f"- Local presets: {_format_addons(detection.presets)}.")
+    if detection.extensions:
+        lines.append(f"- Local extensions: {_format_addons(detection.extensions)}.")
     return "\n".join(lines)
 
 
@@ -1070,7 +1792,8 @@ def render_spec_kit_bridge_doc_workflow(bridge: SpecKitBridgeConfig) -> str:
         "1. Start feature work with official Spec Kit: constitution -> specify -> clarify -> plan -> analyze -> tasks -> implement.\n"
         "2. Before editing code, read the active `spec.md`, `plan.md`, `tasks.md`, and any `contracts/`, `quickstart.md`, `research.md`, or `data-model.md` files for that feature.\n"
         "3. Implement the smallest coherent slice, then compare the code back against the feature artifacts.\n"
-        "4. Use the bridge skills below for implementation alignment, drift checks, and review prep."
+        "4. Use the bridge skills below for implementation alignment, drift checks, and review prep.\n"
+        "5. For cross-agent reviews, share only relevant feature context and ask separately before peer CLI smoke tests or networked validation."
     )
 
 

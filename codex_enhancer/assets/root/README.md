@@ -92,6 +92,8 @@ The current source-repo implementation has no runtime third-party Python depende
 
 Spec Kit bootstrap is the only normal path that expects an external executable. `--with-spec-kit` or `--spec-kit-mode bootstrap` uses `uvx` by default and pins the official bootstrap ref used by this enhancer release. Use `--spec-kit-exe <path>` when you already have a local `specify`-compatible executable or want to avoid `uvx`. Previews show the exact bootstrap command, executable status, pinned ref, network warning, and recovery hint before any `--write` apply.
 
+Spec Kit diagnostics are file-only by default. `spec-doctor` reports local integration state, scripts, presets, extensions, generic command directories, git extension state, and branch-numbering hints without running the Spec Kit CLI. Add `--check-spec-kit-cli` only when you want it to run local read-only `specify version`, `specify version --features --json`, and `specify integration list` checks.
+
 ## Installation
 
 ### Option 1: Use This Repository Directly
@@ -172,12 +174,14 @@ python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --summa
 python scripts/codex_enhancer_cli.py audit ../my-existing-repo
 python scripts/codex_enhancer_cli.py workflows ../my-existing-repo --add repository-improvement-audit --summary --diff
 python scripts/codex_enhancer_cli.py init ../my-existing-repo --existing --utility-harness --write
+python scripts/codex_enhancer_cli.py spec-doctor ../my-existing-repo
+python scripts/codex_enhancer_cli.py spec-doctor ../my-existing-repo --check-spec-kit-cli
 python scripts/codex_enhancer_cli.py spec-report ../my-existing-repo --feature 001-login
 python scripts/codex_enhancer_cli.py spec-sync ../my-existing-repo --feature 001-login --changed src/auth.py
 python scripts/codex_enhancer_cli.py bridge ../my-existing-repo --attach-spec-kit
 ```
 
-The facade only translates friendly verbs such as `quickstart`, `doctor`, `init`, `install`, `inspect`, `audit`, `packs`, `workflows`, `refresh`, `upgrade`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager, workflow runner, or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
+The facade only translates friendly verbs such as `quickstart`, `doctor`, `init`, `install`, `inspect`, `audit`, `packs`, `workflows`, `refresh`, `upgrade`, `spec-doctor`, `spec-report`, `spec-sync`, and `bridge` into the existing installer flags. It does not add a package manager, workflow runner, or hidden installer; external setup only happens through an explicit installer bootstrap mode plus `--write`.
 
 Use `--with-spec-kit` when you want Codex Enhancer to bootstrap official Spec Kit for Codex and install the bridge skills/guidance in the same flow. The preview shows the official bootstrap command first, including the executable check, pinned ref, network note, and recovery hint; the external Spec Kit download/setup only runs if you re-run with `--write`.
 

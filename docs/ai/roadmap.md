@@ -14,12 +14,135 @@ The current `4.2` record is the focused repository-improvement audit workflow be
 | `4.0` | Completed baseline | Use as the product-maturity bar that the enhancer should not regress below. |
 | `4.1` | Completed follow-up baseline | Use as the audit-derived regression bar for onboarding, write safety, release confidence, and trust surfaces. |
 | `4.2` | Explicit workflow-pack management, selected target audit assets, specialist audit skills, bounded audit-input helper, and skill-root compatibility policy implemented | Phase 1 source docs/skill, Phase 2 source validation, Phase 3 workflow-pack assets, Phase 4 installer/CLI/GUI workflow selection, Phase 5 selected target docs/skill integration, Phase 6 specialist audit skills, Phase 7 bounded Utility Harness audit input inventory, and Phase 8 `.agents/skills` compatibility policy are implemented. |
+| `4.3` | Implemented Spec Kit bridge diagnostics and local state awareness | Read-only diagnostics, multi-integration state reporting, managed-file safety guidance, script/install-mode clarity, preset/extension awareness, generic integration hints, and git/branch compatibility cues are implemented without taking ownership of official Spec Kit files. |
 
 ## Current Priorities
 - Preserve the completed `4.0` and `4.1` acceptance criteria when touching README, installer, CLI, GUI, packaging, stack-pack reporting, or validation behavior.
 - Keep the `4.2` repository-improvement audit workflow no-implementation until a user explicitly chooses follow-up implementation work. The selected workflow may write or update only the managed audit section in root `roadmap.md`.
 - Treat `4.1 Step 7` candidates as deferred. Do not start install profiles, transactional writes, dependency regrouping, license strategy, or richer GUI QA without fresh evidence that the smaller completed work is not enough.
+- Preserve the completed global cross-agent-review safety fix in the Spec Kit bridge: bridge docs, generated target guidance, and bridge skills honor the user-level standing approval for invoked cross-agent reviews while still excluding secrets, credentials, and unrelated private content; they also call out sandbox/network escalation for peer CLI smoke tests separately from consent to share review context.
+- Preserve the completed `4.3` Spec Kit bridge boundary. Do not run `specify` except through the explicit `spec-doctor --check-spec-kit-cli` diagnostic path, and do not install integrations, call catalogs, update Spec Kit, or touch official Spec Kit-owned files unless a user explicitly chooses a future follow-up.
 - Do not add automatic audit execution or hidden implementation paths. Existing repo tools may inform audits only as supporting evidence, and new helper or skill-root work must stay explicit, opt-in, and tested.
+
+## 4.3 Spec Kit Bridge Diagnostics And Local State Awareness
+
+Status:
+- implemented as read-only diagnostics, file-only preview enrichment, docs guidance, and regression tests.
+
+Source context:
+- Spec Kit installation docs now emphasize GitHub-based official installs, persistent `uv tool install`, one-shot `uvx`, `specify version`, Windows PowerShell script support, and air-gapped wheel workflows.
+- Spec Kit integration docs describe `integration list`, `install`, `uninstall`, `switch`, `use`, and `upgrade`; Codex uses `.agents/skills` and `$speckit-<command>`; controlled multi-install support starts at Spec Kit `0.8.5`.
+- Spec Kit core docs expose `specify version --features --json`, `specify check`, `--branch-numbering`, and a future change where the git extension becomes explicit opt-in.
+- Spec Kit preset and extension docs describe separately managed catalogs, commands, priority, enable/disable state, and extension configuration files.
+
+Guiding constraints:
+- keep the bridge thin and read-only by default.
+- do not vendor, rewrite, upgrade, or repair official Spec Kit-owned files.
+- do not execute networked Spec Kit commands, install packages, add integrations, update extensions, or query remote catalogs without explicit user approval.
+- prefer local file detection first; run local `specify` diagnostics only behind an explicit CLI flag or GUI action.
+- fake any `specify` executable in tests; do not require a real Spec Kit install for source validation.
+
+### 4.3.0 Version-Aware Bridge Diagnostics
+
+Objective:
+- report the local Spec Kit CLI version and supported feature flags so bridge guidance can avoid stale assumptions.
+
+Basic implementation plan:
+- implemented `codex-enhancer spec-doctor <repo>` plus opt-in `--check-spec-kit-cli`.
+- local CLI checks run only `specify version`, `specify version --features --json`, and `specify integration list`.
+- diagnostic output records version, feature flags, integration-list output, warnings, and errors without changing official files.
+- stale-pin and older-CLI notes are surfaced as advisory bridge notes.
+
+Validation plan:
+- unit-test parsing of plain and JSON version output with a fake executable.
+- test missing executable, command timeout, unsupported `--features`, and malformed JSON.
+- run `python scripts/check.py` and `python -m unittest discover -s tests -p "test_*.py" -v`.
+
+### 4.3.1 Integration State And Multi-Install Safety Report
+
+Objective:
+- make the bridge explain which official Spec Kit integrations are installed, which one is default, and whether multi-install is safe before users choose attach, switch, or upgrade work.
+
+Basic implementation plan:
+- implemented file-only reading of `default_integration`, `installed_integrations`, `integration_settings`, and legacy `integration`.
+- explicit CLI diagnostics may run `specify integration list`.
+- CLI and GUI preview lines show default/installed integrations and multi-install safety hints.
+- unknown or custom integrations remain advisory findings.
+
+Validation plan:
+- fixtures for legacy single-integration state, new multi-integration state, Codex default state, and unknown custom state.
+- preview tests proving no integration command runs during normal install/upgrade previews.
+
+### 4.3.2 Spec Kit Managed-File Upgrade Safety Handoff
+
+Objective:
+- align enhancer preview language with Spec Kit's managed-file safety model so users understand when Spec Kit preserves modified files and when `--force` changes that behavior.
+
+Basic implementation plan:
+- implemented bridge docs and generated target guidance distinguishing enhancer-managed files from Spec Kit-managed files.
+- documented official `integration upgrade [<key>]`, `switch`, `use`, and `uninstall --force` as Spec Kit operations outside enhancer refresh.
+- normal enhancer refresh and bridge management remain read-only with respect to `.specify/`, `specs/`, official prompts, agents, skills, scripts, presets, and extensions.
+
+Validation plan:
+- docs/preview snapshot tests for attach, bootstrap, and bridge-management modes.
+- regression tests proving enhancer refresh does not delete or overwrite `.agents/skills/speckit-*` or `.specify/` files.
+
+### 4.3.3 Script, Platform, And Install-Mode Clarity
+
+Objective:
+- make bridge bootstrap and attach previews clearer about PowerShell vs Bash scripts, persistent installs vs one-shot `uvx`, and offline/air-gapped constraints.
+
+Basic implementation plan:
+- implemented script-directory reporting for `ps` and `sh` detections.
+- documented persistent `specify`, one-shot `uvx`, local executable, and air-gapped/offline boundaries.
+- retained explicit pinned bootstrap refs and no silent latest-release chasing.
+
+Validation plan:
+- tests for Windows `ps`, non-Windows `sh`, explicit override, and local executable paths.
+- preview tests for network-required vs local-executable bootstrap wording.
+
+### 4.3.4 Preset And Extension Awareness
+
+Objective:
+- help `spec-report` and `spec-sync` mention installed presets and extensions that may affect generated commands, templates, quality gates, or feature artifacts.
+
+Basic implementation plan:
+- implemented local preset and extension detection from `.specify/presets/` and `.specify/extensions/` files and directories without querying catalogs.
+- reports installed/enabled/disabled status, versions, priorities, descriptions, and config files when local metadata exists.
+- documented that preset and extension lifecycle operations remain official Spec Kit operations.
+
+Validation plan:
+- local fixture tests for installed preset metadata, extension config files, disabled state, and missing metadata.
+- report tests proving catalog/network commands are not called.
+
+### 4.3.5 Generic Integration Bridge Hints
+
+Objective:
+- make unknown or `generic` Spec Kit integrations understandable without pretending the enhancer owns their command directories.
+
+Basic implementation plan:
+- implemented `generic` integration settings and command-directory detection.
+- reports generic command directories as official Spec Kit-owned surfaces.
+- documented that reinstalling or changing generic integration options belongs to official Spec Kit integration commands.
+- enhancer install and bridge flows still do not write into generic command directories.
+
+Validation plan:
+- fixtures for generic integration with and without `commands-dir`.
+- installer tests proving generic directories are detected but never written.
+
+### 4.3.6 Git Extension And Branch-Numbering Compatibility Hints
+
+Objective:
+- keep bridge reports useful as Spec Kit's git-extension defaults and branch-numbering options evolve.
+
+Basic implementation plan:
+- implemented `.specify/extensions/git/` and branch-numbering hint detection.
+- `spec-sync` now adds cues when `.git/` is absent, git extension evidence is absent, branch numbering is recorded, or addons may affect generated artifacts.
+- documented that the git extension is official Spec Kit-owned and should be added or removed through Spec Kit, not the enhancer.
+
+Validation plan:
+- fixtures for git extension present, absent, and non-Git feature override guidance.
+- sync-report tests for changed-path guidance when git evidence is missing.
 
 ## 4.2 Repository Improvement Audit Workflow
 
@@ -2119,3 +2242,4 @@ Candidate work:
 
 Deferral rule:
 - start one of these only after a user report, repeated maintainer friction, or a targeted implementation plan shows that the smaller 4.1 steps are not enough.
+

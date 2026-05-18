@@ -21,13 +21,21 @@ This document defines how Codex Enhancer should coexist with official GitHub Spe
 - The enhancer may inspect official Spec Kit files, but it must not silently rewrite or upgrade them.
 - Enhancer-owned skills install under `.codex/skills/` only. The `.agents/skills/` root is an external compatibility surface; detect `.agents/skills/speckit-*` but do not mirror, migrate, or overwrite files there.
 
+## Cross-Agent Review Safety
+- User-level standing approval for invoked cross-agent reviews covers only the relevant review context: active Spec Kit artifacts, changed files, implementation notes, and validation evidence for the feature being reviewed.
+- Do not share secrets, credentials, tokens, raw environment values, unrelated private files, or unrelated repo content with a peer agent.
+- Minimize context before sending it to a peer agent; prefer paths, summaries, focused excerpts, and reviewed diffs when full file content is not needed.
+- Consent to share review context is separate from permission to run peer CLI smoke tests, install tools, call networked services, or request sandbox/network escalation.
+
 ## Current Shipped Surface
 - `scripts/spec_kit_bridge.py` detects official Spec Kit footprints and resolves bridge mode, command surface, and bootstrap intent.
+- Detection now reports local integration state, default integration, installed integration keys, generic command directories, script-directory expectations, branch-numbering hints, local presets, and local extensions from repository files only.
 - `scripts/install_enhancer.py` and `scripts/install_enhancer_gui.py` support bridge `off`, `attach`, and `bootstrap` flows.
 - Target installs now record bridge state under `[integrations.spec_kit]` in `.codex/enhancer/manifest.toml`.
 - `docs/ai/spec-kit-bridge.md` is now an enhancer-managed generated guide in target repos and is safe to regenerate later.
 - When the bridge is active, target installs also add the narrow bridge skills `spec-implement-bridge`, `spec-sync-check`, and `spec-review-bridge`.
 - `spec-report` and `spec-sync` provide read-only feature artifact and changed-path sync reports without editing official Spec Kit files.
+- `spec-doctor` provides a read-only bridge diagnostics report. It does not run `specify` unless the operator explicitly passes `--check-spec-kit-cli`.
 
 ## Installer Modes
 - `off`: the enhancer ignores Spec Kit and leaves only passive guidance.
@@ -41,6 +49,21 @@ This document defines how Codex Enhancer should coexist with official GitHub Spe
 - Use `--spec-kit-exe <path>` to run a local `specify`-compatible executable instead of `uvx`.
 - Dry-runs show the exact external bootstrap command, executable availability, pinned ref, network requirement, order, and recovery hint, but never download or execute it.
 - During apply, official Spec Kit bootstrap runs before enhancer-owned files are written. If bootstrap fails, inspect any official Spec Kit files it may have created, fix the executable/version/network problem, and rerun the same enhancer command.
+- Prefer a persistent official `specify` install, a local executable, or a locally built wheel in restricted/offline environments. The enhancer keeps the pinned bootstrap ref explicit and does not silently chase the latest Spec Kit release.
+
+## Read-Only Diagnostics
+- `codex-enhancer spec-doctor <repo>` reports local bridge state from repository files only.
+- `codex-enhancer spec-doctor <repo> --check-spec-kit-cli` may run local, non-network `specify version`, `specify version --features --json`, and `specify integration list` commands.
+- The diagnostic path must tolerate missing executables, unsupported feature JSON, malformed JSON, and command failures without rewriting official Spec Kit files.
+- Normal install, upgrade, bridge, `spec-report`, and `spec-sync` previews must not run `specify` or any other official Spec Kit command.
+
+## Official Operation Boundary
+- Use official Spec Kit commands for integration changes: `integration list`, `install`, `uninstall`, `switch`, `use`, and `upgrade`.
+- Treat `--force` on official Spec Kit integration operations as separate from enhancer `--force`. Official Spec Kit tracks its own managed files and may preserve or remove modified files according to its command semantics.
+- Use official Spec Kit commands for preset and extension add, remove, enable, disable, update, catalog, priority, and configuration workflows.
+- The enhancer may mention detected presets, extensions, generic command directories, git extension state, and branch-numbering hints, but it must not install, update, remove, or reconfigure them.
+- If a target records a `generic` integration or custom integration command directory, treat that directory as Spec Kit-owned and do not write enhancer bridge skills, prompts, or commands into it.
+- If the git extension is missing or the repo is not a Git worktree, bridge reports may remind operators that official Spec Kit feature commands can need `SPECIFY_FEATURE`; the enhancer should not add or remove the git extension.
 
 ## Source Repo Footprint
 This source repo can have official Spec Kit files checked in for its own development, including `.specify/`, `.github/prompts/`, `.github/agents/`, and `.agents/skills/`. That does not mean Codex Enhancer vendors Spec Kit into target repos or owns `.agents/skills/`. Target repos receive only enhancer-owned bridge guidance unless the operator explicitly chooses attach or bootstrap mode.
@@ -48,6 +71,8 @@ This source repo can have official Spec Kit files checked in for its own develop
 ## Friendly CLI Shortcuts
 - `python scripts/codex_enhancer_cli.py init <repo> --with-spec-kit`: preview bootstrapping official Spec Kit for Codex together with the enhancer scaffold.
 - `python scripts/codex_enhancer_cli.py init <repo> --with-spec-kit --write`: run the official Spec Kit bootstrap, then write enhancer-owned bridge guidance and skills.
+- `python scripts/codex_enhancer_cli.py spec-doctor <repo>`: summarize local Spec Kit integration, script, preset, extension, git, and branch-numbering state without running the Spec Kit CLI.
+- `python scripts/codex_enhancer_cli.py spec-doctor <repo> --check-spec-kit-cli`: additionally run local read-only Spec Kit CLI diagnostics.
 - `python scripts/codex_enhancer_cli.py spec-report <repo>`: summarize existing feature artifacts under `specs/` without editing official Spec Kit files.
 - `python scripts/codex_enhancer_cli.py spec-sync <repo> --feature <feature> --changed <path>`: summarize changed paths against existing feature artifacts, task state, contracts, and quickstart cues without editing official Spec Kit files.
 - `python scripts/codex_enhancer_cli.py bridge <repo> --attach-spec-kit`: preview changing an installed target's bridge mode without running a full enhancer upgrade.
@@ -63,5 +88,6 @@ The preview must show the official bootstrap command before apply, including whe
 ## Remaining Follow-up
 1. Add richer semantic drift checks after the read-only `spec-sync` report proves useful.
 2. Add optional PR support that summarizes implementation and validation from Spec Kit feature artifacts.
+3. Keep checking official Spec Kit release notes before changing bootstrap defaults or adding deeper bridge behavior.
 
 See [roadmap.md](./roadmap.md) for the step-by-step implementation plan.

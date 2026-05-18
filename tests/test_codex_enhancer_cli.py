@@ -361,6 +361,29 @@ class CodexEnhancerCliTests(unittest.TestCase):
             ],
         )
 
+    def test_spec_doctor_translates_cli_check(self) -> None:
+        self.assertEqual(
+            self.translate(
+                [
+                    "spec-doctor",
+                    "../target",
+                    "--check-spec-kit-cli",
+                    "--spec-kit-exe",
+                    "../tools/specify",
+                    "--json",
+                ]
+            ),
+            [
+                "--target",
+                "../target",
+                "--spec-kit-doctor",
+                "--json",
+                "--check-spec-kit-cli",
+                "--spec-kit-exe",
+                "../tools/specify",
+            ],
+        )
+
     def test_spec_sync_translates_feature_changed_paths_and_base(self) -> None:
         self.assertEqual(
             self.translate(

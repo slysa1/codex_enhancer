@@ -122,6 +122,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="limit the report to a feature directory name or numeric prefix",
     )
 
+    spec_doctor = subparsers.add_parser(
+        "spec-doctor",
+        help="print a read-only Spec Kit bridge diagnostics report",
+    )
+    spec_doctor.set_defaults(action="spec_doctor")
+    spec_doctor.add_argument("target", help="target repository path")
+    add_output_options(spec_doctor, include_plan_options=False)
+    spec_doctor.add_argument(
+        "--check-spec-kit-cli",
+        action="store_true",
+        help="run local read-only `specify` version and integration diagnostics",
+    )
+    spec_doctor.add_argument(
+        "--spec-kit-exe",
+        help="path to a local `specify`-compatible executable for diagnostics",
+    )
+
     spec_sync = subparsers.add_parser(
         "spec-sync",
         help="print a read-only Spec Kit sync report for changed paths",
@@ -450,6 +467,15 @@ def translate_to_installer_args(args: argparse.Namespace) -> list[str]:
         append_output_args(installer_args, args)
         if args.spec_kit_feature:
             installer_args.extend(["--spec-kit-feature", args.spec_kit_feature])
+        return installer_args
+
+    if args.action == "spec_doctor":
+        installer_args.append("--spec-kit-doctor")
+        append_output_args(installer_args, args)
+        if args.check_spec_kit_cli:
+            installer_args.append("--check-spec-kit-cli")
+        if args.spec_kit_exe:
+            installer_args.extend(["--spec-kit-exe", args.spec_kit_exe])
         return installer_args
 
     if args.action == "spec_sync":

@@ -564,6 +564,15 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn('state = "attached"', manifest)
             self.assertIn('integration_key = "codex"', manifest)
             self.assertIn("Spec Kit bridge is attached to an existing official install.", agents)
+            self.assertIn("Cross-agent review context", agents)
+            self.assertIn("Peer CLI smoke tests", agents)
+            bridge_doc = (install_target / "docs/ai/spec-kit-bridge.md").read_text(encoding="utf-8")
+            bridge_skill = (
+                install_target / ".codex/skills/spec-review-bridge/SKILL.md"
+            ).read_text(encoding="utf-8")
+            self.assertIn("Cross-Agent Review Safety", bridge_doc)
+            self.assertIn("Consent to share review context is separate", bridge_doc)
+            self.assertIn("Ask separately before any peer CLI smoke test", bridge_skill)
             self.assertTrue((install_target / ".codex/skills/spec-implement-bridge/SKILL.md").exists())
             self.assertTrue((install_target / ".codex/skills/spec-sync-check/SKILL.md").exists())
             self.assertTrue((install_target / ".codex/skills/spec-review-bridge/SKILL.md").exists())
@@ -764,6 +773,61 @@ class InstallEnhancerTests(unittest.TestCase):
             self.assertIn("`001-login` at `specs/001-login`", output)
             self.assertIn("Artifacts to re-read:", output)
             self.assertIn("`src/auth.py`", output)
+
+    def test_spec_kit_doctor_json_reports_file_detection_without_cli_by_default(self) -> None:
+        with repo_fixture("spec_doctor_json") as install_target:
+            write_file(
+                install_target,
+                ".specify/integration.json",
+                """
+                {
+                  "default_integration": "codex",
+                  "installed_integrations": ["codex", "generic"],
+                  "integration_settings": {
+                    "generic": {"commands_dir": ".myagent/commands"}
+                  },
+                  "version": "0.8.5"
+                }
+                """,
+            )
+            write_file(install_target, ".myagent/commands/speckit-plan.md", "# Plan\n")
+
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--spec-kit-doctor", "--json"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["kind"], "spec-kit-doctor-report")
+            self.assertFalse(payload["cli"]["checked"])
+            self.assertEqual(payload["detection"]["default_integration"], "codex")
+            self.assertEqual(payload["detection"]["installed_integrations"], ["codex", "generic"])
+            self.assertEqual(payload["detection"]["generic_commands_dir"], ".myagent/commands")
+
+    def test_check_spec_kit_cli_requires_spec_kit_doctor(self) -> None:
+        with repo_fixture("spec_doctor_cli_requires_doctor") as install_target:
+            exit_code, output = run_installer(
+                ["--target", str(install_target), "--check-spec-kit-cli"]
+            )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("--check-spec-kit-cli requires --spec-kit-doctor", output)
+
+    def test_spec_kit_reports_do_not_run_cli_diagnostics(self) -> None:
+        with repo_fixture("spec_report_no_cli") as install_target:
+            write_file(install_target, "specs/001-login/spec.md", "# Spec\n")
+
+            with patch.object(
+                install_enhancer.subprocess,
+                "run",
+                side_effect=AssertionError("spec report should not execute commands"),
+            ):
+                exit_code, output = run_installer(
+                    ["--target", str(install_target), "--spec-kit-report"]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Spec Kit feature report", output)
 
     def test_manage_spec_kit_bridge_turns_bridge_off_without_touching_spec_kit_files(self) -> None:
         with repo_fixture("manage_spec_kit_bridge") as install_target:

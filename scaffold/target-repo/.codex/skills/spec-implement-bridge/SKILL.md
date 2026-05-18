@@ -12,6 +12,11 @@ description: Implement code from existing Spec Kit feature artifacts. Use when a
 5. Validate the change with the repo's real commands.
 6. Call out any code-vs-spec drift explicitly instead of silently guessing.
 
+## Cross-Agent Review Safety
+- If invoking a cross-agent review, share only relevant Spec Kit artifacts, reviewed diffs, implementation notes, and validation evidence for the active feature.
+- Exclude secrets, credentials, tokens, raw environment values, unrelated private files, and unrelated repo content from shared context.
+- Ask separately before any peer CLI smoke test, network call, package install, or sandbox escalation.
+
 ## Boundaries
 - Use this only after official Spec Kit artifacts already exist.
 - Keep enhancer guidance focused on implementation, validation, and review.

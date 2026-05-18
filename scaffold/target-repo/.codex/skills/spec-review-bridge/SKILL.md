@@ -11,6 +11,11 @@ description: Prepare review notes for Spec Kit-driven work. Use when a branch wa
 4. Record the exact validation that ran.
 5. Separate completed work from remaining drift or follow-up.
 
+## Cross-Agent Review Safety
+- If invoking a cross-agent review, share only relevant Spec Kit artifacts, reviewed diffs, implementation notes, and validation evidence for the active feature.
+- Exclude secrets, credentials, tokens, raw environment values, unrelated private files, and unrelated repo content from shared context.
+- Ask separately before any peer CLI smoke test, network call, package install, or sandbox escalation.
+
 ## Boundaries
 - Keep the review summary anchored in the actual feature artifacts.
 - Use this after implementation and validation, not as a substitute for them.

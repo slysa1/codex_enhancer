@@ -62,6 +62,8 @@ This repository stores a minimal Codex-native workflow layer: instructions, skil
 - `python scripts/codex_enhancer_cli.py init <path> --summary --diff` - concise preview plus planned text diffs.
 - `python scripts/codex_enhancer_cli.py audit <path>` - inspect an installed target for inherited generic guidance and proposal files.
 - `python scripts/codex_enhancer_cli.py init <path> --with-spec-kit --utility-harness` - preview the full Codex helper bundle.
+- `python scripts/codex_enhancer_cli.py spec-doctor <path>` - summarize local Spec Kit bridge, integration, preset, extension, git, and branch hints without running Spec Kit.
+- `python scripts/codex_enhancer_cli.py spec-doctor <path> --check-spec-kit-cli` - add explicit local read-only `specify` CLI diagnostics.
 - `python scripts/codex_enhancer_cli.py spec-report <path>` - summarize existing Spec Kit feature artifacts without editing them.
 - `python scripts/codex_enhancer_cli.py spec-sync <path> --feature <feature> --changed <path>` - compare changed paths against existing Spec Kit feature artifacts without editing them.
 - `python scripts/codex_enhancer_cli.py bridge <path> --attach-spec-kit` - preview a Spec Kit bridge mode update for an installed target.

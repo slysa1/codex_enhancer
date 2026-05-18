@@ -11,6 +11,11 @@ description: Compare changed code against existing Spec Kit artifacts. Use when 
 4. List concrete mismatches, omissions, or follow-up work.
 5. Prefer deterministic checks and file references over broad prose.
 
+## Cross-Agent Review Safety
+- If invoking a cross-agent review, share only relevant Spec Kit artifacts, reviewed diffs, implementation notes, and validation evidence for the active feature.
+- Exclude secrets, credentials, tokens, raw environment values, unrelated private files, and unrelated repo content from shared context.
+- Ask separately before any peer CLI smoke test, network call, package install, or sandbox escalation.
+
 ## Boundaries
 - Use this for drift detection, not for authoring new specs.
 - Keep the output reviewable and artifact-backed.

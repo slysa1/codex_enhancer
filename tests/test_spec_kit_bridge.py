@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import stat
+import sys
 import unittest
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
 from scripts.spec_kit_bridge import (
+    build_spec_kit_doctor_report,
     build_spec_kit_sync_report,
     detect_spec_kit,
     discover_spec_kit_features,
+    inspect_spec_kit_cli,
+    render_spec_kit_bridge_doc_workflow,
+    render_spec_kit_doctor_report,
     render_spec_kit_feature_report,
     render_spec_kit_bridge_summary,
     render_spec_kit_detection_lines,
@@ -30,6 +37,43 @@ def write_file(root: Path, relative_path: str, content: str) -> None:
 
 def write_json(root: Path, relative_path: str, data: dict[str, object]) -> None:
     write_file(root, relative_path, json.dumps(data, indent=2) + "\n")
+
+
+def write_fake_specify(root: Path) -> Path:
+    write_file(
+        root,
+        "fake_specify.py",
+        """
+import json
+import sys
+
+args = sys.argv[1:]
+if args == ["version"]:
+    print("Spec Kit CLI version 0.8.5")
+elif args == ["version", "--features", "--json"]:
+    print(json.dumps({"features": {"integration-multi-install": True, "extension-catalogs": True}}))
+elif args == ["integration", "list"]:
+    print("codex installed default multi-install safe")
+    print("generic installed not-declared-safe")
+else:
+    print("unsupported fake specify command: " + " ".join(args), file=sys.stderr)
+    sys.exit(2)
+""".lstrip(),
+    )
+    if os.name == "nt":
+        launcher = root / "fake-specify.cmd"
+        launcher.write_text(
+            f'@echo off\n"{sys.executable}" "%~dp0fake_specify.py" %*\n',
+            encoding="utf-8",
+        )
+    else:
+        launcher = root / "fake-specify"
+        launcher.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "$(dirname "$0")/fake_specify.py" "$@"\n',
+            encoding="utf-8",
+        )
+        launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)
+    return launcher
 
 
 @contextmanager
@@ -113,6 +157,65 @@ class SpecKitBridgeTests(unittest.TestCase):
             lines = render_spec_kit_detection_lines(detection)
             self.assertTrue(any("$speckit-<command>" in line for line in lines))
 
+    def test_detect_spec_kit_reports_multi_install_generic_and_addons(self) -> None:
+        with repo_fixture("spec_kit_multi_generic") as root:
+            write_json(
+                root,
+                ".specify/integration.json",
+                {
+                    "default_integration": "codex",
+                    "installed_integrations": ["codex", "generic", "custom-ai"],
+                    "integration_settings": {
+                        "generic": {"commands_dir": ".myagent/commands"},
+                    },
+                    "version": "0.8.5",
+                },
+            )
+            write_json(
+                root,
+                ".specify/init-options.json",
+                {"script": "ps", "branch_numbering": "timestamp"},
+            )
+            write_file(root, ".agents/skills/speckit-plan/SKILL.md", "# Plan\n")
+            write_file(root, ".specify/scripts/powershell/common.ps1", "# script\n")
+            write_file(root, ".myagent/commands/speckit-plan.md", "# Generic command\n")
+            write_json(
+                root,
+                ".specify/presets/compliance/preset.json",
+                {
+                    "id": "compliance",
+                    "status": "enabled",
+                    "version": "1.2.0",
+                    "description": "Compliance templates",
+                    "priority": 5,
+                },
+            )
+            write_json(
+                root,
+                ".specify/extensions/lint/extension.json",
+                {"name": "lint", "enabled": False, "version": "2.0.0", "priority": 20},
+            )
+            write_file(root, ".specify/extensions/lint/lint-config.yml", "enabled: true\n")
+
+            detection = detect_spec_kit(root)
+            lines = render_spec_kit_detection_lines(detection)
+
+            self.assertTrue(detection.detected)
+            self.assertEqual(detection.integration, "codex")
+            self.assertEqual(detection.default_integration, "codex")
+            self.assertEqual(detection.installed_integrations, ("codex", "generic", "custom-ai"))
+            self.assertEqual(detection.generic_commands_dir, ".myagent/commands")
+            self.assertEqual(detection.paths.generic_commands_root, ".myagent/commands")
+            self.assertEqual(detection.branch_numbering, "timestamp")
+            self.assertEqual(detection.script_directory, ".specify/scripts/powershell")
+            self.assertEqual(detection.presets[0].name, "compliance")
+            self.assertEqual(detection.extensions[0].status, "disabled")
+            self.assertIn("Installed integrations:", "\n".join(lines))
+            self.assertIn("requires explicit official `--force`", "\n".join(lines))
+            self.assertIn("Generic integration command directory", "\n".join(lines))
+            self.assertIn("Presets:", "\n".join(lines))
+            self.assertIn("Extensions:", "\n".join(lines))
+
     def test_detect_spec_kit_marks_mixed_surfaces_as_ambiguous(self) -> None:
         with repo_fixture("spec_kit_mixed") as root:
             write_json(root, ".specify/integration.json", {"integration": "codex", "version": "0.8.3"})
@@ -140,6 +243,12 @@ class SpecKitBridgeTests(unittest.TestCase):
             self.assertEqual(bridge.integration_key, "codex")
             self.assertEqual(bridge.command_surface, "dollar")
             self.assertEqual(bridge.command_label, "$speckit-<command>")
+            summary = render_spec_kit_bridge_summary(bridge)
+            workflow = render_spec_kit_bridge_doc_workflow(bridge)
+            self.assertIn("Cross-agent review context", summary)
+            self.assertIn("Peer CLI smoke tests", summary)
+            self.assertIn("review-context approval is not shell or network approval", summary)
+            self.assertIn("ask separately before peer CLI smoke tests", workflow)
 
     def test_resolve_spec_kit_bridge_bootstrap_prepares_external_command(self) -> None:
         with repo_fixture("spec_kit_bootstrap") as root:
@@ -247,6 +356,68 @@ class SpecKitBridgeTests(unittest.TestCase):
             self.assertIn("Artifacts to re-read:", rendered)
             self.assertIn("`src/auth.py`", rendered)
             self.assertIn("Changed path categories: source: 1, tests: 1.", rendered)
+
+    def test_sync_report_adds_git_extension_branch_and_addon_cues(self) -> None:
+        with repo_fixture("spec_kit_sync_bridge_cues") as root:
+            write_json(
+                root,
+                ".specify/integration.json",
+                {"integration": "codex", "version": "0.8.5"},
+            )
+            write_json(root, ".specify/init-options.json", {"branch_numbering": "sequential"})
+            write_file(root, ".specify/extensions/lint/extension.json", "name: lint\n")
+            write_file(root, "specs/001-login/spec.md", "# Login spec\n")
+            write_file(root, "specs/001-login/plan.md", "# Login plan\n")
+            write_file(root, "specs/001-login/tasks.md", "- [x] T001 Done\n")
+
+            sync = build_spec_kit_sync_report(root, feature="001", changed_paths=("src/auth.py",))
+            rendered = render_spec_kit_sync_report(root, feature="001", changed_paths=("src/auth.py",))
+
+            self.assertTrue(any("SPECIFY_FEATURE" in note for note in sync.notes))
+            self.assertTrue(any("branch numbering" in note for note in sync.notes))
+            self.assertTrue(any("extension" in note for note in sync.notes))
+            self.assertIn("No `.git/` directory was found", rendered)
+
+    def test_spec_kit_doctor_skips_cli_by_default(self) -> None:
+        with repo_fixture("spec_kit_doctor_skipped") as root:
+            report = build_spec_kit_doctor_report(root)
+
+            self.assertFalse(report.cli.checked)
+            self.assertIn("CLI check skipped", report.cli.warnings[0])
+            self.assertIn("Spec Kit doctor report", render_spec_kit_doctor_report(report))
+
+    def test_spec_kit_doctor_runs_fake_cli_when_explicitly_requested(self) -> None:
+        with repo_fixture("spec_kit_doctor_fake_cli") as root:
+            fake_specify = write_fake_specify(root)
+
+            diagnostic = inspect_spec_kit_cli(root, executable=str(fake_specify), check_cli=True)
+            report = build_spec_kit_doctor_report(
+                root,
+                executable=str(fake_specify),
+                check_cli=True,
+            )
+            rendered = render_spec_kit_doctor_report(report)
+
+            self.assertTrue(diagnostic.checked)
+            self.assertEqual(diagnostic.version, "0.8.5")
+            self.assertIn("integration-multi-install", diagnostic.feature_flags)
+            self.assertIn("codex installed default", diagnostic.integration_output or "")
+            self.assertEqual(report.cli.version, "0.8.5")
+            self.assertIn("Feature flags:", rendered)
+            self.assertIn("Integration list output:", rendered)
+
+    def test_spec_kit_doctor_reports_missing_cli(self) -> None:
+        with repo_fixture("spec_kit_doctor_missing_cli") as root:
+            diagnostic = inspect_spec_kit_cli(
+                root,
+                executable="definitely-not-a-real-specify-command",
+                check_cli=True,
+            )
+
+            self.assertTrue(diagnostic.checked)
+            self.assertIsNone(diagnostic.executable_path)
+            self.assertTrue(diagnostic.errors)
+            self.assertIn("was not found", diagnostic.errors[0])
 
     def test_sync_report_reports_missing_changed_paths_and_git_errors(self) -> None:
         with repo_fixture("spec_kit_sync_git_error") as root:

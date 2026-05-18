@@ -37,9 +37,13 @@ from scripts.enhancer_spec import (
 )
 from scripts.spec_kit_bridge import (
     SPEC_KIT_BRIDGE_SKILLS,
+    SpecKitAddonSummary,
     SpecKitBridgeConfig,
+    SpecKitCliDiagnostic,
     SpecKitDetection,
+    SpecKitDoctorReport,
     SpecKitPaths,
+    build_spec_kit_doctor_report,
     detect_spec_kit,
     render_spec_kit_bridge_doc_command_surface,
     render_spec_kit_bridge_doc_skills,
@@ -47,6 +51,7 @@ from scripts.spec_kit_bridge import (
     render_spec_kit_bridge_doc_workflow,
     render_spec_kit_bridge_summary,
     render_spec_kit_detection_lines,
+    render_spec_kit_doctor_report,
     render_spec_kit_feature_report,
     render_spec_kit_sync_report,
     resolve_spec_kit_bridge,
@@ -3327,8 +3332,25 @@ def _spec_kit_paths_to_dict(paths: SpecKitPaths) -> dict[str, object]:
         "prompts_root": paths.prompts_root,
         "agents_root": paths.agents_root,
         "codex_skills_root": paths.codex_skills_root,
+        "script_root": paths.script_root,
+        "presets_root": paths.presets_root,
+        "extensions_root": paths.extensions_root,
+        "generic_commands_root": paths.generic_commands_root,
         "context_file": paths.context_file,
         "constitution": paths.constitution,
+    }
+
+
+def _spec_kit_addon_to_dict(addon: SpecKitAddonSummary) -> dict[str, object]:
+    return {
+        "kind": addon.kind,
+        "name": addon.name,
+        "path": addon.path,
+        "status": addon.status,
+        "version": addon.version,
+        "description": addon.description,
+        "priority": addon.priority,
+        "config_files": list(addon.config_files),
     }
 
 
@@ -3346,6 +3368,41 @@ def _detection_to_dict(detection: SpecKitDetection | None) -> dict[str, object] 
         "evidence": list(detection.evidence),
         "paths": _spec_kit_paths_to_dict(detection.paths),
         "has_git_extension": detection.has_git_extension,
+        "default_integration": detection.default_integration,
+        "installed_integrations": list(detection.installed_integrations),
+        "integration_settings_keys": list(detection.integration_settings_keys),
+        "generic_commands_dir": detection.generic_commands_dir,
+        "branch_numbering": detection.branch_numbering,
+        "presets": [_spec_kit_addon_to_dict(addon) for addon in detection.presets],
+        "extensions": [_spec_kit_addon_to_dict(addon) for addon in detection.extensions],
+        "script_directory": detection.script_directory,
+    }
+
+
+def _spec_kit_cli_diagnostic_to_dict(diagnostic: SpecKitCliDiagnostic) -> dict[str, object]:
+    return {
+        "checked": diagnostic.checked,
+        "executable": diagnostic.executable,
+        "executable_path": diagnostic.executable_path,
+        "version": diagnostic.version,
+        "version_output": diagnostic.version_output,
+        "feature_flags": list(diagnostic.feature_flags),
+        "feature_payload": diagnostic.feature_payload,
+        "integration_output": diagnostic.integration_output,
+        "errors": list(diagnostic.errors),
+        "warnings": list(diagnostic.warnings),
+    }
+
+
+def spec_kit_doctor_to_dict(report: SpecKitDoctorReport) -> dict[str, object]:
+    return {
+        "schema_version": PLAN_JSON_SCHEMA_VERSION,
+        "kind": "spec-kit-doctor-report",
+        "target": report.target,
+        "detection": _detection_to_dict(report.detection),
+        "cli": _spec_kit_cli_diagnostic_to_dict(report.cli),
+        "notes": list(report.notes),
+        "text": render_spec_kit_doctor_report(report),
     }
 
 
@@ -4233,6 +4290,16 @@ def main(argv: list[str]) -> int:
         help="print a read-only Spec Kit feature sync report for changed paths",
     )
     parser.add_argument(
+        "--spec-kit-doctor",
+        action="store_true",
+        help="print a read-only Spec Kit bridge diagnostics report",
+    )
+    parser.add_argument(
+        "--check-spec-kit-cli",
+        action="store_true",
+        help="for --spec-kit-doctor only, run local read-only `specify` version and integration diagnostics",
+    )
+    parser.add_argument(
         "--spec-kit-feature",
         help="limit Spec Kit reports to a feature directory name or numeric prefix",
     )
@@ -4484,6 +4551,7 @@ def main(argv: list[str]) -> int:
             or args.audit_adaptation
             or args.spec_kit_report
             or args.spec_kit_sync_report
+            or args.spec_kit_doctor
             or args.upgrade_enhancer
             or args.manage_packs
             or args.manage_workflows
@@ -4508,6 +4576,7 @@ def main(argv: list[str]) -> int:
             or args.spec_kit_command_surface != "auto"
             or args.spec_kit_version
             or args.spec_kit_exe
+            or args.check_spec_kit_cli
             or args.spec_kit_feature
             or args.spec_kit_changed_path
             or args.spec_kit_base
@@ -4533,6 +4602,7 @@ def main(argv: list[str]) -> int:
             or args.audit_adaptation
             or args.spec_kit_report
             or args.spec_kit_sync_report
+            or args.spec_kit_doctor
             or args.upgrade_enhancer
             or args.manage_packs
             or args.manage_workflows
@@ -4557,6 +4627,7 @@ def main(argv: list[str]) -> int:
             or args.spec_kit_command_surface != "auto"
             or args.spec_kit_version
             or args.spec_kit_exe
+            or args.check_spec_kit_cli
             or args.spec_kit_feature
             or args.spec_kit_changed_path
             or args.spec_kit_base
@@ -4618,8 +4689,14 @@ def main(argv: list[str]) -> int:
         emit(catalog, catalog_data)
         return 0
 
-    if args.spec_kit_report and args.spec_kit_sync_report:
-        return fail("--spec-kit-report and --spec-kit-sync-report are separate read-only reports.")
+    requested_spec_kit_reports = sum(
+        1 for selected in (args.spec_kit_report, args.spec_kit_sync_report, args.spec_kit_doctor) if selected
+    )
+    if requested_spec_kit_reports > 1:
+        return fail("--spec-kit-report, --spec-kit-sync-report, and --spec-kit-doctor are separate read-only reports.")
+
+    if args.check_spec_kit_cli and not args.spec_kit_doctor:
+        return fail("--check-spec-kit-cli requires --spec-kit-doctor.")
 
     if args.spec_kit_feature and not (args.spec_kit_report or args.spec_kit_sync_report):
         return fail("--spec-kit-feature requires --spec-kit-report or --spec-kit-sync-report.")
@@ -4627,7 +4704,7 @@ def main(argv: list[str]) -> int:
     if (args.spec_kit_changed_path or args.spec_kit_base) and not args.spec_kit_sync_report:
         return fail("--spec-kit-changed-path and --spec-kit-base require --spec-kit-sync-report.")
 
-    if (args.spec_kit_report or args.spec_kit_sync_report) and (
+    if (args.spec_kit_report or args.spec_kit_sync_report or args.spec_kit_doctor) and (
         args.inspect_install
         or args.audit_adaptation
         or args.upgrade_enhancer
@@ -4652,7 +4729,7 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_script != "auto"
         or args.spec_kit_command_surface != "auto"
         or args.spec_kit_version
-        or args.spec_kit_exe
+        or (args.spec_kit_exe and not args.spec_kit_doctor)
         or args.utility_harness_mode
         or args.install_utility_harness_dependencies
         or args.summary
@@ -4678,6 +4755,17 @@ def main(argv: list[str]) -> int:
             git_base=args.spec_kit_base,
         )
         emit(report, {"schema_version": PLAN_JSON_SCHEMA_VERSION, "kind": "spec-kit-sync-report", "target": str(target), "feature": args.spec_kit_feature, "changed_paths": list(args.spec_kit_changed_path), "git_base": args.spec_kit_base, "text": report})
+        return 0
+
+    if args.spec_kit_doctor:
+        if not target.exists() or not target.is_dir():
+            return fail(f"Target {target} does not exist or is not a directory.")
+        report = build_spec_kit_doctor_report(
+            target,
+            check_cli=args.check_spec_kit_cli,
+            executable=args.spec_kit_exe or "specify",
+        )
+        emit(render_spec_kit_doctor_report(report), spec_kit_doctor_to_dict(report))
         return 0
 
     if args.audit_adaptation and (
@@ -4748,6 +4836,8 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_exe
         or args.spec_kit_report
         or args.spec_kit_sync_report
+        or args.spec_kit_doctor
+        or args.check_spec_kit_cli
         or args.spec_kit_feature
         or args.spec_kit_changed_path
         or args.spec_kit_base
@@ -4860,6 +4950,7 @@ def main(argv: list[str]) -> int:
         or args.spec_kit_command_surface != "auto"
         or args.spec_kit_version
         or args.spec_kit_exe
+        or args.check_spec_kit_cli
         or args.utility_harness_mode
         or args.install_utility_harness_dependencies
         or args.add_workflow
